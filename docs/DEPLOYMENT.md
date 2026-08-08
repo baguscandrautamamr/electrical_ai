@@ -163,8 +163,15 @@ backlogged, and 503 otherwise — point an uptime monitor at it.
 Registration is deliberately an admin action: an unknown Telegram sender gets a
 "not registered" reply rather than self-service access to a live model.
 
-Get your numeric Telegram id from [@userinfobot](https://t.me/userinfobot), then
-in the Supabase SQL editor:
+Send the bot any message. It replies "not registered" **and tells you your
+numeric Telegram id** — that is the value the insert is keyed on.
+
+Then paste [`supabase/seed_first_user.sql`](../supabase/seed_first_user.sql)
+into the Supabase SQL editor, edit the five values at the top, and run it. It
+creates the project, makes you an admin on it, and prints the project id the
+Revit add-in needs. Re-running it is safe.
+
+The same thing spelled out, if you would rather do it by hand:
 
 ```sql
 -- 1. A project

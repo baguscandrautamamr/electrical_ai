@@ -45,7 +45,8 @@ public sealed class App : IExternalApplication
             else if (!Config.IsUsable)
             {
                 Logger.Warn(
-                    $"Config incomplete. Edit {AddinConfig.ConfigPath}, then press Connect on the ribbon.");
+                    "Not configured yet. Press Settings on the Command Center ribbon, "
+                    + "fill in the Supabase URL and key, pick a project, then press Connect.");
             }
 
             return Result.Succeeded;
@@ -90,7 +91,8 @@ public sealed class App : IExternalApplication
         if (!Config.IsUsable)
         {
             throw new InvalidOperationException(
-                $"Config is incomplete. Set supabase_url, supabase_key and project_id in {AddinConfig.ConfigPath}.");
+                "Not configured yet. Press Settings on the ribbon to enter the Supabase "
+                + "URL and key and pick a project.");
         }
 
         Supabase ??= new SupabaseClient(Config.SupabaseUrl, Config.SupabaseKey);

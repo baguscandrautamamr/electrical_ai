@@ -33,6 +33,7 @@ import {
   formatValidationIssues,
   type FormatContext,
 } from '../../src/format/index.js';
+import { translator } from '../../src/i18n/index.js';
 
 /** How long the webhook waits inline before handing off to the sweeper. */
 const INLINE_WAIT_MS = 40_000;
@@ -76,9 +77,15 @@ export async function POST(request: Request): Promise<Response> {
   let user = await findUserByTelegramId(from.id);
   if (!user) {
     // No user row yet: reply with defaults so an unregistered person still gets
-    // a comprehensible message rather than silence.
+    // a comprehensible message rather than silence. Include their numeric id —
+    // registration is an admin INSERT keyed on it, and making someone hunt for
+    // it via a third-party bot is a pointless extra step.
     const ctx: FormatContext = { language: 'id', theme: 'light' };
-    await telegram().sendMessage(chatId, formatError(ctx, 'errors.not_registered'));
+    const t = translator(ctx.language);
+    await telegram().sendMessage(
+      chatId,
+      formatError(ctx, 'errors.not_registered', {}, t('errors.your_telegram_id', { id: from.id })),
+    );
     return ok();
   }
 
