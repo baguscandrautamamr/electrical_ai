@@ -2,9 +2,9 @@
  * User resolution and project-access checks.
  */
 
-import { supabase } from '../lib/supabase.ts';
-import type { TelegramUser } from '../lib/telegram.ts';
-import type { Project, Role, User } from '../types/index.ts';
+import { supabase } from '../lib/supabase.js';
+import type { TelegramUser } from '../lib/telegram.js';
+import type { Project, Role, User } from '../types/index.js';
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, editor: 1, admin: 2 };
 

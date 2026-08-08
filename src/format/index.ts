@@ -2,13 +2,13 @@
  * Acknowledgements, errors, validation feedback and /help.
  */
 
-import { translator } from '../i18n/index.ts';
-import { MessageBuilder, num } from './message.ts';
-import { COMMAND_SPECS } from '../parser/schema.ts';
-import type { Language, Theme, ValidationIssue } from '../types/index.ts';
+import { translator } from '../i18n/index.js';
+import { MessageBuilder, num } from './message.js';
+import { COMMAND_SPECS } from '../parser/schema.js';
+import type { Language, Theme, ValidationIssue } from '../types/index.js';
 
-export * from './message.ts';
-export * from './results.ts';
+export * from './message.js';
+export * from './results.js';
 
 export interface FormatContext {
   language: Language;

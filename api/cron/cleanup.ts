@@ -10,10 +10,10 @@
  * for them, so they also run from /api/telegram/callback. See runSweep().
  */
 
-import { supabase } from '../../src/lib/supabase.ts';
-import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.ts';
-import { runSweep } from '../../src/services/maintenance.ts';
-import type { QueuedCommand } from '../../src/types/index.ts';
+import { supabase } from '../../src/lib/supabase.js';
+import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.js';
+import { runSweep } from '../../src/services/maintenance.js';
+import type { QueuedCommand } from '../../src/types/index.js';
 
 const COMPLETED_RETENTION_DAYS = 30;
 const FAILED_RETENTION_DAYS = 7;

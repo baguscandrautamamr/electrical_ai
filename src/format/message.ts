@@ -5,9 +5,9 @@
  * escaping are applied consistently instead of being re-implemented per device.
  */
 
-import { escapeHtml } from '../lib/telegram.ts';
-import { themeGlyphs, type ThemeGlyphs } from '../theme/tokens.ts';
-import type { Theme } from '../types/index.ts';
+import { escapeHtml } from '../lib/telegram.js';
+import { themeGlyphs, type ThemeGlyphs } from '../theme/tokens.js';
+import type { Theme } from '../types/index.js';
 
 export interface Row {
   label: string;

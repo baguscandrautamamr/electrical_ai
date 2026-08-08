@@ -7,7 +7,7 @@
  *                      (PDF report headers, exported dashboards, future web UI).
  */
 
-import type { Theme } from '../types/index.ts';
+import type { Theme } from '../types/index.js';
 
 export interface ThemeTokens {
   bgPrimary: string;

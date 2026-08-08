@@ -13,8 +13,8 @@
  *   /api connect abc123 2026-12-31
  */
 
-import type { ParsedCommand } from '../types/index.ts';
-import { COMMAND_SPECS, aliasMap, specFor } from './schema.ts';
+import type { ParsedCommand } from '../types/index.js';
+import { COMMAND_SPECS, aliasMap, specFor } from './schema.js';
 
 /**
  * Splits on whitespace but keeps quoted runs together.

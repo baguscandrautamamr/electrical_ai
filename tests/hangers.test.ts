@@ -7,7 +7,7 @@ import {
   estimateTotalLoadKg,
   findGapPositions,
   planGapFill,
-} from '../src/hangers/gapfill.ts';
+} from '../src/hangers/gapfill.js';
 
 describe('calculateExpectedPositions', () => {
   it('places supports at both ends of a run that divides evenly', () => {

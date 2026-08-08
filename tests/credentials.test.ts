@@ -5,9 +5,9 @@ import {
   isExpired,
   keyHint,
   verifyKey,
-} from '../src/services/credentials.ts';
-import { roleAtLeast } from '../src/services/users.ts';
-import type { ApiCredential } from '../src/types/index.ts';
+} from '../src/services/credentials.js';
+import { roleAtLeast } from '../src/services/users.js';
+import type { ApiCredential } from '../src/types/index.js';
 
 function credential(expiresAt: string): ApiCredential {
   return {

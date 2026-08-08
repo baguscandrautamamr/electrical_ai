@@ -11,13 +11,13 @@
  * so the two paths can never double-post the same result.
  */
 
-import { telegram } from '../lib/telegram.ts';
-import { supabase } from '../lib/supabase.ts';
-import { formatExecutionFailure, formatResult, type FormatContext } from '../format/index.ts';
-import { findUndeliveredResults, getCommand, markDelivered } from './queue.ts';
-import { DEFAULT_LANGUAGE } from '../i18n/index.ts';
-import { DEFAULT_THEME } from '../theme/tokens.ts';
-import type { CommandResult, QueuedCommand, User } from '../types/index.ts';
+import { telegram } from '../lib/telegram.js';
+import { supabase } from '../lib/supabase.js';
+import { formatExecutionFailure, formatResult, type FormatContext } from '../format/index.js';
+import { findUndeliveredResults, getCommand, markDelivered } from './queue.js';
+import { DEFAULT_LANGUAGE } from '../i18n/index.js';
+import { DEFAULT_THEME } from '../theme/tokens.js';
+import type { CommandResult, QueuedCommand, User } from '../types/index.js';
 
 async function contextForCommand(command: QueuedCommand): Promise<FormatContext> {
   const user = await supabase().selectOne<User>('users', {

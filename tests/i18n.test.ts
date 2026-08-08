@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { t, translator, flattenKeys, bundleFor, isLanguage } from '../src/i18n/index.ts';
-import { isTheme, themeCss, themeGlyphs, THEMES } from '../src/theme/tokens.ts';
+import { t, translator, flattenKeys, bundleFor, isLanguage } from '../src/i18n/index.js';
+import { isTheme, themeCss, themeGlyphs, THEMES } from '../src/theme/tokens.js';
 
 describe('translation bundles', () => {
   it('defines exactly the same keys in both languages', () => {

@@ -7,9 +7,9 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '../config/env.ts';
-import type { ParsedCommand } from '../types/index.ts';
-import { COMMAND_SPECS, aliasMap } from './schema.ts';
+import { env } from '../config/env.js';
+import type { ParsedCommand } from '../types/index.js';
+import { COMMAND_SPECS, aliasMap } from './schema.js';
 
 let client: Anthropic | null = null;
 

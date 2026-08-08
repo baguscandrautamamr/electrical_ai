@@ -8,14 +8,14 @@ import {
   formatResult,
   formatValidationIssues,
   type FormatContext,
-} from '../src/format/index.ts';
-import { escapeHtml } from '../src/lib/telegram.ts';
+} from '../src/format/index.js';
+import { escapeHtml } from '../src/lib/telegram.js';
 import type {
   CableTrayResult,
   EquipRoomResult,
   PlacementResult,
   ValidationIssue,
-} from '../src/types/index.ts';
+} from '../src/types/index.js';
 
 const ID: FormatContext = { language: 'id', theme: 'light' };
 const EN: FormatContext = { language: 'en', theme: 'dark' };

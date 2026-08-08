@@ -14,6 +14,25 @@ read per request, so a missing one cannot break a build. Read the build log:
 
 `npx vercel build` reproduces the deployment build on your machine.
 
+## `FUNCTION_INVOCATION_FAILED` on every endpoint
+
+The build succeeded and the function died on import. If it happens on *every*
+endpoint at once it is not an env var — a missing variable produces a 503 with a
+`MissingEnvError` body, not a crash.
+
+The usual cause is a module specifier that does not resolve at runtime. Vercel
+transpiles each file and leaves import paths untouched, so `from './x.ts'`
+survives into the emitted `.js` and Node cannot find it. Relative imports must
+carry the emitted `.js` extension; `tests/imports.test.ts` enforces this,
+because tsc and vitest both resolve `.ts` and would otherwise stay silent.
+
+Reproduce it without deploying — build, then load each function:
+
+```bash
+npx vercel build
+cd .vercel/output/functions/api/health.func && node -e "import('./api/health.js')"
+```
+
 ## The bot does not reply at all
 
 ```bash

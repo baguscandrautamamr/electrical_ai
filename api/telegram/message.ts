@@ -13,26 +13,26 @@
  * been accepted — failures are reported to the user in-chat, not via status code.
  */
 
-import { env } from '../../src/config/env.ts';
-import { telegram, type TelegramUpdate } from '../../src/lib/telegram.ts';
-import { parseMessage } from '../../src/parser/index.ts';
-import { specFor } from '../../src/parser/schema.ts';
-import { validateParams } from '../../src/parser/validate.ts';
-import { handleAdminCommand } from '../../src/services/admin.ts';
-import { attachAckMessage, enqueueCommand } from '../../src/services/queue.ts';
-import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.ts';
+import { env } from '../../src/config/env.js';
+import { telegram, type TelegramUpdate } from '../../src/lib/telegram.js';
+import { parseMessage } from '../../src/parser/index.js';
+import { specFor } from '../../src/parser/schema.js';
+import { validateParams } from '../../src/parser/validate.js';
+import { handleAdminCommand } from '../../src/services/admin.js';
+import { attachAckMessage, enqueueCommand } from '../../src/services/queue.js';
+import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
 import {
   findUserByTelegramId,
   resolveActiveProject,
   roleAtLeast,
   touchUser,
-} from '../../src/services/users.ts';
+} from '../../src/services/users.js';
 import {
   formatAck,
   formatError,
   formatValidationIssues,
   type FormatContext,
-} from '../../src/format/index.ts';
+} from '../../src/format/index.js';
 
 /** How long the webhook waits inline before handing off to the sweeper. */
 const INLINE_WAIT_MS = 40_000;

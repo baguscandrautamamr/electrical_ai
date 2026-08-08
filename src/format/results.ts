@@ -2,8 +2,8 @@
  * Renders Revit command results into bilingual, theme-aware Telegram messages.
  */
 
-import { translator, type Translate } from '../i18n/index.ts';
-import { MessageBuilder, num, type Row } from './message.ts';
+import { translator, type Translate } from '../i18n/index.js';
+import { MessageBuilder, num, type Row } from './message.js';
 import type {
   CableTrayResult,
   CommandResult,
@@ -14,7 +14,7 @@ import type {
   Language,
   PlacementResult,
   Theme,
-} from '../types/index.ts';
+} from '../types/index.js';
 
 export interface FormatContext {
   language: Language;
