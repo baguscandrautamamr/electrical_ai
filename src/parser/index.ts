@@ -2,14 +2,14 @@
  * Parser entry point: grammar first, Claude second.
  */
 
-import type { ParsedCommand } from '../types/index.ts';
-import { hasAnthropicKey } from '../config/env.ts';
-import { parseGrammar, parseAdmin, type AdminParse } from './grammar.ts';
-import { parseWithClaude, MIN_CONFIDENCE } from './claude.ts';
+import type { ParsedCommand } from '../types/index.js';
+import { hasAnthropicKey } from '../config/env.js';
+import { parseGrammar, parseAdmin, type AdminParse } from './grammar.js';
+import { parseWithClaude, MIN_CONFIDENCE } from './claude.js';
 
-export * from './schema.ts';
-export * from './grammar.ts';
-export * from './validate.ts';
+export * from './schema.js';
+export * from './grammar.js';
+export * from './validate.js';
 
 export type ParseOutcome =
   | { kind: 'admin'; admin: AdminParse }

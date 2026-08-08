@@ -8,10 +8,10 @@
  * can drive it more often than the daily cron.
  */
 
-import { supabase } from '../lib/supabase.ts';
-import { env } from '../config/env.ts';
-import { deliverPendingResults } from './delivery.ts';
-import type { QueuedCommand } from '../types/index.ts';
+import { supabase } from '../lib/supabase.js';
+import { env } from '../config/env.js';
+import { deliverPendingResults } from './delivery.js';
+import type { QueuedCommand } from '../types/index.js';
 
 export interface SweepReport {
   /** Commands reclaimed from a Revit instance that never reported back. */

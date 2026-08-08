@@ -3,9 +3,9 @@
  * Revit add-in.
  */
 
-import { supabase } from '../lib/supabase.ts';
-import { env } from '../config/env.ts';
-import type { QueuedCommand } from '../types/index.ts';
+import { supabase } from '../lib/supabase.js';
+import { env } from '../config/env.js';
+import type { QueuedCommand } from '../types/index.js';
 
 export interface EnqueueInput {
   userId: string;

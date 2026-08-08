@@ -73,6 +73,7 @@ api/                      Vercel serverless functions
   health.ts                 liveness + queue depth
 .github/workflows/
   sweep.yml                 15-minute sweeper, stands in for a sub-daily cron
+public/index.html         landing page + the static output dir Vercel's build needs
 src/
   parser/                 grammar, Claude NLP fallback, validation, schema
   format/                 bilingual, theme-aware message rendering

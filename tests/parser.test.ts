@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseGrammar, parseAdmin, tokenize, isKnownCommand } from '../src/parser/grammar.ts';
-import { validateParams } from '../src/parser/validate.ts';
-import { COMMAND_SPECS, specFor } from '../src/parser/schema.ts';
+import { parseGrammar, parseAdmin, tokenize, isKnownCommand } from '../src/parser/grammar.js';
+import { validateParams } from '../src/parser/validate.js';
+import { COMMAND_SPECS, specFor } from '../src/parser/schema.js';
 
 describe('tokenize', () => {
   it('splits on whitespace', () => {

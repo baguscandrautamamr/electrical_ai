@@ -3,21 +3,21 @@
  * them touch Revit, so there is nothing to queue.
  */
 
-import { translator } from '../i18n/index.ts';
-import { isLanguage } from '../i18n/index.ts';
-import { isTheme } from '../theme/tokens.ts';
-import { MessageBuilder } from '../format/message.ts';
-import { formatError, formatHelp, formatCommandHelp, type FormatContext } from '../format/index.ts';
-import { supabase } from '../lib/supabase.ts';
-import type { AdminParse } from '../parser/grammar.ts';
-import type { Project, Role, User } from '../types/index.ts';
+import { translator } from '../i18n/index.js';
+import { isLanguage } from '../i18n/index.js';
+import { isTheme } from '../theme/tokens.js';
+import { MessageBuilder } from '../format/message.js';
+import { formatError, formatHelp, formatCommandHelp, type FormatContext } from '../format/index.js';
+import { supabase } from '../lib/supabase.js';
+import type { AdminParse } from '../parser/grammar.js';
+import type { Project, Role, User } from '../types/index.js';
 import {
   activeCredential,
   connectCredential,
   disconnectCredential,
   isExpired,
-} from './credentials.ts';
-import { queueStats } from './queue.ts';
+} from './credentials.js';
+import { queueStats } from './queue.js';
 import {
   findProjectByCode,
   accessForProject,
@@ -27,7 +27,7 @@ import {
   roleAtLeast,
   setActiveProject,
   setPreference,
-} from './users.ts';
+} from './users.js';
 
 export interface AdminContext extends FormatContext {
   user: User;

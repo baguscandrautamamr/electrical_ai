@@ -15,9 +15,9 @@
  * it; docs/DEPLOYMENT.md has a ready-made GitHub Actions workflow.
  */
 
-import { getCommand } from '../../src/services/queue.ts';
-import { deliverCommandResult } from '../../src/services/delivery.ts';
-import { runSweep } from '../../src/services/maintenance.ts';
+import { getCommand } from '../../src/services/queue.js';
+import { deliverCommandResult } from '../../src/services/delivery.js';
+import { runSweep } from '../../src/services/maintenance.js';
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {

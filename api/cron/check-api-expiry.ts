@@ -5,13 +5,13 @@
  * plus warns 3 days ahead so a key never dies mid-shift without notice.
  */
 
-import { supabase } from '../../src/lib/supabase.ts';
-import { telegram } from '../../src/lib/telegram.ts';
-import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.ts';
-import { expireStaleCredentials } from '../../src/services/credentials.ts';
-import { MessageBuilder } from '../../src/format/message.ts';
-import { translator } from '../../src/i18n/index.ts';
-import type { ApiCredential, User } from '../../src/types/index.ts';
+import { supabase } from '../../src/lib/supabase.js';
+import { telegram } from '../../src/lib/telegram.js';
+import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.js';
+import { expireStaleCredentials } from '../../src/services/credentials.js';
+import { MessageBuilder } from '../../src/format/message.js';
+import { translator } from '../../src/i18n/index.js';
+import type { ApiCredential, User } from '../../src/types/index.js';
 
 const WARN_WITHIN_DAYS = 3;
 

@@ -6,7 +6,7 @@
  * the Claude prompt, and /help are all generated from it, so they cannot drift.
  */
 
-import type { CommandType } from '../types/index.ts';
+import type { CommandType } from '../types/index.js';
 
 export type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'size' | 'date';
 

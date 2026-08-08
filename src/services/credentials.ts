@@ -7,8 +7,8 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { supabase } from '../lib/supabase.ts';
-import type { ApiCredential } from '../types/index.ts';
+import { supabase } from '../lib/supabase.js';
+import type { ApiCredential } from '../types/index.js';
 
 export function hashKey(plaintext: string): string {
   return createHash('sha256').update(plaintext, 'utf8').digest('hex');

@@ -5,9 +5,9 @@
  * uptime monitor can alert without parsing the body.
  */
 
-import { supabase } from '../src/lib/supabase.ts';
-import { queueStats } from '../src/services/queue.ts';
-import { env } from '../src/config/env.ts';
+import { supabase } from '../src/lib/supabase.js';
+import { queueStats } from '../src/services/queue.js';
+import { env } from '../src/config/env.js';
 
 /** Above this many pending commands, the Revit add-in is probably not running. */
 const PENDING_ALERT_THRESHOLD = 25;

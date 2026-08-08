@@ -1,5 +1,38 @@
 # Troubleshooting
 
+## The Vercel deployment fails
+
+A deployment that errors after a few seconds failed to *build* — env vars are
+read per request, so a missing one cannot break a build. Read the build log:
+
+- *No Output Directory named "public" found* → `public/` is missing. The `build`
+  script makes Vercel expect a static output directory; see
+  [DEPLOYMENT.md](DEPLOYMENT.md) §3.
+- *Cron expressions must be...* / a cron limit error → a schedule is more
+  frequent than the Hobby plan's once-a-day limit. See DEPLOYMENT.md §3.
+- A `tsc` error → the typecheck gate did its job. `npm run check` locally.
+
+`npx vercel build` reproduces the deployment build on your machine.
+
+## `FUNCTION_INVOCATION_FAILED` on every endpoint
+
+The build succeeded and the function died on import. If it happens on *every*
+endpoint at once it is not an env var — a missing variable produces a 503 with a
+`MissingEnvError` body, not a crash.
+
+The usual cause is a module specifier that does not resolve at runtime. Vercel
+transpiles each file and leaves import paths untouched, so `from './x.ts'`
+survives into the emitted `.js` and Node cannot find it. Relative imports must
+carry the emitted `.js` extension; `tests/imports.test.ts` enforces this,
+because tsc and vitest both resolve `.ts` and would otherwise stay silent.
+
+Reproduce it without deploying — build, then load each function:
+
+```bash
+npx vercel build
+cd .vercel/output/functions/api/health.func && node -e "import('./api/health.js')"
+```
+
 ## The bot does not reply at all
 
 ```bash

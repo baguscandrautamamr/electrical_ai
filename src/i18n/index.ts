@@ -6,7 +6,7 @@
  * message is a much better failure mode than a 500 on the webhook.
  */
 
-import type { Language } from '../types/index.ts';
+import type { Language } from '../types/index.js';
 import id from './id.json' with { type: 'json' };
 import en from './en.json' with { type: 'json' };
 

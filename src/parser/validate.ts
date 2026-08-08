@@ -7,8 +7,8 @@
  * "true", "yes" or true.
  */
 
-import type { ValidationIssue, ValidationOutcome } from '../types/index.ts';
-import type { CommandSpec, ParamSpec } from './schema.ts';
+import type { ValidationIssue, ValidationOutcome } from '../types/index.js';
+import type { CommandSpec, ParamSpec } from './schema.js';
 
 const TRUTHY = new Set(['true', 'yes', 'y', '1', 'on', 'ya', 'aktif']);
 const FALSY = new Set(['false', 'no', 'n', '0', 'off', 'tidak', 'nonaktif']);

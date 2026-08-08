@@ -9,7 +9,7 @@
  * import this module into anything that runs in a browser.
  */
 
-import { env } from '../config/env.ts';
+import { env } from '../config/env.js';
 
 export class SupabaseError extends Error {
   constructor(

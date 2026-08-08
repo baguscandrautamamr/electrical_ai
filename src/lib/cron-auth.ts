@@ -7,7 +7,7 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import { env } from '../config/env.ts';
+import { env } from '../config/env.js';
 
 export function isAuthorizedCron(request: Request): boolean {
   let expected: string;

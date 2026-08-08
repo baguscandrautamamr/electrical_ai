@@ -1,6 +1,6 @@
 /** Telegram Bot API client (only the handful of methods this bot uses). */
 
-import { env } from '../config/env.ts';
+import { env } from '../config/env.js';
 
 export interface TelegramUser {
   id: number;

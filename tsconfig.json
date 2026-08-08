@@ -6,7 +6,11 @@
     "moduleResolution": "bundler",
     "types": ["node"],
     "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
+    // Relative imports carry the emitted `.js` extension, not `.ts`. Vercel's
+    // function builder transpiles each file and leaves specifiers untouched, so
+    // a `.ts` specifier survives into the bundle and the function dies at
+    // import with ERR_MODULE_NOT_FOUND. allowImportingTsExtensions would hide
+    // that from the typechecker, which is why it is deliberately absent.
     "noEmit": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
