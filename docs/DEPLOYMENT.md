@@ -74,9 +74,32 @@ different values.
 vercel --prod
 ```
 
-`vercel.json` already registers the cron jobs: cleanup every six hours, credential
-expiry daily at 01:00 UTC. Both require `Authorization: Bearer $CRON_SECRET`,
-which Vercel Cron supplies automatically.
+`vercel.json` already registers the cron jobs: cleanup daily at 02:00 UTC,
+credential expiry daily at 01:00 UTC. Both require
+`Authorization: Bearer $CRON_SECRET`, which Vercel Cron supplies automatically.
+
+### Cron on the Hobby plan
+
+Hobby allows **two cron jobs per project, each firing once a day** at an
+approximate time within the scheduled hour. Anything more frequent —
+`0 */6 * * *`, for example — is rejected at deploy time with a cron-limit error.
+The two schedules above sit inside that limit, so the project deploys on Hobby
+as-is. Nothing needs to be removed or commented out.
+
+What the daily limit costs is *timeliness*, not correctness: a command stranded
+in `processing` is only failed and reported on the next sweep. To keep that
+prompt without upgrading, `.github/workflows/sweep.yml` calls the sweeper
+endpoint every 15 minutes from GitHub Actions — set the repository Actions
+variable `DEPLOYMENT_URL` to your deployment origin and it starts working; leave
+it unset and the workflow no-ops. Any external scheduler works just as well
+(cron-job.org, UptimeRobot, a machine you already leave on):
+
+```bash
+curl "https://<your-deployment>.vercel.app/api/telegram/callback?limit=50"
+```
+
+On a Pro plan, tighten `vercel.json` back to `0 */6 * * *` and delete the
+workflow.
 
 > Environment variables are read at request time, but a running deployment does
 > not pick up new values. **Redeploy after changing any variable.**
@@ -150,16 +173,18 @@ is the intended behaviour, not a fault.
 poll, 2–4s to execute, ~2s to deliver the result. The webhook waits inline for
 up to 40s; anything slower is delivered by the sweeper.
 
-**The sweeper.** `/api/telegram/callback` flushes results the webhook did not
-wait for. The cleanup cron calls it every six hours, which is fine for
-correctness but slow for a user watching their phone. If Revit is routinely
-slow, hit it more often:
+**The sweeper.** `/api/telegram/callback` reclaims commands whose Revit instance
+never reported back, then flushes results the webhook did not wait for. The
+daily cleanup cron does the same work, which is enough for correctness but slow
+for a user watching their phone — so the GitHub Actions workflow above drives it
+every 15 minutes. Hit it by hand whenever you want:
 
 ```bash
 curl "https://<your-deployment>.vercel.app/api/telegram/callback"
 ```
 
-It is idempotent — the `webhook_sent` flag prevents double-posting.
+It is idempotent — the `webhook_sent` flag prevents double-posting, and the
+timeout filter only matches commands already past `COMMAND_TIMEOUT_SECONDS`.
 
 **Scaling past the free tier.** Supabase Free allows ~50k API calls/month. One
 Revit instance polling every 4 seconds during an 8-hour day is about 7,200

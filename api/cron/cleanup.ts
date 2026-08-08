@@ -1,16 +1,18 @@
 /**
- * GET /api/cron/cleanup — every 6 hours.
+ * GET /api/cron/cleanup — daily (Hobby plan allows one firing per cron per day).
  *
- *   - Delivers any results the webhook missed.
  *   - Fails commands stuck in 'processing' past the timeout.
+ *   - Delivers any results the webhook missed, including those timeouts.
  *   - Archives finished commands out of the queue (30 days completed, 7 failed).
  *   - Drops expired model-cache rows.
+ *
+ * The first two steps are the time-sensitive ones and once a day is too slow
+ * for them, so they also run from /api/telegram/callback. See runSweep().
  */
 
 import { supabase } from '../../src/lib/supabase.ts';
-import { env } from '../../src/config/env.ts';
 import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.ts';
-import { deliverPendingResults } from '../../src/services/delivery.ts';
+import { runSweep } from '../../src/services/maintenance.ts';
 import type { QueuedCommand } from '../../src/types/index.ts';
 
 const COMPLETED_RETENTION_DAYS = 30;
@@ -26,23 +28,11 @@ export async function GET(request: Request): Promise<Response> {
   const report: Record<string, unknown> = { ran_at: new Date().toISOString() };
 
   try {
-    // 1. Flush undelivered results first, so nothing gets archived unseen.
-    report.delivered = await deliverPendingResults(50);
+    // 1. Reclaim abandoned commands, then flush every undelivered result — so
+    //    nothing reaches the archive without the user having seen it.
+    Object.assign(report, await runSweep(50));
 
-    // 2. Reclaim commands whose Revit instance vanished mid-execution.
-    const staleCutoff = new Date(Date.now() - env.commandTimeoutSeconds * 1000).toISOString();
-    const stuck = await supabase().update<QueuedCommand>(
-      'commands_queue',
-      {
-        status: 'failed',
-        error_message: 'Timed out in processing; the Revit add-in did not report back.',
-        completed_at: new Date().toISOString(),
-      },
-      { eq: { status: 'processing' }, filters: [`started_at=lt.${staleCutoff}`] },
-    );
-    report.timed_out = stuck.length;
-
-    // 3. Archive, then delete, finished commands past retention.
+    // 2. Archive, then delete, finished commands past retention.
     let archived = 0;
     for (const [status, retention] of [
       ['completed', COMPLETED_RETENTION_DAYS],
@@ -81,7 +71,7 @@ export async function GET(request: Request): Promise<Response> {
     }
     report.archived = archived;
 
-    // 4. Expired model cache.
+    // 3. Expired model cache.
     await supabase().delete('model_cache_mep', {
       filters: [`expires_at=lt.${new Date().toISOString()}`],
     });

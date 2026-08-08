@@ -6,12 +6,18 @@
  * retry ran, a transaction took a long time).
  *
  * Call it either with `?command_id=...` to flush one command, or with no
- * parameters to flush everything outstanding. Safe to call repeatedly —
+ * parameters to run a full sweep: reclaim commands whose Revit instance never
+ * reported back, then deliver everything outstanding. Safe to call repeatedly —
  * `webhook_sent` makes delivery idempotent.
+ *
+ * On Vercel Hobby the cleanup cron only fires once a day, so this endpoint is
+ * what keeps timeout notices and late results timely. Point a free scheduler at
+ * it; docs/DEPLOYMENT.md has a ready-made GitHub Actions workflow.
  */
 
 import { getCommand } from '../../src/services/queue.ts';
-import { deliverCommandResult, deliverPendingResults } from '../../src/services/delivery.ts';
+import { deliverCommandResult } from '../../src/services/delivery.ts';
+import { runSweep } from '../../src/services/maintenance.ts';
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -38,8 +44,8 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     const limit = Number(url.searchParams.get('limit') ?? '20');
-    const sent = await deliverPendingResults(Number.isFinite(limit) ? limit : 20);
-    return json({ ok: true, delivered: sent });
+    const report = await runSweep(Number.isFinite(limit) ? limit : 20);
+    return json({ ok: true, ...report });
   } catch (error) {
     console.error('[callback] sweep failed', error);
     return json({ ok: false, error: String(error) }, 500);
