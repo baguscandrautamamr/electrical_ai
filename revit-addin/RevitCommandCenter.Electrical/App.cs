@@ -95,6 +95,15 @@ public sealed class App : IExternalApplication
                 + "URL and key and pick a project.");
         }
 
+        // The anon key authenticates perfectly well, so nothing downstream ever
+        // reports it: row-level security just makes every project-scoped table
+        // read as empty, and an empty queue is what an idle add-in looks like.
+        // Say it once, here, where the key is known.
+        if (Config.KeyKind == SupabaseKeyKind.Anon)
+        {
+            Logger.Error($"Cannot serve commands. {SupabaseApiKey.AnonKeyAdvice}");
+        }
+
         // A project id can only get into config.json by hand or from a version
         // of this add-in that wrote one: the Settings dialog has no field for it
         // because the project is chosen in Telegram. Left in place it scopes

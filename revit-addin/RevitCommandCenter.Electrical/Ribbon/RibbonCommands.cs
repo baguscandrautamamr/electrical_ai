@@ -41,6 +41,18 @@ public sealed class ConnectCommand : IExternalCommand
                 ProjectRegistrar.RegisterAsync(app.Supabase, title!).GetAwaiter().GetResult();
             }
 
+            // The anon key reaches Supabase and passes the ping, so "Connected."
+            // would be true and useless: nothing will ever be claimed. Lead
+            // with that rather than bury it in the log.
+            if (app.Config.KeyKind == SupabaseKeyKind.Anon)
+            {
+                TaskDialog.Show(
+                    "Command Center",
+                    "Polling started, but no command will ever be claimed.\n\n"
+                    + SupabaseApiKey.AnonKeyAdvice);
+                return Result.Succeeded;
+            }
+
             TaskDialog.Show(
                 "Command Center",
                 reachable
@@ -149,6 +161,7 @@ public sealed class StatusCommand : IExternalCommand
         {
             $"Connected: {(app?.IsConnected == true ? "yes" : "no")}",
             $"Project: {(string.IsNullOrWhiteSpace(app?.Config.ProjectId) ? "all (chosen in Telegram)" : app!.Config.ProjectId)}",
+            $"Key: {SupabaseApiKey.Describe(app?.Config.KeyKind ?? SupabaseKeyKind.Unknown)}",
             $"Poll interval: {app?.Config.PollingIntervalSeconds ?? 0}s",
             string.Empty,
             $"Waiting in queue: {(pending < 0 ? "could not read" : pending.ToString())}",
@@ -157,9 +170,18 @@ public sealed class StatusCommand : IExternalCommand
             $"Last poll: {poller?.LastPollAt?.ToString("HH:mm:ss") ?? "never"}",
         };
 
+        // Checked before the counts, because it is why they are wrong: with the
+        // anon key row-level security hides commands_queue outright, so "waiting
+        // in queue: 0" is reported for a queue Telegram says is nine deep.
+        if (app?.Config.KeyKind == SupabaseKeyKind.Anon)
+        {
+            lines.Add(string.Empty);
+            lines.Add("The counts above are not real, and nothing will ever be claimed.");
+            lines.Add(SupabaseApiKey.AnonKeyAdvice);
+        }
         // Work exists but not for the project this add-in is pinned to, so it
         // will never be claimed however long it waits.
-        if (pinned && pendingEverywhere > pending)
+        else if (pinned && pendingEverywhere > pending)
         {
             lines.Add(string.Empty);
             lines.Add(
@@ -173,10 +195,10 @@ public sealed class StatusCommand : IExternalCommand
         {
             lines.Add(string.Empty);
             lines.Add(
-                $"{pending} command(s) are waiting and none have been claimed. Either the key "
-                + "above is the anon key rather than service_role (row-level security then "
-                + "hides the queue, and the claim returns nothing without erroring), or "
-                + "0002_claim_any_project.sql has not been applied to Supabase.");
+                $"{pending} command(s) are waiting and none have been claimed. The key above "
+                + "is not the anon key, so the likely cause is that "
+                + "0002_claim_any_project.sql has not been applied to Supabase — the claim "
+                + "then returns nothing without erroring.");
         }
 
         lines.Add(string.Empty);

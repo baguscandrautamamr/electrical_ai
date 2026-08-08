@@ -22,6 +22,13 @@ public sealed class AddinConfig
     public string SupabaseKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Which key class <see cref="SupabaseKey"/> is. Derived, never stored —
+    /// config.json holds the key, and the key already says.
+    /// </summary>
+    [JsonIgnore]
+    public SupabaseKeyKind KeyKind => SupabaseApiKey.Classify(SupabaseKey);
+
+    /// <summary>
     /// Optional. Blank — the normal case — means this instance drains commands
     /// for every project, and which project a command belongs to is decided in
     /// Telegram with /project. Set it only to pin one Revit instance to one site.

@@ -73,10 +73,13 @@ internal sealed class SettingsWindow : Window
 
         root.Children.Add(Heading("Supabase connection"));
         root.Children.Add(Hint(
-            "Supabase dashboard → Project Settings → API. Use the project URL and "
-            + "the service_role key — this machine is trusted; the key never leaves it."));
+            "Supabase dashboard → Project Settings → API. Use the project URL and the "
+            + "service_role key — labelled \"secret\" on newer projects, and starting "
+            + "sb_secret_. Not the anon/publishable key: it is the one shown first, and "
+            + "row-level security leaves it unable to see the command queue at all. This "
+            + "machine is trusted; the key never leaves it."));
         root.Children.Add(Field("Project URL", _url, "https://xxxxxxxx.supabase.co"));
-        root.Children.Add(Field("service_role key", _key));
+        root.Children.Add(Field("service_role (secret) key", _key));
 
         _test.Content = "Test connection and load projects";
         _test.Padding = new Thickness(14, 6, 14, 6);
@@ -204,6 +207,15 @@ internal sealed class SettingsWindow : Window
             Say("The project URL must start with https://", Bad);
             return;
         }
+        // Checked before Supabase is called, because Supabase would accept it:
+        // the anon key authenticates, the ping passes, and the project list
+        // comes back empty because row-level security filtered it — which is
+        // indistinguishable from a database that has no projects yet.
+        if (SupabaseApiKey.Classify(key) == SupabaseKeyKind.Anon)
+        {
+            Say(SupabaseApiKey.AnonKeyAdvice, Bad);
+            return;
+        }
 
         _test.IsEnabled = false;
         Say("Connecting…", Subtle);
@@ -224,10 +236,17 @@ internal sealed class SettingsWindow : Window
                 .SelectAsync<ProjectRow>("projects", "select=id,code,name&order=code")
                 .ConfigureAwait(true);
 
+            // Zero projects is normal on a fresh database — Connect registers the
+            // open model — but it is also exactly what a key without the rights
+            // to read them looks like, so do not call that "connected" outright.
             Say(
-                $"Connected. {projects.Count} project(s) visible. Save, then Connect — "
-                + "pick the project in Telegram with /project.",
-                Ok);
+                projects.Count == 0
+                    ? "Connected, but no projects are visible. That is expected on a new "
+                      + "database: Connect registers the open Revit model. If projects do "
+                      + "exist, this key cannot read them — use the service_role (secret) key."
+                    : $"Connected. {projects.Count} project(s) visible. Save, then Connect — "
+                      + "pick the project in Telegram with /project.",
+                projects.Count == 0 ? Subtle : Ok);
         }
         catch (SupabaseException ex)
         {
@@ -257,6 +276,14 @@ internal sealed class SettingsWindow : Window
         {
             // projectId stays optional: empty means serve every project.
             Say("The URL and key are both required before this can connect.", Bad);
+            return;
+        }
+
+        // Saving it would only move the failure to the next Connect, where it
+        // reads as a silent, idle queue rather than as this.
+        if (SupabaseApiKey.Classify(key) == SupabaseKeyKind.Anon)
+        {
+            Say($"Not saved. {SupabaseApiKey.AnonKeyAdvice}", Bad);
             return;
         }
 
