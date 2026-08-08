@@ -69,6 +69,15 @@ export interface SendMessageOptions {
   replyMarkup?: InlineKeyboardMarkup;
 }
 
+/** getWebhookInfo. `last_error_message` is where a 403 or a crash surfaces. */
+export interface WebhookInfo {
+  url: string;
+  pending_update_count?: number;
+  allowed_updates?: string[];
+  last_error_message?: string;
+  last_error_date?: number;
+}
+
 /** One entry in the bot's command menu. Telegram caps description at 256. */
 export interface BotCommand {
   /** Without the leading slash: lowercase letters, digits and underscores. */
@@ -173,6 +182,15 @@ export class TelegramClient {
       commands,
       ...(languageCode ? { language_code: languageCode } : {}),
     });
+  }
+
+  /** What Telegram believes about the webhook — the first thing to read when the bot is silent. */
+  async getWebhookInfo(): Promise<WebhookInfo> {
+    return this.call<WebhookInfo>('getWebhookInfo', {});
+  }
+
+  async getMe(): Promise<TelegramUser> {
+    return this.call<TelegramUser>('getMe', {});
   }
 }
 

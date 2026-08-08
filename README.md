@@ -68,6 +68,7 @@ theme (Apple-glass light or dark), stored per user. `/lang en`, `/theme dark`.
 api/                      Vercel serverless functions
   telegram/message.ts       webhook: parse, validate, enqueue, reply
   telegram/callback.ts      result sweeper for late-finishing commands
+  admin/setup.ts            one-URL Telegram wiring (webhook + command menu)
   cron/cleanup.ts           archive + timeout sweep (daily)
   cron/check-api-expiry.ts  credential expiry notices (daily)
   health.ts                 liveness + queue depth

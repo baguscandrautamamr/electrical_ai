@@ -9,22 +9,31 @@
 import { timingSafeEqual } from 'node:crypto';
 import { env } from '../config/env.js';
 
-export function isAuthorizedCron(request: Request): boolean {
+/**
+ * Constant-time comparison against CRON_SECRET.
+ *
+ * Returns false when no secret is configured: refusing is the safe reading of
+ * "nothing to check against".
+ */
+export function matchesCronSecret(presented: string): boolean {
   let expected: string;
   try {
     expected = env.cronSecret;
   } catch {
-    // No secret configured: refuse rather than run unauthenticated.
     return false;
   }
 
-  const header = request.headers.get('authorization') ?? '';
-  const presented = header.startsWith('Bearer ') ? header.slice(7) : header;
-
   const a = Buffer.from(presented);
   const b = Buffer.from(expected);
+  // timingSafeEqual throws on a length mismatch, and the length is not secret.
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+export function isAuthorizedCron(request: Request): boolean {
+  const header = request.headers.get('authorization') ?? '';
+  const presented = header.startsWith('Bearer ') ? header.slice(7) : header;
+  return matchesCronSecret(presented);
 }
 
 export function unauthorized(): Response {
