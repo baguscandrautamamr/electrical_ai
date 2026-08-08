@@ -15,7 +15,7 @@ parameters in full.
 
 | Role | Can |
 |---|---|
-| `viewer` | `/export`, and all read-only admin commands |
+| `viewer` | `/query`, `/export`, and all read-only admin commands |
 | `editor` | everything above, plus every device command and `/api connect` |
 | `admin` | everything above, plus `/user list` |
 
@@ -217,6 +217,38 @@ Set any count to `0`, or `fire_alarm=none`, to skip that category.
 /export type=hanger_schedule format=excel
 ```
 
+### `/query [room]`
+
+Reads the model and reports what is already there. The only command that opens
+no Revit transaction, so it cannot change the drawing — which is why a `viewer`
+may run it.
+
+Omit the room to search the whole model.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `what` | all, lighting, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room | all | `all` covers every device category; rooms are counted only when asked for by name |
+| `level` | string | | Restrict to one level, e.g. `"Level 1"` |
+| `detail` | summary\|list | summary | `list` also names each element |
+| `limit` | integer | 30 | Most items to name when `detail=list`; the cap is per query, not per category |
+
+```
+/query Office_A what=lighting detail=list
+/query what=hanger level="Level 1"
+```
+
+The reply leads with what was searched, because a count means nothing without
+it. A room name that matches nothing is reported as such rather than answered
+with `0` — "no such room" and "that room is empty" are different answers.
+
+Plain language works too: *"ada berapa lampu di Office_A?"*, *"list hanger di
+lantai 1"*, *"cek panel"*.
+
+Lighting groups carry total wattage, cable tray total length, rooms total area.
+`what=lighting` reads each fixture's `Wattage`, `Apparent Load` or `Load`
+parameter and falls back to the wattage in the family name — the same reading
+`/place_lighting` used when it placed them.
+
 ---
 
 ## Admin
@@ -231,7 +263,7 @@ Set any count to `0`, or `fire_alarm=none`, to skip that category.
 | `/api status` | viewer | Key hint, active/expired, expiry date |
 | `/api disconnect` | viewer | Deactivate the active credential |
 | `/user list` | admin | Users on the active project |
-| `/health`, `/status` | viewer | Database, queue depth, failures in the last hour |
+| `/health`, `/status` | viewer | Database, AI parser, queue depth, failures in the last hour |
 | `/theme light\|dark` | viewer | Switch theme; confirmation renders in the new one |
 | `/lang id\|en` | viewer | Switch language; confirmation renders in the new one |
 

@@ -38,6 +38,8 @@
     "your_telegram_id": "Your Telegram ID is {id} — give it to an admin so they can register you.",
     "nlp_unavailable": "Plain-language messages are off: ANTHROPIC_API_KEY is not set on the server. Slash commands still work — see /help.",
     "low_confidence": "I understood that as a device command but was not sure enough to run it. Rephrase it, or use the exact form from /help.",
+    "not_a_device_command": "I understood the sentence, but it is not a Revit command. This bot places and modifies electrical elements — see /help for what it can do.",
+    "nlp_error": "The Claude API call failed, so plain-language messages cannot be handled right now. Slash commands still work. The API said:",
     "bad_telegram_id": "That is not a Telegram id. It is a number — the bot tells anyone their own when they message it.",
     "usage_user_add": "Usage: /user add <telegram_id> <name> [viewer|editor|admin]",
     "user_not_found": "No user with that Telegram id. They must message the bot once first.",
@@ -53,6 +55,20 @@
     "bad_size_format": "bad size format, e.g. 150x100",
     "bad_date": "bad date format, use YYYY-MM-DD",
     "date_in_past": "must be a future date"
+  },
+  "query": {
+    "title": "MODEL QUERY",
+    "scope": "Scope",
+    "whole_model": "whole model",
+    "level": "Level",
+    "breakdown": "Breakdown",
+    "items": "Items",
+    "empty": "Nothing in the model matches that.",
+    "more": "+{count} more not shown.",
+    "hangers": "Hangers",
+    "panels": "Panels",
+    "rooms": "Rooms",
+    "room_not_found": "Room \"{room}\" not found; counted the whole model instead."
   },
   "lighting": {
     "title": "Lighting",
@@ -168,6 +184,7 @@
     "project_switched": "Active project switched to",
     "project_not_found": "Project not found: {code}",
     "health_title": "System Health",
+    "health_ai": "AI parser",
     "health_database": "Database",
     "health_queue_pending": "Queue pending",
     "health_queue_processing": "Processing",

@@ -24,6 +24,7 @@ export const DEVICE_COMMAND_TYPES = [
   'place_communication',
   'equip_room',
   'export',
+  'query',
 ] as const;
 
 export type DeviceCommandType = (typeof DEVICE_COMMAND_TYPES)[number];
@@ -205,6 +206,49 @@ export interface ExportResult {
   exports: ExportLinks;
 }
 
+/** One counted category in a query result. */
+export interface QueryGroup {
+  /** i18n key under `query.` or a device namespace, or a literal label. */
+  label: string;
+  count: number;
+  /** Secondary figure for the same row, e.g. "1.8 kW" or "42 m". */
+  detail?: string | null;
+}
+
+/** One named element, when the user asked for a list rather than a count. */
+export interface QueryItem {
+  /** Mark, device id, or element id — whatever identifies it on the drawing. */
+  id: string;
+  label: string;
+  detail?: string | null;
+}
+
+/**
+ * Answer to a read-only question about the model. The add-in opens no
+ * transaction to produce it, so a query can never change the drawing.
+ */
+export interface QueryResult {
+  kind: 'query';
+  /** The `what` that was asked for. */
+  what: string;
+  /** Room the query was asked about; null means the whole model. */
+  room: string | null;
+  /**
+   * False when `room` was asked for but no such room exists, in which case the
+   * counts cover the whole model — reported rather than silently answered.
+   */
+  room_matched?: boolean;
+  /** Level the query was scoped to; null means every level. */
+  level: string | null;
+  total: number;
+  groups: QueryGroup[];
+  items?: QueryItem[];
+  /** How many items matched beyond the ones listed. */
+  items_omitted?: number;
+  /** Free-form remarks, e.g. "room not found, searched the whole model". */
+  notes?: string[];
+}
+
 export interface ComplianceCheck {
   /** i18n key under `compliance.` or a literal label. */
   label: string;
@@ -216,7 +260,8 @@ export type CommandResult =
   | CableTrayResult
   | PlacementResult
   | EquipRoomResult
-  | ExportResult;
+  | ExportResult
+  | QueryResult;
 
 // ---------------------------------------------------------------------------
 // Parsing

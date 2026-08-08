@@ -74,5 +74,9 @@
   {
     "command": "export",
     "description": "Buat jadwal dan laporan / generate schedules and reports"
+  },
+  {
+    "command": "query",
+    "description": "Baca isi model: hitung/daftar yang sudah ada / read the model, changes nothing"
   }
 ]

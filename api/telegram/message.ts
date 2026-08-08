@@ -183,17 +183,19 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (outcome.kind === 'unparsed') {
-    // One message for three causes used to make an unset API key look identical
-    // to a phrasing Claude was unsure about — and only one of those is fixable
-    // by the person reading it.
+    // One message for several causes used to make a rejected API key look
+    // identical to a phrasing Claude was unsure about — and they need very
+    // different fixes from the person reading it.
     const key = {
       unknown_command: 'errors.unknown_command',
+      not_a_device_command: 'errors.not_a_device_command',
       nlp_unavailable: 'errors.nlp_unavailable',
       low_confidence: 'errors.low_confidence',
+      nlp_error: 'errors.nlp_error',
     }[outcome.reason];
     await telegram().sendMessage(
       chatId,
-      formatError(ctx, key, { command: text.split(/\s+/)[0] ?? text }),
+      formatError(ctx, key, { command: text.split(/\s+/)[0] ?? text }, outcome.detail),
     );
     return ok();
   }

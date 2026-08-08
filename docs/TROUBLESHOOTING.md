@@ -157,13 +157,28 @@ case-insensitive. Common causes:
 
 Quote names with spaces: `/place_lighting "Meeting Room 2" area=30`.
 
-## Natural language is misread
+## Natural language does not work
 
-- Use the slash command. It is deterministic, instant, and costs nothing.
-- Low-confidence parses (<0.55) are rejected rather than guessed at, so a vague
-  message gets "could not understand" rather than the wrong command.
-- With `ANTHROPIC_API_KEY` unset, only slash commands work — prose replies with
-  a parse failure.
+Send `/health` first. The **AI parser** row says whether the configured key can
+reach the configured model, and prints the API's own error when it cannot —
+that answers the question in one message instead of a log dive.
+
+The reply tells you which of these you have:
+
+| Reply | Meaning | Fix |
+| --- | --- | --- |
+| "Bahasa bebas sedang mati / Plain-language messages are off" | `ANTHROPIC_API_KEY` is not set on the deployment | Add it in Vercel → Settings → Environment Variables, then **redeploy** — env changes do not reach the running deployment on their own |
+| "Panggilan ke Claude API gagal / The Claude API call failed" + a code block | The key exists but the call was rejected. The code block is the API's own message | `401 authentication_error` → wrong or revoked key (check for a pasted newline). `400 invalid_request_error … credit balance` → top up at console.anthropic.com. `404 not_found_error` → the account cannot use `ANTHROPIC_MODEL`; unset it to fall back to `claude-opus-5`, or set one it can use. `429` → rate limited, retry |
+| "Kalimatnya saya mengerti, tapi bukan perintah Revit / not a Revit command" | The key works. The sentence asked for something outside what the bot does — placing or modifying elements, or reading them back with `/query` | See `/help` |
+| "belum cukup yakin / not sure enough to run it" | Parsed below the 0.55 confidence floor and rejected rather than guessed at | Rephrase, or use the exact form from `/help` |
+
+Other notes:
+
+- Slash commands never call Claude. They keep working while any of the above is
+  broken.
+- `max_tokens` for the parse call is 4096. Current models think by default and
+  the cap covers thinking *and* the JSON, so a smaller value truncates the
+  answer; a truncated response is reported as such rather than as bad phrasing.
 
 ## Cost is higher than expected
 

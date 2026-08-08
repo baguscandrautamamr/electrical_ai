@@ -38,6 +38,8 @@
     "your_telegram_id": "ID Telegram Anda {id} — berikan ke admin agar bisa didaftarkan.",
     "nlp_unavailable": "Bahasa bebas sedang mati: ANTHROPIC_API_KEY belum diisi di server. Perintah slash tetap jalan — lihat /help.",
     "low_confidence": "Saya menangkapnya sebagai perintah perangkat tapi belum cukup yakin untuk menjalankannya. Coba tulis ulang, atau pakai bentuk persis dari /help.",
+    "not_a_device_command": "Kalimatnya saya mengerti, tapi itu bukan perintah untuk Revit. Bot ini menempatkan atau mengubah elemen listrik — lihat /help untuk daftar yang bisa dikerjakan.",
+    "nlp_error": "Panggilan ke Claude API gagal, jadi kalimat bahasa bebas belum bisa diproses. Perintah slash tetap jalan. Jawaban dari API:",
     "bad_telegram_id": "Itu bukan ID Telegram. Bentuknya angka — bot menyebutkan ID milik siapa pun yang mengirim pesan kepadanya.",
     "usage_user_add": "Cara pakai: /user add <id_telegram> <nama> [viewer|editor|admin]",
     "user_not_found": "Tidak ada pengguna dengan ID Telegram itu. Dia harus mengirim pesan ke bot dulu.",
@@ -53,6 +55,20 @@
     "bad_size_format": "format ukuran salah, contoh: 150x100",
     "bad_date": "format tanggal salah, gunakan YYYY-MM-DD",
     "date_in_past": "tanggal harus di masa depan"
+  },
+  "query": {
+    "title": "HASIL BACA MODEL",
+    "scope": "Cakupan",
+    "whole_model": "seluruh model",
+    "level": "Level",
+    "breakdown": "Rincian",
+    "items": "Daftar",
+    "empty": "Tidak ada yang cocok dengan kriteria itu.",
+    "more": "+{count} lainnya tidak ditampilkan.",
+    "hangers": "Hanger",
+    "panels": "Panel",
+    "rooms": "Ruangan",
+    "room_not_found": "Ruangan \"{room}\" tidak ditemukan; yang dihitung seluruh model."
   },
   "lighting": {
     "title": "Lampu",
@@ -168,6 +184,7 @@
     "project_switched": "Proyek aktif diganti ke",
     "project_not_found": "Proyek tidak ditemukan: {code}",
     "health_title": "Status Sistem",
+    "health_ai": "Parser AI",
     "health_database": "Database",
     "health_queue_pending": "Antrean menunggu",
     "health_queue_processing": "Sedang diproses",

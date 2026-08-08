@@ -39,6 +39,26 @@ export interface CommandSpec {
 
 const MOUNTING = ['ceiling', 'wall', 'floor'] as const;
 
+/**
+ * What `/query` can count. Every entry maps to a Revit category (or, for
+ * `hanger`, to the configured hanger family) in the add-in's QueryHandler —
+ * adding one here without adding it there produces an empty group, not an error.
+ */
+export const QUERY_TARGETS = [
+  'all',
+  'lighting',
+  'receptacle',
+  'cable_tray',
+  'hanger',
+  'fire_alarm',
+  'telephone',
+  'lan',
+  'security',
+  'communication',
+  'panel',
+  'room',
+] as const;
+
 export const COMMAND_SPECS: Record<string, CommandSpec> = {
   // ---------------------------------------------------------------- lighting
   place_lighting: {
@@ -287,6 +307,36 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         aliases: ['export_type'],
       },
       format: { kind: 'enum', values: ['excel', 'pdf', 'dwg', 'dxf', 'ifc'], default: 'excel', describe: 'Output format' },
+    },
+  },
+
+  // ------------------------------------------------------------------ query
+  query: {
+    type: 'query',
+    name: 'query',
+    // Read-only, so the role floor is the lowest one: asking what is already
+    // in the model cannot change it.
+    role: 'viewer',
+    describe: 'Read the model: count or list what is already there. Changes nothing.',
+    example: '/query Office_A what=lighting detail=list',
+    subject: { name: 'room', required: false, describe: 'Room name or number; omit to search the whole model' },
+    params: {
+      what: {
+        kind: 'enum',
+        values: QUERY_TARGETS,
+        default: 'all',
+        describe: 'Which category to report',
+        aliases: ['category', 'target', 'type', 'device'],
+      },
+      level: { kind: 'string', describe: 'Restrict to one level, e.g. "Level 1"', aliases: ['floor', 'storey'] },
+      detail: {
+        kind: 'enum',
+        values: ['summary', 'list'],
+        default: 'summary',
+        describe: '"summary" counts them, "list" also names each one',
+        aliases: ['mode'],
+      },
+      limit: { kind: 'integer', default: 30, min: 1, max: 200, describe: 'Most items to name when detail=list' },
     },
   },
 };

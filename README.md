@@ -34,8 +34,10 @@ Eight device categories, each placeable from Telegram:
 | Security | `/place_security` | Cameras/sensors, coverage from FoV and resolution |
 | Communication | `/place_communication` | Speakers/antennas, coverage radius |
 
-Plus `/equip_room` to run all eight against one room, and `/export` for
-schedules and reports.
+Plus `/equip_room` to run all eight against one room, `/export` for schedules
+and reports, and `/query` to read back what is already in the model —
+`/query Office_A what=lighting`, or just "ada berapa lampu di Office_A?".
+`/query` opens no Revit transaction, so it cannot change the drawing.
 
 ### The hanger automation
 
