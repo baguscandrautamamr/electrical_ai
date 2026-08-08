@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  Static output directory for the Vercel build.
+
+  This project is API-only, but package.json defines a `build` script
+  (typecheck), so Vercel runs it and then looks for a static output directory.
+  Without one the deployment fails with "No Output Directory named 'public'
+  found after the Build completed" before any function is ever served.
+
+  So this page exists to be that directory's content. It also gives `/` a real
+  answer instead of a 404.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Revit Electrical Command Center</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f6f7;
+        --fg: #1c1c1e;
+        --muted: #6b6b70;
+        --line: #dededf;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #131316;
+          --fg: #f2f2f4;
+          --muted: #9a9aa1;
+          --line: #2c2c31;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem 1.25rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 ui-sans-serif, -apple-system, system-ui, sans-serif;
+      }
+      main { max-width: 34rem; }
+      h1 { font-size: 1.25rem; margin: 0 0 0.35rem; }
+      p { color: var(--muted); margin: 0 0 1.25rem; }
+      ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+      li { border-bottom: 1px solid var(--line); padding: 0.6rem 0; }
+      code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Revit Electrical Command Center</h1>
+      <p>Telegram-driven Revit electrical automation. There is no web UI — the bot is the interface.</p>
+      <ul>
+        <li><code><a href="/api/health">GET /api/health</a></code> — liveness and queue depth</li>
+        <li><code>POST /api/telegram/message</code> — Telegram webhook</li>
+        <li><code>GET /api/telegram/callback</code> — result sweeper</li>
+        <li><code>GET /api/cron/*</code> — scheduled jobs, bearer token required</li>
+      </ul>
+    </main>
+  </body>
+</html>

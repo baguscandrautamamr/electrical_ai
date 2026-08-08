@@ -74,6 +74,19 @@ different values.
 vercel --prod
 ```
 
+`package.json` defines a `build` script (a typecheck), so Vercel runs it and
+then expects a static output directory. This project is API-only, so `public/`
+exists purely to be that directory — `vercel.json` points `outputDirectory` at
+it, and it serves a small landing page at `/`. Deleting it fails the build with
+*No Output Directory named "public" found after the Build completed*, before any
+function is served.
+
+Reproduce a deployment build locally before pushing:
+
+```bash
+npx vercel build
+```
+
 `vercel.json` already registers the cron jobs: cleanup daily at 02:00 UTC,
 credential expiry daily at 01:00 UTC. Both require
 `Authorization: Bearer $CRON_SECRET`, which Vercel Cron supplies automatically.

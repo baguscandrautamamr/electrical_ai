@@ -1,5 +1,19 @@
 # Troubleshooting
 
+## The Vercel deployment fails
+
+A deployment that errors after a few seconds failed to *build* — env vars are
+read per request, so a missing one cannot break a build. Read the build log:
+
+- *No Output Directory named "public" found* → `public/` is missing. The `build`
+  script makes Vercel expect a static output directory; see
+  [DEPLOYMENT.md](DEPLOYMENT.md) §3.
+- *Cron expressions must be...* / a cron limit error → a schedule is more
+  frequent than the Hobby plan's once-a-day limit. See DEPLOYMENT.md §3.
+- A `tsc` error → the typecheck gate did its job. `npm run check` locally.
+
+`npx vercel build` reproduces the deployment build on your machine.
+
 ## The bot does not reply at all
 
 ```bash
