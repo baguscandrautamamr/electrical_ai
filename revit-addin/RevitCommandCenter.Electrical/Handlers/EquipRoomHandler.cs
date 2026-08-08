@@ -24,7 +24,23 @@ public sealed class EquipRoomHandler : ICommandHandler
 
     public CommandResult Execute(HandlerContext context, CommandModel command)
     {
-        var room = command.GetString("room");
+        var requested = command.GetString("room");
+
+        // Resolved once, here, rather than once inside every sub-handler.
+        // Failing now costs one clear message; failing later cost one copy per
+        // category, and — before the lookup stopped guessing at partial matches
+        // — could have equipped a room nobody asked for.
+        var lookup = RevitUtils.ResolveRoom(context.Doc, requested);
+        if (lookup.Room is null)
+        {
+            return CommandResult.Fail(lookup.Problem ?? $"Room '{requested}' not found.", retryable: false);
+        }
+
+        // Sub-commands are handed the resolved name, so every category lands in
+        // the same room even where the typed name was only a partial match.
+        var room = lookup.Room.Name;
+        command.Params["room"] = room;
+
         var results = new List<object>();
         var failures = new List<string>();
 
@@ -108,6 +124,23 @@ public sealed class EquipRoomHandler : ICommandHandler
         };
         if (space > 0) lighting["space"] = space;
         yield return ("place_lighting", lighting);
+
+        // Straight after the fixtures, because the fixtures are what it
+        // switches — a room lit and not switched is not a finished room.
+        var switches = command.GetInt("switches", 1);
+        if (switches > 0)
+        {
+            yield return ("place_lighting_device", new JObject
+            {
+                ["room"] = room,
+                ["count"] = switches,
+                ["type"] = "single_gang",
+                ["height"] = 1.2,
+                ["mounting"] = "wall",
+                ["placement"] = "door",
+                ["family"] = "Switch",
+            });
+        }
 
         var outlets = command.GetInt("outlets", 4);
         if (outlets > 0)

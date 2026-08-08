@@ -11,6 +11,40 @@ Office_A` resolves to `/place_receptacle Office_A count=4`.
 `/help` lists everything; `/help create_cable_tray` shows one command's
 parameters in full.
 
+## Saying it in Indonesian
+
+Every device command answers to a `pasang_` name as well as its `place_` one.
+They are the same command — same parameters, same behaviour — so use whichever
+reads better:
+
+| English | Indonesian |
+|---|---|
+| `/place_lighting` | `/pasang_lampu`, `/pasang_lighting` |
+| `/place_lighting_device` | `/pasang_saklar`, `/pasang_switch` |
+| `/place_receptacle` | `/pasang_stopkontak`, `/pasang_stop_kontak` |
+| `/create_cable_tray` | `/pasang_cable_tray`, `/pasang_kabel_tray`, `/buat_cable_tray` |
+| `/add_hangers` | `/pasang_hanger`, `/tambah_hanger` |
+| `/place_fire_alarm` | `/pasang_fire_alarm`, `/pasang_detektor` |
+| `/place_telephone` | `/pasang_telepon` |
+| `/place_lan` | `/pasang_lan`, `/pasang_jaringan`, `/pasang_data` |
+| `/place_security` | `/pasang_cctv`, `/pasang_kamera` |
+| `/place_communication` | `/pasang_speaker`, `/pasang_komunikasi` |
+| `/equip_room` | `/lengkapi_ruangan`, `/pasang_semua` |
+
+Only the `place_` names appear in Telegram's command menu — one entry per
+command keeps it readable — but the parser accepts either everywhere.
+
+## Room names
+
+Give the room exactly as it reads on the drawing, including its number:
+`/place_lighting meeting 1`, not `/place_lighting meeting`. Quotes are optional;
+every word up to the first `key=value` is part of the name.
+
+A name that matches no room is reported as such. A name that matches more than
+one — `meeting`, where the model has MEETING 1 and MEETING 2 — is reported too,
+with the candidates listed, rather than run against whichever the add-in found
+first.
+
 ## Roles
 
 | Role | Can |
@@ -34,6 +68,7 @@ load across circuits.
 |---|---|---|---|
 | `space` | number | from the model | Floor area in m²; read off the Revit space when omitted |
 | `count` | integer | from `lux_target` | Number of fixtures; stating it overrides the lux calculation |
+| `grid` | size | — | Explicit layout, columns × rows, e.g. `3x2` |
 | `height` | number | 2.8 | Ceiling height in m |
 | `lux_target` | number | 300 | Target illumination |
 | `fixture_type` | string | LED_15W | Revit family name; wattage is read from it |
@@ -44,17 +79,55 @@ load across circuits.
 
 ```
 /place_lighting Lounge count=6 height=3 fixture_type=act_e_downlight
+/place_lighting meeting 1 3x2 height=3 fixture_type=downlight
 ```
 
 Only the room is required. Everything else has an answer already: the area comes
 from the Revit space, and the fixture count from the lumen method —
 `N = (E × A) / (F × UF × MF)`, with a 0.6 combined utilisation and maintenance
-factor — unless you state `count`, in which case you get exactly that many and
-the reply reports the lux they actually achieve.
+factor — unless you state `count`, in which case you get exactly that many.
+
+**The grid.** `3x2` is three fixtures across by two deep, six in total, laid out
+as written rather than re-shaped to fit. It is how a lighting layout is
+described on a drawing, and it says something `count` cannot: six fixtures is a
+very different ceiling as `3x2` than as `6x1`. Written bare after the room name
+it is recognised as the grid, so `/place_lighting meeting 1 3x2` works — as does
+`grid=3x2`, and `3 x 2` with spaces. The grid runs along the room's longer side,
+so the same `3x2` reads correctly in a room of either proportion.
+
+Lux is not reported back. The lumen-method figure is an estimate over the floor
+area with an assumed efficacy — fine for sizing a count nobody stated, not
+something to grade a count somebody did.
 
 `space` was called `area`; both names still work, as does the Indonesian `luas`.
 `breaker_max` is gone — lighting circuits are split at 16 A, which is not a
 decision worth making per command.
+
+### `/place_lighting_device <room>`
+
+Switches and dimmers — Revit's **Lighting Devices** category, which is not the
+same thing as the Lighting Fixtures `/place_lighting` places. The fixtures are
+the lamps; these are what turn them on.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `type` | single_gang\|double_gang\|three_gang\|four_gang\|two_way\|dimmer\|occupancy_sensor | single_gang | `three_gang` is the "S3" on the drawing |
+| `count` | integer | 1 | Number of switch plates |
+| `height` | number | 1.2 | Height from floor (m) |
+| `mounting` | ceiling\|wall\|floor | wall | |
+| `placement` | door\|walls\|manual | door | Beside the door, or spread along the walls |
+| `controls` | string | — | What it switches: a circuit id, a fixture mark, or a group name |
+| `family` | string | Switch | Revit family name |
+
+```
+/place_lighting_device Meeting_1 type=three_gang count=1 height=1.2 controls=LF-001
+/pasang_saklar meeting 1
+```
+
+By default each switch goes beside a door in the room, on the wall, 250 mm from
+the jamb — where a switch belongs, and where you would otherwise drag it after
+the command ran. A room with no door in the model falls back to the walls, as
+does `placement=walls`.
 
 ### `/place_receptacle <room>`
 
@@ -188,15 +261,19 @@ Checks reported: smoke spacing ≤5.5 m, heat spacing ≤7.0 m, manual call poin
 
 ### `/equip_room <room>`
 
-Runs all eight categories against one room. A failure in one category does not
-abort the rest — a missing camera family should not cost you the lighting that
-placed fine.
+Runs every category against one room. A failure in one category does not abort
+the rest — a missing camera family should not cost you the lighting that placed
+fine.
+
+The room is resolved once, up front. An ambiguous name fails here with one clear
+message instead of nine copies of it.
 
 | Parameter | Type | Default |
 |---|---|---|
 | `space` | number | from the model |
 | `height` | number | 2.8 |
 | `lux_target` | number | 300 |
+| `switches` | integer | 1 |
 | `outlets` | integer | 4 |
 | `phone_jacks` | integer | 2 |
 | `lan_jacks` | integer | 4 |
@@ -210,14 +287,14 @@ placed fine.
 Set any count to `0`, or `fire_alarm=none`, to skip that category.
 
 ```
-/equip_room Office_A height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500
+/equip_room Office_A height=2.8 lux_target=300 switches=1 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500
 ```
 
 ### `/export`
 
 | Parameter | Type | Default |
 |---|---|---|
-| `type` | lighting_schedule, receptacle_schedule, cable_tray, hanger_schedule, fire_alarm_schedule, telephone_schedule, lan_schedule, security_schedule, communication_schedule, panel_schedule, compliance_report, all | all |
+| `type` | lighting_schedule, lighting_device_schedule, receptacle_schedule, cable_tray, hanger_schedule, fire_alarm_schedule, telephone_schedule, lan_schedule, security_schedule, communication_schedule, panel_schedule, compliance_report, all | all |
 | `format` | excel\|pdf\|dwg\|dxf\|ifc | excel |
 
 ```
@@ -234,7 +311,7 @@ Omit the room to search the whole model.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `what` | all, lighting, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room | all | `all` covers every device category; rooms are counted only when asked for by name |
+| `what` | all, lighting, lighting_device, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room | all | `all` covers every device category; rooms are counted only when asked for by name |
 | `level` | string | | Restrict to one level, e.g. `"Level 1"` |
 | `detail` | summary\|list | summary | `list` also names each element |
 | `limit` | integer | 30 | Most items to name when `detail=list`; the cap is per query, not per category |

@@ -8,13 +8,19 @@
  * mix them):
  *
  *   /place_lighting Lounge count=6 height=3
+ *   /place_lighting meeting 1 3x2 height=3
+ *   /pasang_saklar Meeting_1 type=three_gang
  *   /create_cable_tray CT-A1 from: PA-01 to: Zone_A hanger_spacing: 1500
  *   /place_security Lobby type=camera zone_id="North Wing"
  *   /api connect abc123 2026-12-31
+ *
+ * The command name may be any of the names in its spec, so the Indonesian
+ * `pasang_` forms parse identically to the `place_` ones. Everything before the
+ * first `key=value` is the subject, so a room name may be several words.
  */
 
 import type { ParsedCommand } from '../types/index.js';
-import { COMMAND_SPECS, aliasMap, specFor } from './schema.js';
+import { aliasMap, specFor } from './schema.js';
 
 /**
  * Splits on whitespace but keeps quoted runs together.
@@ -124,6 +130,51 @@ export function parseAdmin(text: string): AdminParse | null {
   }
 }
 
+/** The slash name a message opens with, or null when it opens with prose. */
+function commandName(tokens: string[]): string | null {
+  const head = tokens[0];
+  if (!head?.startsWith('/')) return null;
+  // Strip the @botname suffix Telegram adds in group chats.
+  return head.slice(1).split('@')[0]!.toLowerCase();
+}
+
+/** A bare layout token: "3x2". */
+const GRID_TOKEN = /^\d{1,2}[x×]\d{1,2}$/i;
+
+/**
+ * Re-joins a grid the tokenizer split on its spaces: "3 x 2", "3x 2", "3 x2".
+ *
+ * Applied only to the positional words of a command that has a grid, so a room
+ * genuinely called "Zone 3 x 2" is left alone everywhere else.
+ */
+function coalesceGridTokens(tokens: string[]): string[] {
+  const out: string[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const [a, b, c] = [tokens[i]!, tokens[i + 1], tokens[i + 2]];
+
+    if (/^\d{1,2}$/.test(a) && (b === 'x' || b === '×') && c !== undefined && /^\d{1,2}$/.test(c)) {
+      out.push(`${a}x${c}`);
+      i += 2;
+      continue;
+    }
+    if (/^\d{1,2}[x×]$/i.test(a) && b !== undefined && /^\d{1,2}$/.test(b)) {
+      out.push(`${a.slice(0, -1)}x${b}`);
+      i += 1;
+      continue;
+    }
+    if (/^\d{1,2}$/.test(a) && b !== undefined && /^[x×]\d{1,2}$/i.test(b)) {
+      out.push(`${a}x${b.slice(1)}`);
+      i += 1;
+      continue;
+    }
+
+    out.push(a);
+  }
+
+  return out;
+}
+
 /**
  * Parses a device command. Returns null when `text` is not a recognised
  * slash-command, which is the signal to try the Claude fallback.
@@ -131,12 +182,10 @@ export function parseAdmin(text: string): AdminParse | null {
 export function parseGrammar(text: string): ParsedCommand | null {
   const trimmed = text.trim();
   const tokens = coalesceColonPairs(tokenize(trimmed));
-  const head = tokens[0];
-  if (!head?.startsWith('/')) return null;
+  const name = commandName(tokens);
+  if (name === null) return null;
 
-  // Strip the @botname suffix Telegram adds in group chats.
-  const name = head.slice(1).split('@')[0]!.toLowerCase();
-  const spec = COMMAND_SPECS[name];
+  const spec = specFor(name);
   if (!spec) return null;
 
   const aliases = aliasMap(spec);
@@ -156,9 +205,25 @@ export function parseGrammar(text: string): ParsedCommand | null {
     }
   }
 
+  // A bare "3x2" is the fixture layout, not part of the room's name — it is how
+  // the grid is written on a drawing, and quoting it would be a surprise.
+  const hasGrid = 'grid' in spec.params;
+  const words: string[] = [];
+  for (const token of hasGrid ? coalesceGridTokens(positional) : positional) {
+    if (hasGrid && params.grid === undefined && GRID_TOKEN.test(token)) {
+      params.grid = token;
+      continue;
+    }
+    words.push(token);
+  }
+
   return {
     type: spec.type,
-    subject: spec.subject ? (positional[0] ?? null) : null,
+    // Rooms are called "MEETING 1" and "Ruang Rapat 2" on real drawings, so the
+    // subject is every positional word, not the first. Taking only the first
+    // left "/equip_room meeting 1" asking for a room called "meeting", which
+    // the add-in then resolved by prefix — onto MEETING 2.
+    subject: spec.subject ? (words.join(' ') || null) : null,
     params,
     source: 'grammar',
     raw: trimmed,
@@ -166,31 +231,61 @@ export function parseGrammar(text: string): ParsedCommand | null {
 }
 
 /**
+ * Function words: the ones that carry no meaning on their own and so never
+ * appear in a room name, but appear in every sentence.
+ *
+ * Deliberately no nouns. "lampu", "ruang" and "room" all turn up in sentences
+ * too, but they also turn up in the names of real rooms — "Ruang Rapat 2" is a
+ * subject, and a list that rejected it would send a perfectly good slash
+ * command to Claude, or nowhere at all when no API key is configured.
+ */
+const FUNCTION_WORDS = new Set([
+  // Indonesian
+  'di', 'ke', 'dari', 'pada', 'ada', 'adakah', 'berapa', 'yang', 'dengan', 'pake',
+  'pakai', 'untuk', 'dan', 'atau', 'tolong', 'kasih', 'coba', 'cek', 'apa', 'apakah',
+  'sudah', 'belum', 'bisa', 'mau', 'ingin', 'saya', 'aku', 'kita', 'juga', 'saja',
+  'aja', 'lagi', 'kalau', 'jadi', 'biar', 'agar',
+  // English
+  'the', 'a', 'an', 'in', 'on', 'at', 'of', 'for', 'and', 'or', 'with', 'how',
+  'many', 'much', 'is', 'are', 'was', 'were', 'there', 'what', 'which', 'where',
+  'please', 'can', 'could', 'would', 'i', 'we', 'you', 'do', 'does', 'did', 'to',
+]);
+
+/** Strips the punctuation a sentence carries, so "revit?" reads as "revit". */
+function bareWord(token: string): string {
+  return token.toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '');
+}
+
+/**
  * True when a known command is followed by a sentence rather than parameters.
  *
  * Telegram's command menu inserts `/query ` and leaves the cursor there, so
- * people type their question after it. Read as grammar, the first word becomes
- * the subject — `/query ada berapa ruangan di revit?` asks about a room called
- * "ada". Sending the whole thing to Claude answers what they meant.
+ * people type their question after it. Read as grammar, those words become the
+ * subject — `/query ada berapa ruangan di revit?` asks about a room called "ada
+ * berapa ruangan di revit". Sending the whole thing to Claude answers what they
+ * meant.
  *
- * Two positional words with no `key=value` anywhere is the signal: one bare
- * word is an ordinary subject (`/query Office_A`), and any pair means they are
- * writing parameters.
+ * The signal is a function word among the arguments, or more bare words than a
+ * room name plausibly has. A `key=value` anywhere means they are writing
+ * parameters, and short bare runs are room names — "MEETING 1" is a room,
+ * not a sentence.
  */
 export function hasProseArguments(text: string): boolean {
   const tokens = coalesceColonPairs(tokenize(text.trim()));
-  const head = tokens[0];
-  if (!head?.startsWith('/')) return false;
-  if (!COMMAND_SPECS[head.slice(1).split('@')[0]!.toLowerCase()]) return false;
+  const name = commandName(tokens);
+  if (name === null || !specFor(name)) return false;
 
   const args = tokens.slice(1);
-  return args.length >= 2 && args.every((token) => splitPair(token) === null);
+  if (args.length < 2 || args.some((token) => splitPair(token) !== null)) return false;
+
+  const words = args.map(bareWord);
+  return words.some((word) => FUNCTION_WORDS.has(word)) || words.length > 4;
 }
 
 /** True when `text` names a command this bot knows (device or admin). */
 export function isKnownCommand(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed.startsWith('/')) return false;
-  const name = tokenize(trimmed)[0]!.slice(1).split('@')[0]!.toLowerCase();
-  return Boolean(specFor(name)) || parseAdmin(trimmed) !== null;
+  const name = commandName(coalesceColonPairs(tokenize(trimmed)));
+  return (name !== null && Boolean(specFor(name))) || parseAdmin(trimmed) !== null;
 }

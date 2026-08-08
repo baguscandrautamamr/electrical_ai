@@ -36,6 +36,10 @@
     "description": "Pasang lampu, hitung beban dan sirkuit / auto-place light fixtures"
   },
   {
+    "command": "place_lighting_device",
+    "description": "Pasang saklar/dimmer di dinding dekat pintu / place switches"
+  },
+  {
     "command": "place_receptacle",
     "description": "Pasang stopkontak sepanjang dinding / auto-place outlets"
   },

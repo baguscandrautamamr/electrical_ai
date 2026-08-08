@@ -37,6 +37,10 @@ public sealed class LightingHandler : DevicePlacementHandler
 
     protected override int ResolveCount(CommandModel command, Room room)
     {
+        // A stated grid is a stated count: "3x2" is six fixtures, laid out.
+        var grid = RevitUtils.ParseGrid(command.GetString("grid"));
+        if (grid is not null) return grid.Value.Cols * grid.Value.Rows;
+
         // "pasang 6 lampu" means six. The lumen method is how many fixtures the
         // room needs when nobody has said; it is not a correction to apply to
         // somebody who has.
@@ -55,7 +59,7 @@ public sealed class LightingHandler : DevicePlacementHandler
         return Math.Max(1, (int)Math.Ceiling(required));
     }
 
-    protected override List<XYZ> ResolvePoints(
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
@@ -65,7 +69,14 @@ public sealed class LightingHandler : DevicePlacementHandler
         var baseZ = RevitUtils.RoomCenter(room)?.Z ?? 0;
         var mountZ = baseZ + RevitUnits.MToFeet(mountHeightM);
 
-        return RevitUtils.GenerateCeilingGrid(room, count, mountZ);
+        // A stated grid is laid out as written; otherwise the room is filled
+        // with the squarest grid that holds the count.
+        var grid = RevitUtils.ParseGrid(command.GetString("grid"));
+        var points = grid is not null
+            ? RevitUtils.GenerateCeilingGrid(room, grid.Value.Cols, grid.Value.Rows, mountZ)
+            : RevitUtils.GenerateCeilingGrid(room, count, mountZ);
+
+        return points.Select(DevicePlacement.At).ToList();
     }
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>
@@ -114,30 +125,37 @@ public sealed class LightingHandler : DevicePlacementHandler
 
         var circuits = CircuitsFor(totalLoad, BreakerAmps, voltage);
 
-        var areaSqM = RevitUtils.AreaSqM(command, room);
-        var achievedLux = areaSqM > 0
-            ? placed.Count * wattage * LumensPerWatt * LightLossFactor / areaSqM
-            : 0;
-
-        result.TotalLoadW = totalLoad;
-        result.CircuitsCreated = circuits;
-        result.Details = new Dictionary<string, object?>
+        var details = new Dictionary<string, object?>
         {
-            ["lighting.lux_achieved"] = $"{achievedLux:F0} lux",
             ["lighting.spacing"] = command.GetString("spacing", "auto"),
         };
 
-        var luxTarget = command.GetDouble("lux_target", 300);
+        var grid = RevitUtils.ParseGrid(command.GetString("grid"));
+        if (grid is not null)
+        {
+            details["lighting.grid"] = $"{grid.Value.Cols}x{grid.Value.Rows}";
+        }
+
+        result.TotalLoadW = totalLoad;
+        result.CircuitsCreated = circuits;
+        result.Details = details;
+
+        // Lux is not reported on the placement reply at all.
+        //
+        // The figure was a lumen-method estimate over the room's floor area
+        // with an assumed efficacy and loss factor — a sanity check, nowhere
+        // near a photometric calculation. Printed beside a ✗, it told an
+        // engineer who had asked for exactly ten fixtures that their own
+        // decision had failed a test, when what it had failed was this
+        // approximation's opinion of it. The lumen method still sizes a count
+        // nobody stated (see ResolveCount); it just no longer grades a count
+        // somebody did.
         result.Compliance = new List<ComplianceCheckDto>
         {
             ComplianceCheckDto.Of(
                 "compliance.breaker_load",
                 totalLoad <= BreakerAmps * voltage * 0.8 * circuits,
                 $"{totalLoad:F0} W / {circuits} circuit(s)"),
-            ComplianceCheckDto.Of(
-                "lighting.lux_achieved",
-                achievedLux >= luxTarget,
-                $"{achievedLux:F0} / {luxTarget:F0} lux"),
         };
     }
 

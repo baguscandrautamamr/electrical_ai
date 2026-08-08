@@ -17,21 +17,17 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("count", 4));
 
-    protected override List<XYZ> ResolvePoints(
+    /// <summary>
+    /// Outlets go on the vertical face of the wall they sit against, which is
+    /// how they are placed by hand and what keeps them attached to it.
+    /// </summary>
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
-        int count)
-    {
-        var heightM = command.GetDouble("height", 0.4);
-        var heightFeet = RevitUnits.MToFeet(heightM);
-
-        return command.GetString("placement", "walls").ToLowerInvariant() switch
-        {
-            "manual" or "walls" or "perimeter" => RevitUtils.GeneratePerimeterPoints(room, count, heightFeet),
-            _ => RevitUtils.GeneratePerimeterPoints(room, count, heightFeet),
-        };
-    }
+        int count) =>
+        RevitUtils.GeneratePerimeterPlacements(
+            room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>
         RevitUtils.FindSymbol(context.Doc, Category, command.GetString("type", "receptacle"));

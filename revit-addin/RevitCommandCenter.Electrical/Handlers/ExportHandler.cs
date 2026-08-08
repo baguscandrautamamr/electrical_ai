@@ -90,6 +90,12 @@ public sealed class ExportHandler : ICommandHandler
                 new[] { "Mark", "Type", "Level", "Room", "Element Id" }));
         }
 
+        if (Want("lighting_device_schedule"))
+        {
+            sheets.Add(DeviceSheet(doc, "Switches", BuiltInCategory.OST_LightingDevices,
+                new[] { "Mark", "Type", "Level", "Room", "Element Id" }));
+        }
+
         if (Want("receptacle_schedule"))
         {
             sheets.Add(DeviceSheet(doc, "Receptacles", BuiltInCategory.OST_ElectricalFixtures,

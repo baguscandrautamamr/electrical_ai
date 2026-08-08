@@ -15,12 +15,14 @@
     "seconds": "seconds",
     "units": "units",
     "schedules": "Schedules",
+    "note": "Note",
     "unknown_error": "An unknown error occurred."
   },
   "ack": {
     "queued": "Command queued. Processing...",
     "position": "Queue position",
     "command": "Command",
+    "suggestion": "Suggestion",
     "waiting_revit": "Waiting for the Revit add-in to pick it up (polls every {seconds} seconds)."
   },
   "errors": {
@@ -78,7 +80,17 @@
     "load": "Load",
     "circuits": "Circuits",
     "lux_achieved": "Lux achieved",
+    "grid": "Grid",
     "spacing": "Fixture spacing"
+  },
+  "lighting_device": {
+    "title": "Switches",
+    "created": "SWITCHES PLACED",
+    "devices": "Switches",
+    "switch_type": "Switch type",
+    "height": "Height from floor",
+    "controls": "Controls",
+    "placement": "Placement"
   },
   "receptacle": {
     "title": "Receptacles",

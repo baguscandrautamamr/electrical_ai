@@ -34,7 +34,7 @@ public sealed class CommunicationHandler : DevicePlacementHandler
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("quantity", 1));
 
-    protected override List<XYZ> ResolvePoints(
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
@@ -42,7 +42,9 @@ public sealed class CommunicationHandler : DevicePlacementHandler
     {
         var baseZ = RevitUtils.RoomCenter(room)?.Z ?? 0;
         var mountZ = baseZ + RevitUnits.MToFeet(command.GetDouble("height", 2.8));
-        return RevitUtils.GenerateCeilingGrid(room, count, mountZ);
+        return RevitUtils.GenerateCeilingGrid(room, count, mountZ)
+            .Select(DevicePlacement.At)
+            .ToList();
     }
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>

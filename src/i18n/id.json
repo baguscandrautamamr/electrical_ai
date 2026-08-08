@@ -15,12 +15,14 @@
     "seconds": "detik",
     "units": "unit",
     "schedules": "Jadwal",
+    "note": "Catatan",
     "unknown_error": "Terjadi kesalahan yang tidak diketahui."
   },
   "ack": {
     "queued": "Perintah masuk antrean. Sedang diproses...",
     "position": "Posisi antrean",
     "command": "Perintah",
+    "suggestion": "Saran",
     "waiting_revit": "Menunggu Revit add-in mengambil perintah (polling tiap {seconds} detik)."
   },
   "errors": {
@@ -78,7 +80,17 @@
     "load": "Beban",
     "circuits": "Circuit",
     "lux_achieved": "Lux tercapai",
+    "grid": "Grid",
     "spacing": "Jarak antar fixture"
+  },
+  "lighting_device": {
+    "title": "Saklar",
+    "created": "SAKLAR DITEMPATKAN",
+    "devices": "Saklar",
+    "switch_type": "Tipe saklar",
+    "height": "Tinggi dari lantai",
+    "controls": "Mengontrol",
+    "placement": "Penempatan"
   },
   "receptacle": {
     "title": "Stop Kontak",

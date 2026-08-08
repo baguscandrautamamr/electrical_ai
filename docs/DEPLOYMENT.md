@@ -24,6 +24,11 @@ Telegram webhook registration, then seed a project and user.
    > error — so the add-in polls forever, claims nothing, and commands pile up
    > with no failure to show for it. `0002_claim_any_project.sql` is what makes
    > a null project mean "any". Run all of them.
+   >
+   > `0003_lighting_switch_devices.sql` adds the table `/place_lighting_device`
+   > writes to. Skip it and switches still get placed in Revit — the model is
+   > the source of truth — but the row insert fails and the command reports an
+   > error for work it actually did.
 
 3. From **Settings → API**, copy:
    - Project URL → `SUPABASE_URL`
@@ -47,6 +52,7 @@ queue functions: `claim_next_command`, `complete_command`, `fail_command`.
 
    ```
    place_lighting - Place light fixtures in a room
+   place_lighting_device - Place switches and dimmers on the wall
    place_receptacle - Place outlets in a room
    create_cable_tray - Route a cable tray and place hangers
    add_hangers - Add hangers to an existing tray
@@ -55,7 +61,7 @@ queue functions: `claim_next_command`, `complete_command`, `fail_command`.
    place_lan - Place network jacks
    place_security - Place cameras and sensors
    place_communication - Place speakers and antennas
-   equip_room - Place all eight categories in one room
+   equip_room - Place every device category in one room
    export - Generate schedules and reports
    project - List or switch project
    api - Manage API credentials

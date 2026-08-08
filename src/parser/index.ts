@@ -2,7 +2,7 @@
  * Parser entry point: grammar first, Claude second.
  */
 
-import type { ParsedCommand } from '../types/index.js';
+import type { Language, ParsedCommand } from '../types/index.js';
 import { hasAnthropicKey } from '../config/env.js';
 import { parseGrammar, parseAdmin, hasProseArguments, type AdminParse } from './grammar.js';
 import { parseWithClaude, MIN_CONFIDENCE, NlpError } from './claude.js';
@@ -25,13 +25,23 @@ export type UnparsedReason =
 export type ParseOutcome =
   | { kind: 'admin'; admin: AdminParse }
   | { kind: 'device'; command: ParsedCommand }
-  | { kind: 'unparsed'; reason: UnparsedReason; detail?: string };
+  /**
+   * `note` is what the model had to say about a message it could not turn into
+   * a command — an answer to a question, or why the request has no command
+   * behind it. Worth more to the sender than the generic reason alone.
+   */
+  | { kind: 'unparsed'; reason: UnparsedReason; detail?: string; note?: string };
+
+export interface ParseOptions {
+  /** Language the AI's advice is written in. */
+  language?: Language;
+}
 
 /**
  * Resolves a raw Telegram message into either an admin action, a device
  * command, or a failure the caller can explain to the user.
  */
-export async function parseMessage(text: string): Promise<ParseOutcome> {
+export async function parseMessage(text: string, options: ParseOptions = {}): Promise<ParseOutcome> {
   const trimmed = text.trim();
   if (trimmed === '') return { kind: 'unparsed', reason: 'unknown_command' };
 
@@ -57,7 +67,7 @@ export async function parseMessage(text: string): Promise<ParseOutcome> {
 
   let result;
   try {
-    result = await parseWithClaude(trimmed);
+    result = await parseWithClaude(trimmed, options.language ?? 'id');
   } catch (error) {
     // A broken key or an unreachable model is not a phrasing problem, and
     // telling the user to rephrase would send them chasing the wrong thing.
@@ -67,8 +77,20 @@ export async function parseMessage(text: string): Promise<ParseOutcome> {
     throw error;
   }
 
-  if (result.kind === 'unknown') return { kind: 'unparsed', reason: 'not_a_device_command' };
-  if (result.confidence < MIN_CONFIDENCE) return { kind: 'unparsed', reason: 'low_confidence' };
+  if (result.kind === 'unknown') {
+    return {
+      kind: 'unparsed',
+      reason: 'not_a_device_command',
+      ...(result.note ? { note: result.note } : {}),
+    };
+  }
+  if (result.confidence < MIN_CONFIDENCE) {
+    return {
+      kind: 'unparsed',
+      reason: 'low_confidence',
+      ...(result.parsed.note ? { note: result.parsed.note } : {}),
+    };
+  }
 
   return { kind: 'device', command: result.parsed };
 }
