@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using Newtonsoft.Json;
+using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Utils;
 
 namespace RevitCommandCenter.Electrical.Database;
@@ -16,9 +17,16 @@ public sealed class SupabaseClient : IDisposable
     private readonly HttpClient _http;
     private readonly string _baseUrl;
 
+    /// <summary>
+    /// Key class this client authenticates with. Kept so a refused write can
+    /// name the cause instead of quoting PostgREST at the user.
+    /// </summary>
+    public SupabaseKeyKind KeyKind { get; }
+
     public SupabaseClient(string baseUrl, string apiKey)
     {
         _baseUrl = baseUrl.TrimEnd('/');
+        KeyKind = SupabaseApiKey.Classify(apiKey);
 
         _http = new HttpClient
         {

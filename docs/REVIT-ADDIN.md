@@ -117,6 +117,13 @@ Supabase actually said if something is wrong, and on success fills the project
 dropdown from your `projects` table so you pick one by code and name rather than
 pasting a UUID. Save, then press **Connect**.
 
+It has to be the `service_role` key — labelled **secret** on newer projects, and
+starting `sb_secret_`. The anon/publishable key is the one the dashboard shows
+first and it authenticates perfectly well, which is what makes it such an
+expensive mistake: row-level security applies to it, so the command queue reads
+as permanently empty and the add-in sits there looking idle. Settings and Status
+both name the key class now, and Settings refuses to save an anon key.
+
 If the project list comes back empty, the database has no projects yet: run
 [`supabase/seed_first_user.sql`](../supabase/seed_first_user.sql) first.
 

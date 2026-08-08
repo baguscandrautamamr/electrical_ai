@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Utils;
 
 namespace RevitCommandCenter.Electrical.Database;
@@ -52,6 +53,22 @@ public static class ProjectRegistrar
                 ? $"Could not register project '{name}'."
                 : $"Registered project '{name}' ({code}).");
             return id;
+        }
+        catch (SupabaseException ex) when (ex.StatusCode is 401 or 403)
+        {
+            // Nothing but the service_role key may write to projects, so a
+            // refusal here has one likely cause and quoting PostgREST's
+            // "42501 new row violates row-level security policy" at the user
+            // has never once led anyone to it.
+            Logger.Error(
+                $"Could not register project '{name}': Supabase refused the write "
+                + $"(HTTP {ex.StatusCode}). "
+                + (client.KeyKind == SupabaseKeyKind.Anon
+                    ? SupabaseApiKey.AnonKeyAdvice
+                    : "Writing to projects requires the service_role (secret) key. Check the "
+                      + "key in Command Center → Settings.")
+                + $" Supabase said: {ex.Message}");
+            return null;
         }
         catch (Exception ex)
         {

@@ -68,13 +68,16 @@ The add-in is not draining the queue. In order:
 
 1. **Is it connected?** Command Center → **Status**. "Connected: no" → press
    Connect.
-2. **Does the add-in reach Supabase?** Connect reports it. If not, check
+2. **Which key is it using?** Status shows it on the "Key:" line. Anything but
+   `service_role` and nothing will ever be claimed — see
+   [the next section](#new-row-violates-row-level-security-policy-for-table-projects).
+3. **Does the add-in reach Supabase?** Connect reports it. If not, check
    `supabase_url` and `supabase_key` in
    `%APPDATA%\RevitCommandCenter\config.json`.
-3. **Is it draining the right project?** `project_id` must be the **UUID** from
+4. **Is it draining the right project?** `project_id` must be the **UUID** from
    `projects.id`, not the project code. A wrong-but-valid UUID polls an empty
    queue forever and looks exactly like being idle.
-4. **Check the log** — Command Center → Log, or
+5. **Check the log** — Command Center → Log, or
    `%APPDATA%\RevitCommandCenter\logs\`.
 
 ```sql
@@ -84,6 +87,36 @@ from commands_queue
 where status in ('pending', 'processing')
 order by queued_at;
 ```
+
+## "new row violates row-level security policy for table `projects`"
+
+In the add-in log, as an HTTP 401 with `"code":"42501"`:
+
+```
+[WARN ] Could not register project 'PROJECT TEST_bagus.utamaNWTTV': upsert
+projects failed: HTTP 401 Unauthorized. {"code":"42501", ... "message":"new row
+violates row-level security policy for table \"projects\""}
+```
+
+`config.json` holds the **anon (publishable)** key, not `service_role`.
+
+Only `service_role` bypasses row-level security, and only two things use the
+database directly: the Vercel functions and this add-in. Both are trusted, both
+are meant to hold the secret key. With the anon key instead, RLS applies:
+
+- writing a `projects` row is refused outright — the error above;
+- `commands_queue` reads as **empty**, so `claim_next_command` returns nothing
+  and never errors. Telegram says "position 9 in queue" while Status says
+  "waiting in queue: 0", and after 40s the bot reports that no add-in picked the
+  command up. Same cause, no error anywhere.
+
+Fix it in Command Center → **Settings**: Supabase dashboard → Project Settings →
+API → the `service_role` key, labelled **secret** on newer projects and starting
+`sb_secret_`. Save, then **Connect**. Status now names the key class on its
+"Key:" line, and Settings will not save an anon key.
+
+The anon key is not the wrong key everywhere — the future dashboard is exactly
+what the RLS policies in `0001_init.sql` exist for. It is the wrong key *here*.
 
 ## "Revit did not execute the command within 120s"
 
