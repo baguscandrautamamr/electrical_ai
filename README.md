@@ -21,11 +21,12 @@ closed simply runs when it next opens.
 
 ## What it does
 
-Eight device categories, each placeable from Telegram:
+Nine device categories, each placeable from Telegram:
 
 | Category | Command | What it automates |
 |---|---|---|
-| Lighting | `/place_lighting` | Fixture count from a lux target, ceiling grid, load, circuits |
+| Lighting | `/place_lighting` | Fixture count from a lux target or a stated grid, ceiling layout, load, circuits |
+| Lighting device | `/place_lighting_device` | Switches and dimmers, on the wall beside the door |
 | Receptacle | `/place_receptacle` | Perimeter outlets, load, circuit split |
 | Cable tray + hangers | `/create_cable_tray` | Routing, tray sizing, **smart hanger placement** |
 | Fire alarm | `/place_fire_alarm` | NFPA 72 spacing, loop addressing, compliance checks |
@@ -34,10 +35,30 @@ Eight device categories, each placeable from Telegram:
 | Security | `/place_security` | Cameras/sensors, coverage from FoV and resolution |
 | Communication | `/place_communication` | Speakers/antennas, coverage radius |
 
-Plus `/equip_room` to run all eight against one room, `/export` for schedules
+Plus `/equip_room` to run them all against one room, `/export` for schedules
 and reports, and `/query` to read back what is already in the model —
 `/query Office_A what=lighting`, or just "ada berapa lampu di Office_A?".
 `/query` opens no Revit transaction, so it cannot change the drawing.
+
+Every device command also answers to a `pasang_` name — `/pasang_lampu`,
+`/pasang_saklar`, `/pasang_stopkontak` — because "pasang" is the word the
+engineers using this actually say.
+
+Wall devices — receptacles, switches, LAN and telephone outlets — are hosted on
+the room-side vertical face of the wall they sit against, the same way you would
+place them from the ribbon. Hosting is not cosmetic: a hosted device moves with
+its wall and appears in its schedules, where one dropped at the same coordinates
+does neither.
+
+### Advice, not just parsing
+
+A message that goes through Claude comes back with the command *and* a remark
+about it, in the user's language, when there is one worth making: a lux target
+well outside what the room's use calls for, a parameter the space makes worth
+stating. It is advisory only — the queued command is built from the extracted
+parameters alone, so a suggestion you disagree with costs nothing but the line
+it is written on. A question that is not a command at all gets answered rather
+than merely refused.
 
 ### The hanger automation
 

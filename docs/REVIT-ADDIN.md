@@ -163,11 +163,21 @@ shows recent activity and opens the full file at
 
 Commands act on what is in the model. Before sending any:
 
-- **Rooms must be placed and named.** `/place_lighting Office_A` matches on room
-  name, then room number, then a name prefix.
+- **Rooms must be placed and named.** A name is matched exactly first — against
+  the room's name, its number, and the two together — and only then by prefix,
+  and only when the prefix picks out a single room. `meeting` in a model holding
+  MEETING 1 and MEETING 2 is reported as ambiguous rather than run against
+  whichever came back first. Case, spacing and underscores are ignored, so
+  `meeting_1`, `Meeting 1` and `MEETING  1` all reach the same room.
 - **Families must be loaded** for each category you use — lighting fixtures,
-  electrical fixtures, fire alarm devices, data devices, security devices,
-  communication devices, and a cable tray type.
+  lighting devices (switches), electrical fixtures, fire alarm devices, data
+  devices, security devices, communication devices, and a cable tray type.
+- **Face-based families for wall devices, ideally.** Receptacles, switches, LAN
+  and telephone outlets are placed on the wall's vertical face. A family that is
+  not face-based still places — it falls back to hosting on the wall, then to no
+  host at all — and the log line says which happened.
+- **Doors help.** `/place_lighting_device` puts each switch beside a door on the
+  room's boundary wall. With no door in the model it falls back to the walls.
 - **Hanger family types must be named after tray sizes**: `150x100` for a
   150×100 mm tray, `600` for a 600 mm ladder. This naming *is* the auto-match.
 - **Panels should carry a `Mark`** matching what users type (`PA-01`), so

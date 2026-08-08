@@ -30,12 +30,13 @@ public sealed class LANHandler : DevicePlacementHandler
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("count", 4));
 
-    protected override List<XYZ> ResolvePoints(
+    /// <summary>Data outlets host on the wall's vertical face.</summary>
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
         int count) =>
-        RevitUtils.GeneratePerimeterPoints(
+        RevitUtils.GeneratePerimeterPlacements(
             room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>

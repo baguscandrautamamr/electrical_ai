@@ -177,6 +177,34 @@ public sealed class QueryResultDto
     public List<string>? Notes { get; set; }
 }
 
+/// <summary>
+/// Where one device goes, and what it hangs off.
+///
+/// Ceiling-mounted devices carry a point and nothing else. Wall-mounted ones
+/// carry the room-side face of the wall they belong to, so they can be created
+/// with Revit's "place on vertical face" method — the same method an engineer
+/// would pick from the ribbon, and the one that leaves the device hosted rather
+/// than floating in space at the right coordinates.
+/// </summary>
+public sealed class DevicePlacement
+{
+    public required Autodesk.Revit.DB.XYZ Point { get; init; }
+
+    /// <summary>Face to host on, when there is one.</summary>
+    public Autodesk.Revit.DB.Reference? FaceReference { get; init; }
+
+    /// <summary>
+    /// Direction of the instance's X axis within the face. Must lie in the face
+    /// plane, so for a vertical wall face it runs along the wall.
+    /// </summary>
+    public Autodesk.Revit.DB.XYZ? ReferenceDirection { get; init; }
+
+    /// <summary>The wall itself, for the hosted fallback when the family is not face-based.</summary>
+    public Autodesk.Revit.DB.Element? Host { get; init; }
+
+    public static DevicePlacement At(Autodesk.Revit.DB.XYZ point) => new() { Point = point };
+}
+
 /// <summary>Geometry of one straight run of tray, in millimetres.</summary>
 public sealed class TraySegment
 {

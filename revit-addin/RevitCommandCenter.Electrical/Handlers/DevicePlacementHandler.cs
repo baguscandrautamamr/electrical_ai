@@ -32,8 +32,14 @@ public abstract class DevicePlacementHandler : ICommandHandler
     /// <summary>How many devices this command should place.</summary>
     protected abstract int ResolveCount(CommandModel command, Room room);
 
-    /// <summary>Where they go.</summary>
-    protected abstract List<XYZ> ResolvePoints(
+    /// <summary>
+    /// Where they go, and what they host on.
+    ///
+    /// Ceiling devices return bare points; wall devices return the room-side
+    /// wall face with them, which is what gets them placed on a vertical face
+    /// rather than left unhosted at the right coordinates.
+    /// </summary>
+    protected abstract List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
@@ -69,12 +75,17 @@ public abstract class DevicePlacementHandler : ICommandHandler
     public virtual CommandResult Execute(HandlerContext context, CommandModel command)
     {
         var roomName = command.GetString("room");
-        var room = RevitUtils.FindRoom(context.Doc, roomName);
-        if (room is null)
+        var lookup = RevitUtils.ResolveRoom(context.Doc, roomName);
+        if (lookup.Room is null)
         {
-            // A missing room will fail identically on every retry.
-            return CommandResult.Fail($"Room '{roomName}' not found in the model.", retryable: false);
+            // A missing or ambiguous room will fail identically on every retry.
+            // The lookup's own wording says which of the two it was, and what to
+            // type instead — silently picking a room that merely starts with
+            // what was typed is how "meeting 1" ended up equipping MEETING 2.
+            return CommandResult.Fail(lookup.Problem ?? $"Room '{roomName}' not found.", retryable: false);
         }
+
+        var room = lookup.Room;
 
         var symbol = ResolveSymbol(context, command);
         if (symbol is null)
@@ -90,8 +101,8 @@ public abstract class DevicePlacementHandler : ICommandHandler
             return CommandResult.Fail("Resolved device count is zero; nothing to place.", retryable: false);
         }
 
-        var points = ResolvePoints(context, command, room, count);
-        if (points.Count == 0)
+        var placements = ResolvePlacements(context, command, room, count);
+        if (placements.Count == 0)
         {
             return CommandResult.Fail(
                 $"Could not work out placement points inside room '{room.Name}'.",
@@ -115,13 +126,10 @@ public abstract class DevicePlacementHandler : ICommandHandler
                 context.Doc.Regenerate();
             }
 
-            for (var i = 0; i < points.Count; i++)
+            for (var i = 0; i < placements.Count; i++)
             {
-                var point = points[i];
-
-                var instance = level is not null
-                    ? context.Doc.Create.NewFamilyInstance(point, symbol, level, StructuralType.NonStructural)
-                    : context.Doc.Create.NewFamilyInstance(point, symbol, StructuralType.NonStructural);
+                var placement = placements[i];
+                var instance = Create(context.Doc, symbol, placement, level);
 
                 var deviceId = RevitUtils.FormatDeviceId(DeviceIdPrefix, sequence + i);
                 ParameterMapper.TrySetParameter(instance, "Mark", deviceId);
@@ -132,7 +140,9 @@ public abstract class DevicePlacementHandler : ICommandHandler
                 placed.Add(instance);
                 deviceIds.Add(deviceId);
 
-                context.Persist(TableName, BuildRow(context, command, room, deviceId, instance, point));
+                context.Persist(
+                    TableName,
+                    BuildRow(context, command, room, deviceId, instance, placement.Point));
             }
 
             transaction.Commit();
@@ -156,6 +166,62 @@ public abstract class DevicePlacementHandler : ICommandHandler
 
         Logger.Info($"{CommandType}: placed {placed.Count} device(s) in {room.Name}");
         return CommandResult.Ok(result);
+    }
+
+    /// <summary>
+    /// Creates one instance, preferring the most attached form available.
+    ///
+    /// Face first — this is Revit's "Place on Vertical Face", and it is how a
+    /// receptacle, switch, LAN or telephone outlet is placed by hand. It needs a
+    /// face-based family, so a project whose families are not face-based falls
+    /// back to hosting on the wall itself, and then to an unhosted instance at
+    /// the same point. Each step down is logged: the device appears either way,
+    /// and the log is what explains why one drawing's outlets move with their
+    /// wall and another's do not.
+    /// </summary>
+    private static FamilyInstance Create(
+        Document doc,
+        FamilySymbol symbol,
+        DevicePlacement placement,
+        Level? level)
+    {
+        if (placement.FaceReference is not null && placement.ReferenceDirection is not null)
+        {
+            try
+            {
+                return doc.Create.NewFamilyInstance(
+                    placement.FaceReference,
+                    placement.Point,
+                    placement.ReferenceDirection,
+                    symbol);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+            {
+                Logger.Debug(
+                    $"'{symbol.Name}' is not face-based ({ex.Message}); hosting on the wall instead.");
+            }
+        }
+
+        if (placement.Host is not null)
+        {
+            try
+            {
+                return doc.Create.NewFamilyInstance(
+                    placement.Point,
+                    symbol,
+                    placement.Host,
+                    level,
+                    StructuralType.NonStructural);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+            {
+                Logger.Debug($"'{symbol.Name}' would not host on the wall ({ex.Message}); placing free.");
+            }
+        }
+
+        return level is not null
+            ? doc.Create.NewFamilyInstance(placement.Point, symbol, level, StructuralType.NonStructural)
+            : doc.Create.NewFamilyInstance(placement.Point, symbol, StructuralType.NonStructural);
     }
 
     /// <summary>

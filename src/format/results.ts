@@ -25,6 +25,7 @@ export interface FormatContext {
 /** Maps a PlacementResult kind onto its i18n namespace. */
 const PLACEMENT_NAMESPACE: Record<PlacementResult['kind'], string> = {
   lighting: 'lighting',
+  lighting_device: 'lighting_device',
   receptacle: 'receptacle',
   fire_alarm: 'fire_alarm',
   telephone: 'telephone',
@@ -36,6 +37,7 @@ const PLACEMENT_NAMESPACE: Record<PlacementResult['kind'], string> = {
 /** Per-category label for the "how many were placed" row. */
 const COUNT_LABEL: Record<PlacementResult['kind'], string> = {
   lighting: 'fixtures',
+  lighting_device: 'devices',
   receptacle: 'outlets',
   fire_alarm: 'detectors',
   telephone: 'jacks',
@@ -191,7 +193,7 @@ export function formatPlacement(result: PlacementResult, ctx: FormatContext): st
 }
 
 // ---------------------------------------------------------------------------
-// Equip room (orchestration of all 8)
+// Equip room (orchestration of every category)
 // ---------------------------------------------------------------------------
 
 export function formatEquipRoom(result: EquipRoomResult, ctx: FormatContext): string {

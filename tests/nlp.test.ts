@@ -212,6 +212,160 @@ describe('natural language parsing', () => {
     const outcome = await parseMessage('/nope Office_A');
     expect(outcome).toEqual({ kind: 'unparsed', reason: 'unknown_command' });
   });
+
+  it('reads a grid and a numbered room out of an informal request', async () => {
+    // The message from the field: "pasang lampu diruangan meeting 1 3x2 dengan
+    // ketinggian 3 meter pake lampu downlight".
+    stubClient(() =>
+      reply({
+        command_type: 'place_lighting',
+        subject: 'meeting 1',
+        params: { grid: '3x2', height: '3', fixture_type: 'downlight' },
+        confidence: 0.92,
+        note: '',
+      }),
+    );
+
+    const outcome = await parseMessage(
+      'pasang lampu diruangan meeting 1 3x2 dengan ketinggian 3 meter pake lampu downlight',
+    );
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.subject).toBe('meeting 1');
+    expect(outcome.command.params).toMatchObject({ grid: '3x2', height: '3' });
+  });
+
+  it('resolves a command the model named by its Indonesian alias', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'pasang_saklar',
+        subject: 'Meeting_1',
+        params: { type: 'three_gang' },
+        confidence: 0.9,
+        note: '',
+      }),
+    );
+
+    const outcome = await parseMessage('kasih saklar 3 gang di meeting 1');
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.type).toBe('place_lighting_device');
+  });
+});
+
+describe('AI advice', () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+  });
+
+  afterEach(() => {
+    __setAnthropicClient(null);
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  });
+
+  it('carries a suggestion alongside the command', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'place_lighting',
+        subject: 'Meeting_1',
+        params: { count: '2' },
+        confidence: 0.9,
+        note: 'Dua fixture untuk ruang meeting biasanya di bawah 300 lux.',
+      }),
+    );
+
+    const outcome = await parseMessage('pasang 2 lampu di Meeting_1');
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    // Advice, not instruction: the command is still exactly what was asked for.
+    expect(outcome.command.params.count).toBe('2');
+    expect(outcome.command.note).toContain('300 lux');
+  });
+
+  it('leaves the note off when the model had nothing to add', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'place_lighting',
+        subject: 'Meeting_1',
+        params: {},
+        confidence: 0.9,
+        note: '   ',
+      }),
+    );
+
+    const outcome = await parseMessage('pasang lampu di Meeting_1');
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.note).toBeUndefined();
+  });
+
+  it('answers a message that is not a command instead of only refusing it', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'unknown',
+        subject: null,
+        params: {},
+        confidence: 0.9,
+        note: 'Saklar biasanya dipasang 1,2 m dari lantai.',
+      }),
+    );
+
+    const outcome = await parseMessage('tinggi saklar standarnya berapa?');
+
+    expect(outcome.kind).toBe('unparsed');
+    if (outcome.kind !== 'unparsed') return;
+    expect(outcome.reason).toBe('not_a_device_command');
+    expect(outcome.note).toContain('1,2 m');
+  });
+
+  it('asks for the note in the language the user reads', async () => {
+    const languages: string[] = [];
+    __setAnthropicClient({
+      messages: {
+        create: async (params: { system: Array<{ text: string }> }) => {
+          languages.push(params.system.map((block) => block.text).join('\n'));
+          return reply({
+            command_type: 'place_lighting',
+            subject: 'Lounge',
+            params: {},
+            confidence: 0.9,
+            note: '',
+          });
+        },
+      },
+    } as unknown as Anthropic);
+
+    await parseMessage('put lights in the lounge', { language: 'en' });
+    await parseMessage('pasang lampu di lounge', { language: 'id' });
+
+    expect(languages[0]).toContain('Write "note" in English.');
+    expect(languages[1]).toContain('Write "note" in Indonesian.');
+  });
+
+  it('truncates a note long enough to bury the acknowledgement', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'place_lighting',
+        subject: 'Lounge',
+        params: {},
+        confidence: 0.9,
+        note: 'x'.repeat(2000),
+      }),
+    );
+
+    const outcome = await parseMessage('pasang lampu di lounge');
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.note!.length).toBeLessThanOrEqual(400);
+  });
 });
 
 describe('an Anthropic-compatible gateway', () => {

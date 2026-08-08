@@ -17,7 +17,13 @@ export interface FormatContext {
 
 export function formatAck(
   ctx: FormatContext,
-  options: { commandType: string; queuePosition?: number; pollSeconds: number },
+  options: {
+    commandType: string;
+    queuePosition?: number;
+    pollSeconds: number;
+    /** Advice from the natural-language parse; omitted when there was none. */
+    note?: string;
+  },
 ): string {
   const t = translator(ctx.language);
   const b = new MessageBuilder(ctx.theme);
@@ -30,6 +36,13 @@ export function formatAck(
   }
   b.tree(rows);
   b.blank().text(t('ack.waiting_revit', { seconds: options.pollSeconds }));
+
+  // The command is already queued by the time this renders, so the advice sits
+  // below it: it is something to weigh, not something blocking the placement.
+  if (options.note) {
+    b.section(`💡 ${t('ack.suggestion')}`);
+    b.text(options.note);
+  }
 
   return b.build();
 }
@@ -88,6 +101,26 @@ export function formatError(
   const b = new MessageBuilder(ctx.theme);
   b.title(t('common.error'), t(messageKey, vars));
   if (detail) b.blank().code(detail.slice(0, 500));
+  return b.build();
+}
+
+/**
+ * A message the parser could not turn into a command, answered rather than
+ * merely refused.
+ *
+ * Someone who asks "berapa tinggi saklar yang standar?" gets an answer and the
+ * command that would act on it; the flat "that is not a device command" told
+ * them only that the bot had nothing to say.
+ */
+export function formatAdvice(ctx: FormatContext, messageKey: string, note: string): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title('💡', t('ack.suggestion'));
+  b.blank().text(note);
+  b.section(t('common.note'));
+  b.text(t(messageKey));
+
   return b.build();
 }
 

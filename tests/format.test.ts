@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatAck,
+  formatAdvice,
   formatError,
   formatHelp,
   formatCommandHelp,
@@ -55,7 +56,9 @@ const lighting: PlacementResult = {
   device_ids: ['LF-001', 'LF-002'],
   total_load_w: 180,
   circuits_created: 3,
-  details: { 'lighting.lux_achieved': '312 lux' },
+  // No lux: the add-in stopped reporting an estimate it was in no position to
+  // grade, so a lighting result no longer carries one.
+  details: { 'lighting.grid': '4x3' },
   compliance: [{ label: 'compliance.breaker_load', passed: true, detail: '180 W / 3 circuits' }],
 };
 
@@ -133,6 +136,30 @@ describe('placement formatting', () => {
       compliance: [{ label: 'compliance.breaker_load', passed: false, detail: 'over' }],
     };
     expect(formatResult(failed, EN)).toContain('✗');
+  });
+
+  it('renders switches as their own category, not as fixtures', () => {
+    const switches: PlacementResult = {
+      kind: 'lighting_device',
+      room: 'MEETING 1',
+      devices_placed: 1,
+      device_ids: ['SW-001'],
+      details: {
+        'lighting_device.switch_type': 'three_gang',
+        'lighting_device.placement': 'beside the door',
+      },
+    };
+
+    const text = formatResult(switches, EN);
+
+    expect(text).toContain('SWITCHES PLACED');
+    expect(text).toContain('Room: MEETING 1');
+    expect(text).toContain('Switches: 1 units');
+    expect(text).toContain('Switch type: three_gang');
+  });
+
+  it('renders the stated fixture grid', () => {
+    expect(formatResult(lighting, EN)).toContain('Grid: 4x3');
   });
 
   it('uses the per-category count label', () => {
@@ -297,6 +324,36 @@ describe('acknowledgement and errors', () => {
     expect(formatAck(EN, { commandType: 'x', queuePosition: 3, pollSeconds: 4 })).toContain(
       'Queue position: 3',
     );
+  });
+
+  it('appends the AI suggestion below the acknowledgement', () => {
+    const text = formatAck(EN, {
+      commandType: 'place_lighting',
+      pollSeconds: 4,
+      note: 'A meeting room usually wants 300-500 lux.',
+    });
+
+    expect(text).toContain('Command queued');
+    expect(text).toContain('Suggestion');
+    expect(text).toContain('300-500 lux');
+  });
+
+  it('says nothing about suggestions when there is none', () => {
+    const text = formatAck(EN, { commandType: 'place_lighting', pollSeconds: 4 });
+    expect(text).not.toContain('Suggestion');
+  });
+
+  it('leads with the answer when a message was not a command', () => {
+    const text = formatAdvice(
+      EN,
+      'errors.not_a_device_command',
+      'Switches are usually set 1.2 m above the floor.',
+    );
+
+    expect(text).toContain('1.2 m above the floor');
+    // The reason is still there, below the answer, so nobody is left thinking
+    // something was placed.
+    expect(text).toContain('not a Revit command');
   });
 
   it('interpolates error variables', () => {

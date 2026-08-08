@@ -28,6 +28,15 @@ export interface CommandSpec {
   type: CommandType;
   /** The `/slash` name. */
   name: string;
+  /**
+   * Other slash names that mean the same command.
+   *
+   * Engineers here say "pasang" where the command says "place", and typing the
+   * English verb for a device you name in Indonesian is a small tax charged on
+   * every message. The aliases are not listed in the Telegram menu — one entry
+   * per command keeps that readable — but the parser accepts them everywhere.
+   */
+  aliases?: readonly string[];
   /** Positional argument, if the command takes one. */
   subject?: { name: string; required: boolean; describe: string };
   params: Record<string, ParamSpec>;
@@ -64,6 +73,7 @@ const SPACE = {
 export const QUERY_TARGETS = [
   'all',
   'lighting',
+  'lighting_device',
   'receptacle',
   'cable_tray',
   'hanger',
@@ -81,6 +91,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_lighting: {
     type: 'place_lighting',
     name: 'place_lighting',
+    aliases: ['pasang_lampu', 'pasang_lighting'],
     role: 'editor',
     describe: 'Auto-place light fixtures, compute load and assign circuits.',
     example: '/place_lighting Lounge count=6 height=3 fixture_type=act_e_downlight',
@@ -93,6 +104,17 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         max: 500,
         describe: 'Number of fixtures; stating it overrides the lux calculation',
         aliases: ['jumlah', 'fixtures', 'quantity', 'qty'],
+      },
+      /**
+       * An explicit layout, columns × rows: "3x2" is three across by two deep,
+       * six fixtures. It is how a lighting layout is described on a drawing, and
+       * it says something `count` cannot — six fixtures in one room is a very
+       * different ceiling as 3x2 than as 6x1.
+       */
+      grid: {
+        kind: 'size',
+        describe: 'Explicit fixture grid, columns x rows, e.g. 3x2',
+        aliases: ['layout', 'pola', 'grid_size'],
       },
       height: { kind: 'number', default: 2.8, min: 1.5, max: 30, describe: 'Ceiling height in m' },
       lux_target: { kind: 'number', default: 300, min: 20, max: 5000, describe: 'Target illumination in lux', aliases: ['lux'] },
@@ -109,10 +131,79 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
 
+  // -------------------------------------------------------- lighting device
+  /**
+   * Switches, dimmers and occupancy sensors — Revit's Lighting Devices
+   * category, which is a different thing from the Lighting Fixtures that
+   * `/place_lighting` places. The fixtures are the lamps; these are what turn
+   * them on, and a lighting layout is not finished without them.
+   */
+  place_lighting_device: {
+    type: 'place_lighting_device',
+    name: 'place_lighting_device',
+    aliases: ['pasang_saklar', 'pasang_lighting_device', 'place_switch', 'pasang_switch'],
+    role: 'editor',
+    describe: 'Place switches/dimmers on the wall, beside the door where there is one.',
+    example: '/place_lighting_device Meeting_1 type=three_gang count=1 height=1.2 controls=LF-001',
+    subject: { name: 'room', required: true, describe: 'Room name' },
+    params: {
+      type: {
+        kind: 'enum',
+        values: [
+          'single_gang',
+          'double_gang',
+          'three_gang',
+          'four_gang',
+          'two_way',
+          'dimmer',
+          'occupancy_sensor',
+        ],
+        default: 'single_gang',
+        describe: 'Switch type; a three_gang switch is the "S3" on the drawing',
+        aliases: ['device_type', 'switch_type', 'tipe'],
+      },
+      count: {
+        kind: 'integer',
+        default: 1,
+        min: 1,
+        max: 100,
+        describe: 'Number of switch plates',
+        aliases: ['jumlah', 'quantity', 'qty'],
+      },
+      // 1.2 m is switch height in every Indonesian office spec; receptacles sit
+      // at 0.4 m and the two get confused when they share a default.
+      height: { kind: 'number', default: 1.2, min: 0.3, max: 2, describe: 'Height from floor (m)' },
+      mounting: { kind: 'enum', values: MOUNTING, default: 'wall', describe: 'Mounting type' },
+      /**
+       * Where it goes on the wall. "door" puts it on the swing side of the
+       * nearest door, which is where a switch belongs and where an engineer
+       * would otherwise have to drag it by hand.
+       */
+      placement: {
+        kind: 'enum',
+        values: ['door', 'walls', 'manual'],
+        default: 'door',
+        describe: 'Beside the door, or spread along the walls',
+      },
+      controls: {
+        kind: 'string',
+        describe: 'What it switches — a circuit id, a fixture mark, or a group name',
+        aliases: ['circuit', 'group', 'controls_group'],
+      },
+      family: {
+        kind: 'string',
+        default: 'Switch',
+        describe: 'Revit family name for the switch',
+        aliases: ['family_name', 'switch_family', 'fixture_type'],
+      },
+    },
+  },
+
   // ------------------------------------------------------------- receptacle
   place_receptacle: {
     type: 'place_receptacle',
     name: 'place_receptacle',
+    aliases: ['pasang_stopkontak', 'pasang_stop_kontak', 'pasang_receptacle'],
     role: 'editor',
     describe: 'Auto-place outlets along walls and assign circuits.',
     example: '/place_receptacle Office_A count=4 type=double_grounded height=0.4 placement=walls load_per_outlet=1500 breaker_size=20',
@@ -139,6 +230,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   create_cable_tray: {
     type: 'create_cable_tray',
     name: 'create_cable_tray',
+    aliases: ['pasang_cable_tray', 'pasang_kabel_tray', 'buat_cable_tray'],
     role: 'editor',
     describe: 'Route a cable tray and place hangers with gap-fill (preserves existing hangers).',
     example: '/create_cable_tray CT-A1 from=PA-01 to=Zone_A cable_type=power size=auto material=aluminum installation=ceiling hanger_spacing=1500 fill_target=50 preserve_existing=true',
@@ -160,6 +252,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   add_hangers: {
     type: 'add_hangers',
     name: 'add_hangers',
+    aliases: ['pasang_hanger', 'tambah_hanger'],
     role: 'editor',
     describe: 'Add hangers to an existing tray, filling only the gaps.',
     example: '/add_hangers CT-A1 spacing=1500 preserve_existing=true',
@@ -175,6 +268,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_fire_alarm: {
     type: 'place_fire_alarm',
     name: 'place_fire_alarm',
+    aliases: ['pasang_fire_alarm', 'pasang_alarm_kebakaran', 'pasang_detektor'],
     role: 'editor',
     describe: 'Place NFPA 72 compliant detectors with addressable loop assignment.',
     example: '/place_fire_alarm Office_A type=dual standard=NFPA_72 loop_id=FD-Loop-01 address=auto mounting=ceiling coverage_target=100',
@@ -201,6 +295,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_telephone: {
     type: 'place_telephone',
     name: 'place_telephone',
+    aliases: ['pasang_telepon', 'pasang_telephone'],
     role: 'editor',
     describe: 'Place telephone jacks and route them to the riser.',
     example: '/place_telephone Office_A type=data_voice count=2 height=0.4',
@@ -216,6 +311,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_lan: {
     type: 'place_lan',
     name: 'place_lan',
+    aliases: ['pasang_lan', 'pasang_jaringan', 'pasang_data'],
     role: 'editor',
     describe: 'Place network jacks, assign switch ports and track PoE budget.',
     example: '/place_lan Office_A count=4 type=1Gbps poe_enabled=true switch_panel=SW-01',
@@ -233,6 +329,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_security: {
     type: 'place_security',
     name: 'place_security',
+    aliases: ['pasang_security', 'pasang_cctv', 'pasang_kamera'],
     role: 'editor',
     describe: 'Place cameras/sensors and compute coverage.',
     example: '/place_security Lobby type=camera camera_type=dome coverage_fov=90 resolution=4MP count=2',
@@ -257,6 +354,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   place_communication: {
     type: 'place_communication',
     name: 'place_communication',
+    aliases: ['pasang_communication', 'pasang_komunikasi', 'pasang_speaker'],
     role: 'editor',
     describe: 'Place speakers/antennas and compute coverage radius.',
     example: '/place_communication Lobby type=speaker system=pa quantity=3',
@@ -286,14 +384,23 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
   equip_room: {
     type: 'equip_room',
     name: 'equip_room',
+    aliases: ['lengkapi_ruangan', 'pasang_semua'],
     role: 'editor',
-    describe: 'One-shot: place all 8 device categories in a room.',
-    example: '/equip_room Office_A height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500',
+    describe: 'One-shot: place every device category in a room.',
+    example: '/equip_room Office_A height=2.8 lux_target=300 switches=1 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500',
     subject: { name: 'room', required: true, describe: 'Room name' },
     params: {
       space: { kind: 'number', ...SPACE, aliases: ['area', 'luas'] },
       height: { kind: 'number', default: 2.8, min: 1.5, max: 30, describe: 'Ceiling height in m' },
       lux_target: { kind: 'number', default: 300, min: 20, max: 5000, describe: 'Target illumination (lux)' },
+      switches: {
+        kind: 'integer',
+        default: 1,
+        min: 0,
+        max: 100,
+        describe: 'Number of light switches',
+        aliases: ['saklar', 'lighting_devices'],
+      },
       outlets: { kind: 'integer', default: 4, min: 0, max: 500, describe: 'Number of receptacles' },
       phone_jacks: { kind: 'integer', default: 2, min: 0, max: 200, describe: 'Number of telephone jacks' },
       lan_jacks: { kind: 'integer', default: 4, min: 0, max: 500, describe: 'Number of LAN jacks' },
@@ -318,6 +425,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         kind: 'enum',
         values: [
           'lighting_schedule',
+          'lighting_device_schedule',
           'receptacle_schedule',
           'cable_tray',
           'hanger_schedule',
@@ -379,8 +487,35 @@ export function aliasMap(spec: CommandSpec): Map<string, string> {
   return map;
 }
 
+/**
+ * Every slash name the parser answers to — canonical names and aliases alike —
+ * mapped onto the spec it resolves to.
+ *
+ * Built once rather than per message: the map is derived from COMMAND_SPECS,
+ * which is a module constant, so nothing can change under it.
+ */
+const SLASH_NAMES: ReadonlyMap<string, CommandSpec> = (() => {
+  const map = new Map<string, CommandSpec>();
+  for (const spec of Object.values(COMMAND_SPECS)) {
+    map.set(spec.name.toLowerCase(), spec);
+    for (const alias of spec.aliases ?? []) map.set(alias.toLowerCase(), spec);
+  }
+  return map;
+})();
+
+/**
+ * The spec for a slash name, whether canonical or an alias.
+ *
+ * Also accepts a command *type*, which is the same string as the name for every
+ * command here — callers holding a queued `command_type` use it that way.
+ */
 export function specFor(commandType: string): CommandSpec | undefined {
-  return COMMAND_SPECS[commandType];
+  return SLASH_NAMES.get(commandType.toLowerCase());
+}
+
+/** Alias -> canonical slash name, for reporting what an alias resolved to. */
+export function canonicalCommandName(slashName: string): string | undefined {
+  return specFor(slashName)?.name;
 }
 
 /** Slash names of every device command, for /help and the Claude prompt. */

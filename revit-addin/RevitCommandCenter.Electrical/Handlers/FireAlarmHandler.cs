@@ -59,7 +59,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
         return Math.Max(1, count);
     }
 
-    protected override List<XYZ> ResolvePoints(
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
@@ -67,7 +67,10 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
     {
         var mountHeightM = command.GetDouble("height", 2.8);
         var baseZ = RevitUtils.RoomCenter(room)?.Z ?? 0;
-        return RevitUtils.GenerateCeilingGrid(room, count, baseZ + RevitUnits.MToFeet(mountHeightM));
+        return RevitUtils
+            .GenerateCeilingGrid(room, count, baseZ + RevitUnits.MToFeet(mountHeightM))
+            .Select(DevicePlacement.At)
+            .ToList();
     }
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command)

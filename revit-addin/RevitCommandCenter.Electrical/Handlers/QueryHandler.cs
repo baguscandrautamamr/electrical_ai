@@ -31,6 +31,7 @@ public sealed class QueryHandler : ICommandHandler
     private static readonly Target[] Targets =
     {
         new("lighting", "lighting.title", BuiltInCategory.OST_LightingFixtures),
+        new("lighting_device", "lighting_device.title", BuiltInCategory.OST_LightingDevices),
         new("receptacle", "receptacle.title", BuiltInCategory.OST_ElectricalFixtures),
         new("cable_tray", "cable_tray.title", BuiltInCategory.OST_CableTray),
         new("hanger", "query.hangers", null),
@@ -62,7 +63,10 @@ public sealed class QueryHandler : ICommandHandler
             return CommandResult.Fail($"Unknown query target '{what}'.", retryable: false);
         }
 
-        var room = string.IsNullOrWhiteSpace(roomName) ? null : RevitUtils.FindRoom(doc, roomName);
+        var lookup = string.IsNullOrWhiteSpace(roomName)
+            ? null
+            : RevitUtils.ResolveRoom(doc, roomName);
+        var room = lookup?.Room;
         var level = string.IsNullOrWhiteSpace(levelName) ? null : FindLevel(doc, levelName);
 
         var result = new QueryResultDto
@@ -79,6 +83,13 @@ public sealed class QueryHandler : ICommandHandler
         if (!string.IsNullOrWhiteSpace(levelName) && level is null)
         {
             notes.Add($"Level '{levelName}' not found; searched every level.");
+        }
+
+        // A name matching several rooms is worth saying out loud: the count
+        // below covers the whole model, and the reason is not "no such room".
+        if (lookup?.Problem is { } problem && room is null)
+        {
+            notes.Add(problem);
         }
 
         var items = wantsList ? new List<QueryItemDto>() : null;

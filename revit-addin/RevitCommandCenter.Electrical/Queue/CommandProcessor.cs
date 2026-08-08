@@ -19,6 +19,7 @@ public sealed class CommandProcessor
         var handlers = new List<ICommandHandler>
         {
             new LightingHandler(),
+            new LightingDeviceHandler(),
             new ReceptacleHandler(),
             new CableTrayHandler(),
             new AddHangersHandler(),

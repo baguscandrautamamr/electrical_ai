@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { parseGrammar, parseAdmin, tokenize, isKnownCommand } from '../src/parser/grammar.js';
+import {
+  parseGrammar,
+  parseAdmin,
+  tokenize,
+  isKnownCommand,
+  hasProseArguments,
+} from '../src/parser/grammar.js';
 import { validateParams } from '../src/parser/validate.js';
-import { COMMAND_SPECS, specFor } from '../src/parser/schema.js';
+import { COMMAND_SPECS, canonicalCommandName, specFor } from '../src/parser/schema.js';
 
 describe('tokenize', () => {
   it('splits on whitespace', () => {
@@ -106,6 +112,134 @@ describe('parseGrammar', () => {
   it('does not read a time as a key:value pair', () => {
     const parsed = parseGrammar('/place_lighting Office_A note=10:30');
     expect(parsed!.params.note).toBe('10:30');
+  });
+
+  it('keeps every word of a room name, including its number', () => {
+    // The bug this guards: taking only the first positional word turned
+    // "meeting 1" into "meeting", which the add-in then resolved by prefix onto
+    // whichever MEETING room it happened to collect first.
+    const parsed = parseGrammar('/equip_room meeting 1 height=3 lux_target=300');
+
+    expect(parsed!.subject).toBe('meeting 1');
+    expect(parsed!.params).toMatchObject({ height: '3', lux_target: '300' });
+  });
+
+  it('still reads a one-word subject as itself', () => {
+    expect(parseGrammar('/place_lighting Lounge count=6')!.subject).toBe('Lounge');
+  });
+});
+
+describe('command aliases', () => {
+  it('accepts the Indonesian verb for every device command', () => {
+    const cases: Array<[string, string]> = [
+      ['/pasang_lampu Lounge count=6', 'place_lighting'],
+      ['/pasang_saklar Meeting_1', 'place_lighting_device'],
+      ['/pasang_stopkontak Office_A count=4', 'place_receptacle'],
+      ['/pasang_kabel_tray CT-A1 from=PA-01 to=Zone_A', 'create_cable_tray'],
+      ['/pasang_hanger CT-A1', 'add_hangers'],
+      ['/pasang_fire_alarm Office_A loop_id=FD-Loop-01', 'place_fire_alarm'],
+      ['/pasang_telepon Office_A count=2', 'place_telephone'],
+      ['/pasang_lan Office_A count=4', 'place_lan'],
+      ['/pasang_cctv Lobby count=2', 'place_security'],
+      ['/pasang_speaker Lobby quantity=3', 'place_communication'],
+      ['/lengkapi_ruangan Office_A', 'equip_room'],
+    ];
+
+    for (const [input, expected] of cases) {
+      const parsed = parseGrammar(input);
+      expect(parsed, `${input} should parse`).not.toBeNull();
+      expect(parsed!.type, input).toBe(expected);
+    }
+  });
+
+  it('parses an alias exactly as it parses the canonical name', () => {
+    const canonical = parseGrammar('/place_lighting Lounge count=6 height=3');
+    const alias = parseGrammar('/pasang_lampu Lounge count=6 height=3');
+
+    expect(alias!.type).toBe(canonical!.type);
+    expect(alias!.subject).toBe(canonical!.subject);
+    expect(alias!.params).toEqual(canonical!.params);
+  });
+
+  it('reports an alias under its canonical name', () => {
+    expect(canonicalCommandName('pasang_lampu')).toBe('place_lighting');
+    expect(canonicalCommandName('place_lighting')).toBe('place_lighting');
+    expect(canonicalCommandName('pasang_nothing')).toBeUndefined();
+  });
+
+  it('recognises aliases as known commands', () => {
+    expect(isKnownCommand('/pasang_saklar Meeting_1')).toBe(true);
+  });
+
+  it('lets no alias collide with another command or with an admin one', () => {
+    const seen = new Map<string, string>();
+
+    for (const spec of Object.values(COMMAND_SPECS)) {
+      for (const name of [spec.name, ...(spec.aliases ?? [])]) {
+        expect(seen.has(name), `'${name}' is claimed by both ${seen.get(name)} and ${spec.name}`)
+          .toBe(false);
+        seen.set(name, spec.name);
+
+        // Admin routing runs before the device grammar, so an alias it also
+        // answers to would never reach the device parser at all.
+        expect(parseAdmin(`/${name}`), `'${name}' is also an admin command`).toBeNull();
+      }
+    }
+  });
+});
+
+describe('an explicit lighting grid', () => {
+  it('reads a bare 3x2 as the grid rather than part of the room name', () => {
+    const parsed = parseGrammar('/place_lighting Meeting_1 3x2 height=3');
+
+    expect(parsed!.subject).toBe('Meeting_1');
+    expect(parsed!.params.grid).toBe('3x2');
+  });
+
+  it('reads it after a multi-word room name', () => {
+    const parsed = parseGrammar('/place_lighting meeting 1 3x2 height=3');
+
+    expect(parsed!.subject).toBe('meeting 1');
+    expect(parsed!.params.grid).toBe('3x2');
+  });
+
+  it('takes an explicit grid= over a bare one', () => {
+    const parsed = parseGrammar('/place_lighting Lounge 3x2 grid=4x4');
+    expect(parsed!.params.grid).toBe('4x4');
+  });
+
+  it('leaves a bare grid alone for a command that has no grid', () => {
+    // Nothing consumes it, so it stays part of the subject rather than being
+    // silently dropped — a room really could be called "Zone 3x2".
+    const parsed = parseGrammar('/place_receptacle 3x2 count=4');
+    expect(parsed!.subject).toBe('3x2');
+  });
+
+  it('validates and normalizes the grid', () => {
+    const parsed = parseGrammar('/place_lighting Meeting_1 3 x 2')!;
+    const outcome = validateParams(COMMAND_SPECS.place_lighting!, parsed.subject, parsed.params);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.grid).toBe('3x2');
+  });
+});
+
+describe('hasProseArguments', () => {
+  it('routes a question typed after a command to Claude', () => {
+    expect(hasProseArguments('/query ada berapa ruangan di revit?')).toBe(true);
+    expect(hasProseArguments('/place_lighting kasih lampu di ruang meeting')).toBe(true);
+  });
+
+  it('leaves a multi-word room name to the grammar', () => {
+    // Two or three ordinary words are a room, not a sentence — and sending
+    // them to Claude would cost a request, or fail outright with no API key.
+    expect(hasProseArguments('/equip_room meeting 1')).toBe(false);
+    expect(hasProseArguments('/place_lighting Ruang Rapat 2')).toBe(false);
+    expect(hasProseArguments('/place_lighting meeting 1 3x2')).toBe(false);
+  });
+
+  it('leaves anything with parameters to the grammar', () => {
+    expect(hasProseArguments('/query ada berapa lampu what=lighting')).toBe(false);
   });
 });
 

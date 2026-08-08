@@ -17,12 +17,13 @@ public sealed class TelephoneHandler : DevicePlacementHandler
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("count", 2));
 
-    protected override List<XYZ> ResolvePoints(
+    /// <summary>Jacks host on the wall's vertical face, like the outlets beside them.</summary>
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
         int count) =>
-        RevitUtils.GeneratePerimeterPoints(
+        RevitUtils.GeneratePerimeterPlacements(
             room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>

@@ -14,6 +14,7 @@ export type CommandStatus =
 /** Command types the Revit add-in knows how to execute. */
 export const DEVICE_COMMAND_TYPES = [
   'place_lighting',
+  'place_lighting_device',
   'place_receptacle',
   'create_cable_tray',
   'add_hangers',
@@ -176,6 +177,8 @@ export interface CableTrayResult {
 export interface PlacementResult {
   kind:
     | 'lighting'
+    /** Switches and dimmers — Revit's Lighting Devices, not the fixtures. */
+    | 'lighting_device'
     | 'receptacle'
     | 'fire_alarm'
     | 'telephone'
@@ -276,6 +279,16 @@ export interface ParsedCommand {
   source: 'grammar' | 'claude';
   /** Raw text the user typed. */
   raw: string;
+  /**
+   * A short engineering remark from the natural-language parse, in the user's
+   * language: a standard the stated value sits outside of, a value it filled in
+   * from the room's use, something worth checking before the drawing is issued.
+   *
+   * Advisory only. It never changes what gets queued — the command is built
+   * from `params` alone — so a suggestion the engineer disagrees with costs
+   * them nothing but the line it is written on.
+   */
+  note?: string;
 }
 
 export interface ValidationIssue {

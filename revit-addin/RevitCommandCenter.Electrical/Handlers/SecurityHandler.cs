@@ -31,7 +31,7 @@ public sealed class SecurityHandler : DevicePlacementHandler
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("count", 1));
 
-    protected override List<XYZ> ResolvePoints(
+    protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
         Room room,
@@ -42,10 +42,11 @@ public sealed class SecurityHandler : DevicePlacementHandler
         var mountZ = baseZ + RevitUnits.MToFeet(command.GetDouble("height", 2.8));
 
         // Corners give better coverage than a centre grid for cameras, so use
-        // perimeter points at ceiling height.
-        var points = RevitUtils.GeneratePerimeterPoints(room, count, 0);
-        return points
-            .Select(point => new XYZ(point.X, point.Y, mountZ))
+        // perimeter points at ceiling height. The wall face is not carried
+        // through: a camera at ceiling height is above the wall panel these
+        // faces describe, and hosting it there would tilt it into the wall.
+        return RevitUtils.GeneratePerimeterPoints(room, count, 0)
+            .Select(point => DevicePlacement.At(new XYZ(point.X, point.Y, mountZ)))
             .ToList();
     }
 
