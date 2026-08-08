@@ -155,13 +155,13 @@ dotnet build -c Release
 ## Status
 
 The TypeScript half — webhook, parser, formatters, services, schema, cron jobs —
-is complete, typechecked and covered by 131 tests.
+is complete, typechecked and covered by 134 tests, and is deployed.
 
-The C# add-in is complete but **has not been compiled**: building it requires
-Windows, the .NET 8 SDK, and the Revit 2025 API assemblies, none of which exist
-in this environment. Expect to fix compile errors on first build. The Revit API
-surface it uses (`CableTray.Create`, `NewFamilyInstance`, `ExternalEvent`,
-`FilteredElementCollector`) is standard for Revit 2025, and the pure geometry it
-depends on is tested via the TypeScript mirror — but treat the first build as
-part of the work, not a formality. [docs/REVIT-ADDIN.md](docs/REVIT-ADDIN.md)
-covers what to check.
+The C# add-in **compiles** against the Revit 2025 API in CI (the `Revit add-in`
+workflow, which publishes the installable folder as an artifact). That is a
+compile-time guarantee only: nothing has yet run inside Revit against a real
+model. The Revit API surface it uses (`CableTray.Create`, `NewFamilyInstance`,
+`ExternalEvent`, `FilteredElementCollector`) is standard for Revit 2025, and the
+pure geometry it depends on is tested via the TypeScript mirror — but treat the
+first run in Revit as part of the work, not a formality.
+[docs/REVIT-ADDIN.md](docs/REVIT-ADDIN.md) covers what to check.
