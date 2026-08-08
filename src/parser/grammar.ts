@@ -165,6 +165,28 @@ export function parseGrammar(text: string): ParsedCommand | null {
   };
 }
 
+/**
+ * True when a known command is followed by a sentence rather than parameters.
+ *
+ * Telegram's command menu inserts `/query ` and leaves the cursor there, so
+ * people type their question after it. Read as grammar, the first word becomes
+ * the subject — `/query ada berapa ruangan di revit?` asks about a room called
+ * "ada". Sending the whole thing to Claude answers what they meant.
+ *
+ * Two positional words with no `key=value` anywhere is the signal: one bare
+ * word is an ordinary subject (`/query Office_A`), and any pair means they are
+ * writing parameters.
+ */
+export function hasProseArguments(text: string): boolean {
+  const tokens = coalesceColonPairs(tokenize(text.trim()));
+  const head = tokens[0];
+  if (!head?.startsWith('/')) return false;
+  if (!COMMAND_SPECS[head.slice(1).split('@')[0]!.toLowerCase()]) return false;
+
+  const args = tokens.slice(1);
+  return args.length >= 2 && args.every((token) => splitPair(token) === null);
+}
+
 /** True when `text` names a command this bot knows (device or admin). */
 export function isKnownCommand(text: string): boolean {
   const trimmed = text.trim();

@@ -41,11 +41,60 @@ export async function reclaimTimedOutCommands(): Promise<number> {
 }
 
 /**
- * Reclaim, then deliver. Both halves are safe to repeat: the timeout filter
- * only matches rows past the cutoff, and `webhook_sent` latches delivery.
+ * Fails commands no add-in ever claimed.
+ *
+ * `reclaimTimedOutCommands` only rescues rows that reached 'processing', which
+ * needs an add-in to have claimed them in the first place. With Revit closed
+ * nothing ever does, so the row stays 'pending' forever, no timeout fires, and
+ * the user is left on "waiting for the Revit add-in" with no reply ever coming.
+ */
+export async function reclaimUnclaimedCommands(): Promise<number> {
+  const cutoff = new Date(Date.now() - env.commandTimeoutSeconds * 1000).toISOString();
+
+  const stale = await supabase().select<Pick<QueuedCommand, 'id' | 'project_id'>>(
+    'commands_queue',
+    {
+      columns: 'id,project_id',
+      eq: { status: 'pending' },
+      filters: [`queued_at=lt.${cutoff}`],
+      limit: 200,
+    },
+  );
+  if (stale.length === 0) return 0;
+
+  // An add-in working through a backlog leaves fresh claims behind it, so a
+  // command can sit pending for a long time with nothing wrong. Only a project
+  // that has claimed nothing since the cutoff has nobody listening.
+  const claimed = await supabase().select<Pick<QueuedCommand, 'project_id'>>('commands_queue', {
+    columns: 'project_id',
+    filters: [`claimed_at=gte.${cutoff}`],
+    limit: 200,
+  });
+  const listening = new Set(claimed.map((row) => row.project_id));
+
+  const abandoned = stale.filter((row) => !listening.has(row.project_id));
+  if (abandoned.length === 0) return 0;
+
+  await supabase().update(
+    'commands_queue',
+    {
+      status: 'failed',
+      error_message:
+        'No Revit add-in claimed this command. Open the model in Revit and start polling in the Command Center.',
+      completed_at: new Date().toISOString(),
+    },
+    { filters: [`id=in.(${abandoned.map((row) => row.id).join(',')})`] },
+  );
+
+  return abandoned.length;
+}
+
+/**
+ * Reclaim, then deliver. Every half is safe to repeat: the timeout filters only
+ * match rows past the cutoff, and `webhook_sent` latches delivery.
  */
 export async function runSweep(deliveryLimit = 20): Promise<SweepReport> {
-  const timedOut = await reclaimTimedOutCommands();
+  const timedOut = (await reclaimTimedOutCommands()) + (await reclaimUnclaimedCommands());
   const delivered = await deliverPendingResults(deliveryLimit);
   return { timed_out: timedOut, delivered };
 }
