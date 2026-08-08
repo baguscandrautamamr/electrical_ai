@@ -101,9 +101,24 @@ public sealed class SettingsCommand : IExternalCommand
 
             if (window.ShowDialog() != true) return Result.Cancelled;
 
-            TaskDialog.Show(
-                "Command Center",
-                "Settings saved.\n\nPress Connect to start polling with them.");
+            // Connect() is idempotent and returns early while polling, so
+            // "press Connect" did nothing: the old URL, key and project stayed
+            // live and the saved settings looked like they had been ignored.
+            // Restarting here is the only way saving them takes effect.
+            if (app is { IsConnected: true })
+            {
+                app.Disconnect();
+                app.Connect();
+                TaskDialog.Show(
+                    "Command Center",
+                    "Settings saved, and polling restarted with them.");
+            }
+            else
+            {
+                TaskDialog.Show(
+                    "Command Center",
+                    "Settings saved.\n\nPress Connect to start polling with them.");
+            }
 
             return Result.Succeeded;
         }
@@ -126,7 +141,9 @@ public sealed class StatusCommand : IExternalCommand
         var app = App.Current;
         var poller = app?.Poller;
 
-        var pending = CountPending(app);
+        var pinned = !string.IsNullOrWhiteSpace(app?.Config.ProjectId);
+        var pending = CountPending(app, scoped: true);
+        var pendingEverywhere = pinned ? CountPending(app, scoped: false) : pending;
 
         var lines = new List<string>
         {
@@ -140,16 +157,26 @@ public sealed class StatusCommand : IExternalCommand
             $"Last poll: {poller?.LastPollAt?.ToString("HH:mm:ss") ?? "never"}",
         };
 
-        // Polling, work waiting, nothing taken: the claim is being refused
-        // silently. The usual cause is a database still on 0001_init, where
-        // claim_next_command requires a project id and the add-in sends none.
-        if (poller is { IsRunning: true } && pending > 0 && poller.CommandsProcessed == 0)
+        // Work exists but not for the project this add-in is pinned to, so it
+        // will never be claimed however long it waits.
+        if (pinned && pendingEverywhere > pending)
         {
             lines.Add(string.Empty);
             lines.Add(
-                $"{pending} command(s) are waiting and none have been claimed. Check that "
-                + "0002_claim_any_project.sql has been applied to Supabase — before it, "
-                + "claim_next_command matches nothing when no project id is sent.");
+                $"{pendingEverywhere - pending} command(s) are waiting for other projects and "
+                + "will never be claimed here. The Settings dialog has no project field — "
+                + $"clear \"projectId\" in {AddinConfig.ConfigPath} to serve every project.");
+        }
+        // Polling, work waiting for this project, nothing taken: the claim is
+        // being refused silently. Two causes look identical from here.
+        else if (poller is { IsRunning: true } && pending > 0 && poller.CommandsProcessed == 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add(
+                $"{pending} command(s) are waiting and none have been claimed. Either the key "
+                + "above is the anon key rather than service_role (row-level security then "
+                + "hides the queue, and the claim returns nothing without erroring), or "
+                + "0002_claim_any_project.sql has not been applied to Supabase.");
         }
 
         lines.Add(string.Empty);
@@ -165,11 +192,11 @@ public sealed class StatusCommand : IExternalCommand
     ///
     /// Only runs when someone opens Status, so it costs nothing per poll.
     /// </summary>
-    private static int CountPending(App? app)
+    private static int CountPending(App? app, bool scoped)
     {
         if (app?.Supabase is null) return -1;
 
-        var scope = string.IsNullOrWhiteSpace(app.Config.ProjectId)
+        var scope = !scoped || string.IsNullOrWhiteSpace(app.Config.ProjectId)
             ? string.Empty
             : $"&project_id=eq.{app.Config.ProjectId}";
 

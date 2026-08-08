@@ -95,6 +95,19 @@ public sealed class App : IExternalApplication
                 + "URL and key and pick a project.");
         }
 
+        // A project id can only get into config.json by hand or from a version
+        // of this add-in that wrote one: the Settings dialog has no field for it
+        // because the project is chosen in Telegram. Left in place it scopes
+        // every claim to that one project, and commands for any other are never
+        // taken — with no error anywhere, because "nothing to claim" is a
+        // perfectly ordinary answer.
+        if (!string.IsNullOrWhiteSpace(Config.ProjectId))
+        {
+            Logger.Warn(
+                $"config.json pins this add-in to project {Config.ProjectId}. Commands for "
+                + "any other project will never be claimed. Clear \"projectId\" to serve all.");
+        }
+
         Supabase ??= new SupabaseClient(Config.SupabaseUrl, Config.SupabaseKey);
         Repository ??= new CommandQueueRepository(Supabase, Config.ProjectId, Config.CommandTimeoutSeconds);
 
@@ -102,6 +115,12 @@ public sealed class App : IExternalApplication
         {
             _worker = new CommandQueueWorker(new CommandProcessor(), Config, Repository);
             _externalEvent = ExternalEvent.Create(_worker);
+        }
+        else
+        {
+            // Reconnecting after a settings change: the worker is reused, so it
+            // has to be pointed at the client this connection built.
+            _worker.Rebind(Config, Repository);
         }
 
         Poller = new CommandPoller(Config, Supabase, Repository, _worker, _externalEvent!);

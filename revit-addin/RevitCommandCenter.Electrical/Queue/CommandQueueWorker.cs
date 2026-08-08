@@ -19,8 +19,8 @@ namespace RevitCommandCenter.Electrical.Queue;
 public sealed class CommandQueueWorker : IExternalEventHandler
 {
     private readonly CommandProcessor _processor;
-    private readonly AddinConfig _config;
-    private readonly CommandQueueRepository _repository;
+    private AddinConfig _config;
+    private CommandQueueRepository _repository;
 
     private readonly object _gate = new();
     private PendingWork? _pending;
@@ -33,6 +33,23 @@ public sealed class CommandQueueWorker : IExternalEventHandler
         _processor = processor;
         _config = config;
         _repository = repository;
+    }
+
+    /// <summary>
+    /// Points the worker at the current config and repository.
+    ///
+    /// The worker outlives a reconnect because its ExternalEvent does — Revit
+    /// hands those out once. Disconnect disposes the Supabase client, so a
+    /// worker still holding the previous repository would write results through
+    /// a dead client on the first command after settings changed.
+    /// </summary>
+    public void Rebind(AddinConfig config, CommandQueueRepository repository)
+    {
+        lock (_gate)
+        {
+            _config = config;
+            _repository = repository;
+        }
     }
 
     private sealed class PendingWork
