@@ -1,0 +1,60 @@
+## Builds the Revit 2025 add-in.
+##
+## GitHub runners have no Revit install, so the project compiles against the
+## NuGet reference assemblies (see UseRevitNuGet in the .csproj). That checks the
+## code against the real Revit 2025 API surface; it cannot check behaviour inside
+## Revit, which still needs a machine with Revit installed.
+##
+## The artifact is the folder to drop into
+## %APPDATA%\Autodesk\Revit\Addins\2025\.
+
+name: Revit add-in
+
+on:
+  push:
+    paths:
+      - 'revit-addin/**'
+      - '.github/workflows/revit-addin.yml'
+  pull_request:
+    paths:
+      - 'revit-addin/**'
+      - '.github/workflows/revit-addin.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT: revit-addin/RevitCommandCenter.Electrical/RevitCommandCenter.Electrical.csproj
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  build:
+    # net8.0-windows with UseWPF cannot be built on Linux.
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore "$env:PROJECT" -p:UseRevitNuGet=true
+
+      - name: Build
+        run: >
+          dotnet build "$env:PROJECT"
+          -c Release
+          --no-restore
+          -p:UseRevitNuGet=true
+          -warnaserror:CS0618,CS0612
+
+      - name: Upload add-in
+        uses: actions/upload-artifact@v4
+        with:
+          name: RevitCommandCenter.Electrical-2025
+          if-no-files-found: error
+          path: |
+            revit-addin/RevitCommandCenter.Electrical/bin/Release/**/*
+            !revit-addin/RevitCommandCenter.Electrical/bin/Release/**/RevitAPI*.dll

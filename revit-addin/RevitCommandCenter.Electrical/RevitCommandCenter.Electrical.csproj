@@ -22,13 +22,31 @@
     <Optimize>false</Optimize>
   </PropertyGroup>
 
-  <!-- Point RevitApiDir at your install if it is not on the default path:
+  <!-- Revit API: the local install when there is one, NuGet reference
+       assemblies otherwise.
+
+       A machine with Revit 2025 builds against the real DLLs, unchanged. CI has
+       no Revit install, so it falls back to Nice3point's published reference
+       assemblies — same public surface, no runtime code. Force either side with
+       -p:UseRevitNuGet=true|false.
+
+       Point RevitApiDir at your install if it is not on the default path:
        dotnet build -p:RevitApiDir="D:\Autodesk\Revit 2025" -->
   <PropertyGroup>
     <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2025</RevitApiDir>
+    <UseRevitNuGet Condition="'$(UseRevitNuGet)' == '' AND !Exists('$(RevitApiDir)\RevitAPI.dll')">true</UseRevitNuGet>
+    <UseRevitNuGet Condition="'$(UseRevitNuGet)' == ''">false</UseRevitNuGet>
+    <RevitApiVersion>2025.4.50</RevitApiVersion>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(UseRevitNuGet)' == 'true'">
+    <!-- ExcludeAssets=runtime keeps these out of the output: Revit supplies the
+         real assemblies at load time and must not find a second copy. -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiVersion)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseRevitNuGet)' != 'true'">
     <Reference Include="RevitAPI">
       <HintPath>$(RevitApiDir)\RevitAPI.dll</HintPath>
       <Private>false</Private>
