@@ -14,9 +14,16 @@ Telegram webhook registration, then seed a project and user.
    supabase link --project-ref <your-ref>
    supabase db push
 
-   # or directly
-   psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql
+   # or directly — every migration, in order, not just the first
+   for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
    ```
+
+   > Applying only `0001_init.sql` leaves `claim_next_command` requiring a
+   > project id. The add-in polls with none (the project is chosen in Telegram),
+   > `project_id = null` matches nothing, and the RPC returns no row and no
+   > error — so the add-in polls forever, claims nothing, and commands pile up
+   > with no failure to show for it. `0002_claim_any_project.sql` is what makes
+   > a null project mean "any". Run all of them.
 
 3. From **Settings → API**, copy:
    - Project URL → `SUPABASE_URL`
