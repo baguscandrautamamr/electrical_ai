@@ -38,7 +38,8 @@ public sealed class ConnectCommand : IExternalCommand
                     ? $"Connected.\n\nProject: {app.Config.ProjectId}\n" +
                       $"Polling every {app.Config.PollingIntervalSeconds}s."
                     : "Polling started, but Supabase did not respond.\n\n" +
-                      "Check supabase_url and supabase_key, then see the Log.");
+                      "Open Settings and use \"Test connection\" — it reports exactly " +
+                      "what Supabase said.");
 
             return Result.Succeeded;
         }
@@ -63,6 +64,44 @@ public sealed class DisconnectCommand : IExternalCommand
             "Command Center",
             "Disconnected.\n\nCommands sent from Telegram stay queued and will run when you reconnect.");
         return Result.Succeeded;
+    }
+}
+
+[Transaction(TransactionMode.Manual)]
+[Regeneration(RegenerationOption.Manual)]
+public sealed class SettingsCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
+    {
+        try
+        {
+            var app = App.Current;
+            var config = app?.Config ?? AddinConfig.Load();
+
+            var window = new SettingsWindow(config);
+
+            // Parent to Revit so the dialog is modal to it rather than merely
+            // floating above it — otherwise it can end up behind the main window.
+            new System.Windows.Interop.WindowInteropHelper(window)
+            {
+                Owner = data.Application.MainWindowHandle,
+            };
+
+            if (window.ShowDialog() != true) return Result.Cancelled;
+
+            TaskDialog.Show(
+                "Command Center",
+                "Settings saved.\n\nPress Connect to start polling with them.");
+
+            return Result.Succeeded;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Settings dialog failed", ex);
+            message = ex.Message;
+            TaskDialog.Show("Command Center", $"Could not open settings:\n\n{ex.Message}");
+            return Result.Failed;
+        }
     }
 }
 

@@ -33,18 +33,23 @@ public static class RibbonHelper
         var assemblyPath = Assembly.GetExecutingAssembly().Location;
 
         AddButton(panel, assemblyPath, typeof(ConnectCommand),
-            "Connect", "Start polling the command queue.");
+            "Connect", "Start polling the command queue.", Icons.Connect());
 
         AddButton(panel, assemblyPath, typeof(DisconnectCommand),
-            "Disconnect", "Stop polling. Queued commands stay queued.");
+            "Disconnect", "Stop polling. Queued commands stay queued.", Icons.Disconnect());
 
         panel.AddSeparator();
 
+        // Settings first of the three: on a fresh install it is the only one
+        // that does anything useful, because Connect fails until it is filled in.
+        AddButton(panel, assemblyPath, typeof(SettingsCommand),
+            "Settings", "Supabase connection, project and polling options.", Icons.Settings());
+
         AddButton(panel, assemblyPath, typeof(StatusCommand),
-            "Status", "Connection state and processed-command counters.");
+            "Status", "Connection state and processed-command counters.", Icons.Status());
 
         AddButton(panel, assemblyPath, typeof(ShowLogCommand),
-            "Log", "Recent add-in log lines.");
+            "Log", "Recent add-in log lines.", Icons.Log());
     }
 
     private static void AddButton(
@@ -52,7 +57,8 @@ public static class RibbonHelper
         string assemblyPath,
         Type commandType,
         string text,
-        string tooltip)
+        string tooltip,
+        System.Windows.Media.ImageSource icon)
     {
         var data = new PushButtonData(
             commandType.Name,
@@ -67,23 +73,15 @@ public static class RibbonHelper
                 "Revit Electrical Command Center — executes electrical placement commands " +
                 "sent from Telegram via a Supabase queue.";
 
-            // Icons are optional; a missing file must not break the ribbon.
-            var iconPath = Path.Combine(
-                Path.GetDirectoryName(assemblyPath) ?? string.Empty,
-                "Resources",
-                $"{commandType.Name}32.png");
-
-            if (File.Exists(iconPath))
+            // An icon that fails to build must not cost us the button.
+            try
             {
-                try
-                {
-                    button.LargeImage = new System.Windows.Media.Imaging.BitmapImage(
-                        new Uri(iconPath, UriKind.Absolute));
-                }
-                catch (Exception ex)
-                {
-                    Logger.Debug($"Could not load icon {iconPath}: {ex.Message}");
-                }
+                button.LargeImage = icon;
+                button.Image = icon;
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Could not set the icon for {commandType.Name}: {ex.Message}");
             }
         }
     }
