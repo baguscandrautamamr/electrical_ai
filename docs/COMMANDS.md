@@ -231,7 +231,7 @@ Set any count to `0`, or `fire_alarm=none`, to skip that category.
 | `/api status` | viewer | Key hint, active/expired, expiry date |
 | `/api disconnect` | viewer | Deactivate the active credential |
 | `/user list` | admin | Users on the active project |
-| `/health`, `/status` | viewer | Database, queue depth, failures in the last hour |
+| `/health`, `/status` | viewer | Database, AI parser, queue depth, failures in the last hour |
 | `/theme light\|dark` | viewer | Switch theme; confirmation renders in the new one |
 | `/lang id\|en` | viewer | Switch language; confirmation renders in the new one |
 

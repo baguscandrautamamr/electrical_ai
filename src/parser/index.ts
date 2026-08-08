@@ -5,16 +5,27 @@
 import type { ParsedCommand } from '../types/index.js';
 import { hasAnthropicKey } from '../config/env.js';
 import { parseGrammar, parseAdmin, type AdminParse } from './grammar.js';
-import { parseWithClaude, MIN_CONFIDENCE } from './claude.js';
+import { parseWithClaude, MIN_CONFIDENCE, NlpError } from './claude.js';
 
 export * from './schema.js';
 export * from './grammar.js';
 export * from './validate.js';
+export { NlpError, checkNlp, describeApiError } from './claude.js';
+
+export type UnparsedReason =
+  /** A slash command this bot does not have. */
+  | 'unknown_command'
+  /** Understood, but not a request to place or modify anything in Revit. */
+  | 'not_a_device_command'
+  | 'low_confidence'
+  | 'nlp_unavailable'
+  /** The Claude call itself failed — see `detail`. */
+  | 'nlp_error';
 
 export type ParseOutcome =
   | { kind: 'admin'; admin: AdminParse }
   | { kind: 'device'; command: ParsedCommand }
-  | { kind: 'unparsed'; reason: 'unknown_command' | 'low_confidence' | 'nlp_unavailable' };
+  | { kind: 'unparsed'; reason: UnparsedReason; detail?: string };
 
 /**
  * Resolves a raw Telegram message into either an admin action, a device
@@ -39,9 +50,20 @@ export async function parseMessage(text: string): Promise<ParseOutcome> {
   // 3. Natural language via Claude.
   if (!hasAnthropicKey()) return { kind: 'unparsed', reason: 'nlp_unavailable' };
 
-  const { parsed, confidence } = await parseWithClaude(trimmed);
-  if (!parsed) return { kind: 'unparsed', reason: 'unknown_command' };
-  if (confidence < MIN_CONFIDENCE) return { kind: 'unparsed', reason: 'low_confidence' };
+  let result;
+  try {
+    result = await parseWithClaude(trimmed);
+  } catch (error) {
+    // A broken key or an unreachable model is not a phrasing problem, and
+    // telling the user to rephrase would send them chasing the wrong thing.
+    if (error instanceof NlpError) {
+      return { kind: 'unparsed', reason: 'nlp_error', detail: error.detail };
+    }
+    throw error;
+  }
 
-  return { kind: 'device', command: parsed };
+  if (result.kind === 'unknown') return { kind: 'unparsed', reason: 'not_a_device_command' };
+  if (result.confidence < MIN_CONFIDENCE) return { kind: 'unparsed', reason: 'low_confidence' };
+
+  return { kind: 'device', command: result.parsed };
 }

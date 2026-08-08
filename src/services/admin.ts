@@ -10,6 +10,7 @@ import { MessageBuilder } from '../format/message.js';
 import { formatError, formatHelp, formatCommandHelp, type FormatContext } from '../format/index.js';
 import { supabase } from '../lib/supabase.js';
 import type { AdminParse } from '../parser/grammar.js';
+import { checkNlp } from '../parser/claude.js';
 import type { Project, Role, User } from '../types/index.js';
 import {
   activeCredential,
@@ -394,16 +395,25 @@ export async function handleAdminCommand(
       const dbOk = await supabase().ping();
       const access = await resolveActiveProject(ctx.user);
       const stats = await queueStats(access?.project.id);
+      // Plain-language parsing is the part people cannot test any other way:
+      // it either answers or it says "cannot understand", and until now those
+      // looked the same whether the key was wrong or the sentence was.
+      const nlp = await checkNlp();
 
       const b = new MessageBuilder(ctx.theme);
       b.title(dbOk ? t('common.success') : t('common.error'), t('admin.health_title'));
       b.tree([
         { label: t('admin.health_database'), value: dbOk ? t('admin.health_ok') : t('admin.health_down') },
+        {
+          label: t('admin.health_ai'),
+          value: nlp.ok ? `${t('admin.health_ok')} (${nlp.model})` : t('admin.health_down'),
+        },
         { label: t('common.project'), value: access?.project.code ?? t('common.none') },
         { label: t('admin.health_queue_pending'), value: String(stats.pending) },
         { label: t('admin.health_queue_processing'), value: String(stats.processing) },
         { label: 'Failed (1h)', value: String(stats.failedLastHour) },
       ]);
+      if (!nlp.ok && nlp.detail) b.blank().code(nlp.detail.slice(0, 400));
       return { text: b.build() };
     }
 

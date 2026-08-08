@@ -4,6 +4,11 @@
  * Only reached when grammar.ts cannot parse the message, so the common path
  * costs nothing. Structured outputs pin the response to the schema below, which
  * removes the "model returned prose instead of JSON" failure mode entirely.
+ *
+ * Every way this can fail is reported, not swallowed: a rejected API key, an
+ * unavailable model and an exhausted credit balance all used to reach the user
+ * as "cannot understand that command", which sent people looking for a phrasing
+ * problem that was never there.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -20,6 +25,35 @@ function anthropic(): Anthropic {
 
 export function __setAnthropicClient(next: Anthropic | null): void {
   client = next;
+}
+
+/**
+ * The Claude call failed in a way the user cannot fix by rephrasing.
+ *
+ * `detail` is deliberately technical — it is shown verbatim in the chat so the
+ * person running the bot can act on it without opening the Vercel logs.
+ */
+export class NlpError extends Error {
+  readonly detail: string;
+
+  constructor(detail: string, options?: { cause?: unknown }) {
+    super(`Claude parse failed: ${detail}`, options);
+    this.name = 'NlpError';
+    this.detail = detail;
+  }
+}
+
+/** Compresses an SDK error into one line worth showing in Telegram. */
+export function describeApiError(error: unknown): string {
+  if (error instanceof Anthropic.APIError) {
+    // The API's own message is the useful part — it spells out "invalid
+    // x-api-key", "credit balance is too low", "model not found", and so on.
+    const status = error.status ?? 'no status';
+    const type = error.type ?? error.name;
+    return `${status} ${type}: ${error.message}`.slice(0, 400);
+  }
+  if (error instanceof Error) return `${error.name}: ${error.message}`.slice(0, 400);
+  return String(error).slice(0, 400);
 }
 
 /**
@@ -93,34 +127,51 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export interface ClaudeParseResult {
-  parsed: ParsedCommand | null;
-  confidence: number;
-}
+/**
+ * Roomy on purpose. Current models think by default, and `max_tokens` caps
+ * thinking *and* the JSON together — the old 1024 was enough for the answer
+ * alone and would truncate the moment the model reasoned about the message.
+ */
+const MAX_TOKENS = 4096;
+
+export type ClaudeParseResult =
+  | { kind: 'command'; parsed: ParsedCommand; confidence: number }
+  /** Understood, but not a request to place or modify anything in Revit. */
+  | { kind: 'unknown'; confidence: number };
 
 /** Below this, we ask the user to rephrase rather than guessing. */
 export const MIN_CONFIDENCE = 0.55;
 
 export async function parseWithClaude(text: string): Promise<ClaudeParseResult> {
-  const response = await anthropic().messages.create({
-    model: env.anthropicModel,
-    max_tokens: 1024,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    // Parsing one short sentence does not need deep reasoning; low effort keeps
-    // the user's round-trip inside the ~8-12s budget.
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: OUTPUT_SCHEMA },
-    },
-    messages: [{ role: 'user', content: text }],
-  } as Anthropic.MessageCreateParamsNonStreaming);
+  let response: Anthropic.Message;
+  try {
+    response = await anthropic().messages.create({
+      model: env.anthropicModel,
+      max_tokens: MAX_TOKENS,
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      // Parsing one short sentence does not need deep reasoning; low effort keeps
+      // the user's round-trip inside the ~8-12s budget.
+      output_config: {
+        effort: 'low',
+        format: { type: 'json_schema', schema: OUTPUT_SCHEMA },
+      },
+      messages: [{ role: 'user', content: text }],
+    });
+  } catch (error) {
+    throw new NlpError(describeApiError(error), { cause: error });
+  }
 
   if (response.stop_reason === 'refusal') {
-    return { parsed: null, confidence: 0 };
+    throw new NlpError(`refused by safety classifier (${response.stop_details?.category ?? 'no category'})`);
+  }
+  if (response.stop_reason === 'max_tokens') {
+    throw new NlpError(`response truncated at max_tokens=${MAX_TOKENS}`);
   }
 
   const textBlock = response.content.find((block) => block.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') return { parsed: null, confidence: 0 };
+  if (!textBlock || textBlock.type !== 'text') {
+    throw new NlpError(`no text block in response (stop_reason=${response.stop_reason})`);
+  }
 
   let payload: {
     command_type: string;
@@ -131,11 +182,12 @@ export async function parseWithClaude(text: string): Promise<ClaudeParseResult> 
   try {
     payload = JSON.parse(textBlock.text);
   } catch {
-    return { parsed: null, confidence: 0 };
+    throw new NlpError(`response was not JSON: ${textBlock.text.slice(0, 120)}`);
   }
 
+  const confidence = payload.confidence ?? 0;
   const spec = COMMAND_SPECS[payload.command_type];
-  if (!spec) return { parsed: null, confidence: payload.confidence ?? 0 };
+  if (!spec) return { kind: 'unknown', confidence };
 
   // Map any aliases the model used back onto canonical names.
   const aliases = aliasMap(spec);
@@ -145,6 +197,7 @@ export async function parseWithClaude(text: string): Promise<ClaudeParseResult> 
   }
 
   return {
+    kind: 'command',
     parsed: {
       type: spec.type,
       subject: payload.subject?.trim() || null,
@@ -152,6 +205,25 @@ export async function parseWithClaude(text: string): Promise<ClaudeParseResult> 
       source: 'claude',
       raw: text,
     },
-    confidence: payload.confidence ?? 0,
+    confidence,
   };
+}
+
+/**
+ * Checks that the configured key can actually reach the configured model.
+ *
+ * Used by /health. Retrieving the model costs no tokens, so this can be run as
+ * often as someone cares to type the command.
+ */
+export async function checkNlp(): Promise<{ ok: boolean; model: string; detail?: string }> {
+  const model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-opus-5';
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+    return { ok: false, model, detail: 'ANTHROPIC_API_KEY is not set' };
+  }
+  try {
+    await anthropic().models.retrieve(model);
+    return { ok: true, model };
+  } catch (error) {
+    return { ok: false, model, detail: describeApiError(error) };
+  }
 }
