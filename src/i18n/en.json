@@ -192,6 +192,19 @@
     "admin": "Admin",
     "example": "Example",
     "params_note": "Parameters are written as key=value, separated by spaces.",
-    "natural_language": "You can also write in plain language, e.g. \"place lighting in Office_A area 45 m2 target 300 lux\"."
+    "natural_language": "You can also write in plain language, e.g. \"place lighting in Office_A area 45 m2 target 300 lux\".",
+    "admin_project": "list projects, or tap one to make it active",
+    "admin_user_list": "who can use this project",
+    "admin_user_add": "register someone and grant them access",
+    "admin_user_role": "change what they may do",
+    "admin_user_remove": "revoke access to this project",
+    "admin_api_connect": "store an API credential",
+    "admin_api_status": "credential status",
+    "admin_api_disconnect": "deactivate credential",
+    "admin_status": "your command queue",
+    "admin_health": "system health",
+    "admin_theme": "switch theme",
+    "admin_lang": "switch language",
+    "admin_help": "every parameter of one command, with ranges and defaults"
   }
 }

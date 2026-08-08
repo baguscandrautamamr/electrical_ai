@@ -124,17 +124,23 @@ export function formatHelp(ctx: FormatContext): string {
     })),
   );
 
+  // Kept in step with the command menu by tests/help.test.ts: a command the
+  // menu offers but /help omits is one nobody discovers.
   b.section(t('help.admin'));
   b.tree([
-    { label: '/project list', value: 'list projects' },
-    { label: '/project use <code>', value: 'switch active project' },
-    { label: '/api connect <key> <YYYY-MM-DD>', value: 'store an API credential' },
-    { label: '/api status', value: 'credential status' },
-    { label: '/api disconnect', value: 'deactivate credential' },
-    { label: '/user list', value: 'list project users' },
-    { label: '/health', value: 'system health' },
-    { label: '/theme light|dark', value: 'switch theme' },
-    { label: '/lang id|en', value: 'switch language' },
+    { label: '/help <command>', value: t('help.admin_help') },
+    { label: '/project', value: t('help.admin_project') },
+    { label: '/user list', value: t('help.admin_user_list') },
+    { label: '/user add <id> <name> [viewer|editor|admin]', value: t('help.admin_user_add') },
+    { label: '/user role <id> <viewer|editor|admin>', value: t('help.admin_user_role') },
+    { label: '/user remove <id>', value: t('help.admin_user_remove') },
+    { label: '/api connect <key> <YYYY-MM-DD>', value: t('help.admin_api_connect') },
+    { label: '/api status', value: t('help.admin_api_status') },
+    { label: '/api disconnect', value: t('help.admin_api_disconnect') },
+    { label: '/status', value: t('help.admin_status') },
+    { label: '/health', value: t('help.admin_health') },
+    { label: '/theme light|dark', value: t('help.admin_theme') },
+    { label: '/lang id|en', value: t('help.admin_lang') },
   ]);
 
   b.section(t('help.example'));
