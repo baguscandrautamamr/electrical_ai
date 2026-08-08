@@ -80,6 +80,18 @@
     "description": "Buat jadwal dan laporan / generate schedules and reports"
   },
   {
+    "command": "delete_devices",
+    "description": "Hapus perangkat satu kategori di satu ruangan / remove devices from a room"
+  },
+  {
+    "command": "modify_devices",
+    "description": "Ubah jumlah/grid perangkat di satu ruangan / re-lay out a room"
+  },
+  {
+    "command": "list_sheets",
+    "description": "Daftar sheet beserta nomornya / list the sheets and their numbers"
+  },
+  {
     "command": "print_pdf",
     "description": "Cetak sheet ke PDF sesuai nomor sheet / print sheets by number"
   },

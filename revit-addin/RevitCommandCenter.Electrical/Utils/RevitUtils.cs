@@ -471,8 +471,14 @@ public static class RevitUtils
         return placements;
     }
 
-    /// <summary>Gap between the door jamb and the switch beside it, in feet.</summary>
-    private static readonly double SwitchOffsetFeet = RevitUnits.MToFeet(0.25);
+    /// <summary>
+    /// Gap between the door jamb and the switch beside it, in feet.
+    ///
+    /// 300 mm is the house standard, and it is measured from the edge of the
+    /// door leaf rather than from its centre — which is what an engineer means
+    /// by "300 from the door", and what a builder will set out.
+    /// </summary>
+    private static readonly double SwitchOffsetFeet = RevitUnits.MToFeet(0.30);
 
     /// <summary>
     /// A point on the wall a short distance to one side of a door, staying
@@ -690,10 +696,30 @@ public static class RevitUtils
     ///
     /// Scans the model rather than the database so ids stay unique even if a
     /// previous run failed after placing but before persisting.
+    ///
+    /// It used to strip the prefix and read digits off what was left, which for
+    /// "OP-001" left "-001" — and a leading hyphen is not a digit, so nothing
+    /// parsed, the highest stayed 0, and every placement in the model started
+    /// again at 001. That is where "Elements have duplicate 'Mark' values" came
+    /// from on every single command.
     /// </summary>
     public static int NextDeviceSequence(Document doc, BuiltInCategory category, string prefix)
     {
         var highest = 0;
+
+        foreach (var mark in ExistingMarks(doc, category))
+        {
+            var sequence = SequenceIn(mark, prefix);
+            if (sequence > highest) highest = sequence;
+        }
+
+        return highest + 1;
+    }
+
+    /// <summary>Every Mark already in use in a category, for uniqueness checks.</summary>
+    public static HashSet<string> ExistingMarks(Document doc, BuiltInCategory category)
+    {
+        var marks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var instances = new FilteredElementCollector(doc)
             .OfCategory(category)
@@ -703,16 +729,69 @@ public static class RevitUtils
         foreach (var instance in instances)
         {
             var mark = ParameterMapper.GetStringParameter(instance, "Mark");
-            if (!mark.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-
-            var digits = new string(mark[prefix.Length..].TakeWhile(char.IsDigit).ToArray());
-            if (int.TryParse(digits, out var value) && value > highest) highest = value;
+            if (!string.IsNullOrWhiteSpace(mark)) marks.Add(mark.Trim());
         }
 
-        return highest + 1;
+        return marks;
+    }
+
+    /// <summary>
+    /// The number in a device id, or 0 when the mark is not one of ours.
+    ///
+    /// Tolerant about the separator: "OP-001", "OP001" and "OP_001" all read as
+    /// 1, because a mark typed by hand is not going to match the format exactly.
+    /// </summary>
+    private static int SequenceIn(string mark, string prefix)
+    {
+        if (!mark.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return 0;
+
+        var rest = mark[prefix.Length..].TrimStart('-', '_', ' ', '.');
+        var digits = new string(rest.TakeWhile(char.IsDigit).ToArray());
+
+        return int.TryParse(digits, out var value) ? value : 0;
     }
 
     public static string FormatDeviceId(string prefix, int sequence) => $"{prefix}-{sequence:D3}";
+
+    /// <summary>
+    /// A device id that nothing in the category is already using.
+    ///
+    /// The sequence alone is enough when every mark was written by this add-in.
+    /// It is not enough when someone has marked a fixture by hand, so the
+    /// candidate is checked against what is really there and skipped past —
+    /// Revit's duplicate-Mark warning is the one thing an engineer sees from
+    /// their own model rather than from the chat, and it should never be us.
+    /// </summary>
+    public static string NextFreeDeviceId(string prefix, int sequence, ISet<string> taken)
+    {
+        // The model can hold a lot of one category; the ceiling only stops a
+        // pathological loop, and 100000 marks is far past any real drawing.
+        for (var candidate = sequence; candidate < sequence + 100000; candidate++)
+        {
+            var id = FormatDeviceId(prefix, candidate);
+            if (taken.Add(id)) return id;
+        }
+
+        return FormatDeviceId(prefix, sequence);
+    }
+
+    /// <summary>
+    /// Every family type loaded in a category.
+    ///
+    /// What the project actually has, which is the only sound basis for picking
+    /// one — a name hint invented from a command parameter describes a family
+    /// this office may never have loaded.
+    /// </summary>
+    public static List<FamilySymbol> Symbols(Document doc, BuiltInCategory category) =>
+        new FilteredElementCollector(doc)
+            .OfClass(typeof(FamilySymbol))
+            .OfCategory(category)
+            .Cast<FamilySymbol>()
+            .ToList();
+
+    /// <summary>"Family : Type", the way Revit names a type in its own UI.</summary>
+    public static string DescribeSymbol(FamilySymbol? symbol) =>
+        symbol is null ? string.Empty : $"{symbol.Family?.Name ?? "?"} : {symbol.Name}";
 
     /// <summary>
     /// First placeable <see cref="FamilySymbol"/> in a category whose family or
@@ -721,11 +800,7 @@ public static class RevitUtils
     /// </summary>
     public static FamilySymbol? FindSymbol(Document doc, BuiltInCategory category, string nameHint)
     {
-        var symbols = new FilteredElementCollector(doc)
-            .OfClass(typeof(FamilySymbol))
-            .OfCategory(category)
-            .Cast<FamilySymbol>()
-            .ToList();
+        var symbols = Symbols(doc, category);
 
         if (symbols.Count == 0) return null;
 

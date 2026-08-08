@@ -70,6 +70,7 @@
     "hangers": "Hangers",
     "panels": "Panels",
     "rooms": "Rooms",
+    "sheets": "Sheets",
     "room_not_found": "Room \"{room}\" not found; counted the whole model instead."
   },
   "lighting": {
@@ -89,7 +90,8 @@
     "switch_type": "Switch type",
     "height": "Height from floor",
     "controls": "Controls",
-    "placement": "Placement"
+    "placement": "Placement",
+    "family_type": "Family type"
   },
   "receptacle": {
     "title": "Receptacles",
@@ -195,7 +197,21 @@
     "walls": "Walls",
     "no_grids": "No grids in this view, so no grid dimensions.",
     "no_walls": "No measurable wall faces in this view.",
-    "nothing": "Nothing in this view could be dimensioned."
+    "nothing": "Nothing in this view could be dimensioned.",
+    "no_devices": "No dimensionable devices in this room. Their family may publish no reference planes to dimension to."
+  },
+  "delete": {
+    "title": "Delete",
+    "done": "DEVICES REMOVED",
+    "removed": "Removed",
+    "removed_ids": "What was removed",
+    "nothing_there": "No devices of that category in this room, so nothing was removed. Check the room name."
+  },
+  "modify": {
+    "title": "Modify",
+    "done": "LAYOUT CHANGED",
+    "removed": "Removed",
+    "placed": "Placed again"
   },
   "compliance": {
     "title": "Compliance",
@@ -207,7 +223,8 @@
     "nfpa72_manual_call": "Manual call points ≤25 m",
     "tray_fill": "Cable fill within limit",
     "hanger_load": "Hanger load within capacity",
-    "breaker_load": "Breaker load within limit"
+    "breaker_load": "Breaker load within limit",
+    "switch_type_available": "The requested switch type is loaded in the project"
   },
   "admin": {
     "api_connected": "API credential saved.",

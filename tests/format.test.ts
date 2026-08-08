@@ -12,7 +12,9 @@ import {
 import { escapeHtml } from '../src/lib/telegram.js';
 import type {
   CableTrayResult,
+  DeleteResult,
   DimensionResult,
+  ModifyResult,
   EquipRoomResult,
   PlacementResult,
   PrintResult,
@@ -370,6 +372,71 @@ describe('print formatting', () => {
 
   it('renders in both languages', () => {
     expect(formatResult(printed, ID)).toContain('SHEET DICETAK KE PDF');
+  });
+});
+
+describe('delete formatting', () => {
+  it('names what it removed, so a wrong room is obvious', () => {
+    const removed: DeleteResult = {
+      kind: 'delete',
+      room: 'PANTRY 6',
+      what: 'lighting',
+      devices_removed: 6,
+      device_ids: ['LF-001', 'LF-002', 'LF-003', 'LF-004', 'LF-005', 'LF-006'],
+      groups: [{ label: 'lighting.title', count: 6 }],
+    };
+
+    const text = formatResult(removed, EN);
+
+    expect(text).toContain('DEVICES REMOVED');
+    expect(text).toContain('Room: PANTRY 6');
+    expect(text).toContain('Removed: 6 units');
+    expect(text).toContain('LF-001');
+  });
+
+  it('warns rather than congratulating when nothing was there', () => {
+    const nothing: DeleteResult = {
+      kind: 'delete',
+      room: 'PANTRY 6',
+      what: 'lighting',
+      devices_removed: 0,
+      device_ids: [],
+      groups: [],
+    };
+
+    const text = formatResult(nothing, EN);
+
+    expect(text).toContain('nothing was removed');
+    // A tick here would read as "your room is now clear", which it is not.
+    expect(text).not.toContain('✅');
+  });
+});
+
+describe('modify formatting', () => {
+  it('reports what went out and what came back', () => {
+    const changed: ModifyResult = {
+      kind: 'modify',
+      room: 'Meeting_1',
+      what: 'lighting',
+      devices_removed: 4,
+      placement: {
+        kind: 'lighting',
+        room: 'Meeting_1',
+        devices_placed: 6,
+        device_ids: [],
+        total_load_w: 108,
+        circuits_created: 1,
+        details: { 'common.load_source': 'load_source.family' },
+      },
+    };
+
+    const text = formatResult(changed, EN);
+
+    expect(text).toContain('LAYOUT CHANGED');
+    expect(text).toContain('Removed: 4 units');
+    expect(text).toContain('Placed again: 6 units');
+    expect(text).toContain('Load: 108 W');
+    expect(text).toContain("The family's electrical data in Revit");
   });
 });
 

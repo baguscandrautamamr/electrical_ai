@@ -111,6 +111,10 @@ public abstract class DevicePlacementHandler : ICommandHandler
 
         var level = RevitUtils.LevelOf(context.Doc, room);
         var sequence = RevitUtils.NextDeviceSequence(context.Doc, Category, DeviceIdPrefix);
+        // Marks already in the model, so a hand-marked fixture cannot collide
+        // with a generated id. Grows as ids are handed out, which also keeps
+        // this run's own ids apart from each other.
+        var takenMarks = RevitUtils.ExistingMarks(context.Doc, Category);
 
         var placed = new List<FamilyInstance>();
         var deviceIds = new List<string>();
@@ -131,7 +135,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
                 var placement = placements[i];
                 var instance = Create(context.Doc, symbol, placement, level);
 
-                var deviceId = RevitUtils.FormatDeviceId(DeviceIdPrefix, sequence + i);
+                var deviceId = RevitUtils.NextFreeDeviceId(DeviceIdPrefix, sequence + i, takenMarks);
                 ParameterMapper.TrySetParameter(instance, "Mark", deviceId);
 
                 var extra = InstanceParameters(command, i);

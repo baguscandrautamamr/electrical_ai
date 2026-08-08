@@ -70,6 +70,7 @@
     "hangers": "Hanger",
     "panels": "Panel",
     "rooms": "Ruangan",
+    "sheets": "Sheet",
     "room_not_found": "Ruangan \"{room}\" tidak ditemukan; yang dihitung seluruh model."
   },
   "lighting": {
@@ -89,7 +90,8 @@
     "switch_type": "Tipe saklar",
     "height": "Tinggi dari lantai",
     "controls": "Mengontrol",
-    "placement": "Penempatan"
+    "placement": "Penempatan",
+    "family_type": "Type family"
   },
   "receptacle": {
     "title": "Stop Kontak",
@@ -195,7 +197,21 @@
     "walls": "Dinding",
     "no_grids": "Tidak ada grid di view ini, jadi tidak ada dimensi grid.",
     "no_walls": "Tidak ada muka dinding yang bisa diukur di view ini.",
-    "nothing": "Tidak ada yang bisa diberi dimensi di view ini."
+    "nothing": "Tidak ada yang bisa diberi dimensi di view ini.",
+    "no_devices": "Tidak ada perangkat yang bisa diukur di ruangan ini. Family-nya mungkin tidak punya reference plane untuk dimensi."
+  },
+  "delete": {
+    "title": "Hapus",
+    "done": "PERANGKAT DIHAPUS",
+    "removed": "Dihapus",
+    "removed_ids": "Yang dihapus",
+    "nothing_there": "Tidak ada perangkat kategori itu di ruangan ini, jadi tidak ada yang dihapus. Cek lagi nama ruangannya."
+  },
+  "modify": {
+    "title": "Modifikasi",
+    "done": "TATA LETAK DIUBAH",
+    "removed": "Dihapus",
+    "placed": "Dipasang ulang"
   },
   "compliance": {
     "title": "Kepatuhan",
@@ -207,7 +223,8 @@
     "nfpa72_manual_call": "Titik panggil manual ≤25 m",
     "tray_fill": "Cable fill dalam batas",
     "hanger_load": "Beban hanger dalam kapasitas",
-    "breaker_load": "Beban breaker dalam batas"
+    "breaker_load": "Beban breaker dalam batas",
+    "switch_type_available": "Type saklar yang diminta tersedia di proyek"
   },
   "admin": {
     "api_connected": "Kredensial API tersimpan.",

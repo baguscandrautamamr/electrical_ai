@@ -112,6 +112,11 @@ function summarize(result: CommandResult | null): string {
       return 'exports generated';
     case 'print':
       return `${result.sheets.length} sheet(s) printed`;
+    case 'delete':
+      return `${result.room ?? 'room'}: ${result.devices_removed} ${result.what} device(s) removed`;
+    case 'modify':
+      return `${result.room ?? 'room'}: ${result.what} re-laid out, `
+        + `-${result.devices_removed} / +${result.placement?.devices_placed ?? 0}`;
     case 'dimension':
       return `${result.view}: ${result.dimensions_created} dimension string(s)`;
     case 'query':

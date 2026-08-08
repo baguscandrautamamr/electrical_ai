@@ -475,7 +475,7 @@ describe('command specs', () => {
   it('lets a viewer read the model but not change it', () => {
     // A viewer may run anything that leaves the drawing as it found it —
     // reading it, scheduling it, printing it. Everything else needs an editor.
-    const readOnly = new Set(['query', 'export', 'print_pdf']);
+    const readOnly = new Set(['query', 'export', 'print_pdf', 'list_sheets']);
     for (const name of readOnly) {
       expect(COMMAND_SPECS[name]!.role, `${name} should be readable by a viewer`).toBe('viewer');
     }

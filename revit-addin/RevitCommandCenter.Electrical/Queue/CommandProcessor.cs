@@ -31,6 +31,7 @@ public sealed class CommandProcessor
             new ExportHandler(),
             new PrintPdfHandler(),
             new DimensionHandler(),
+            new DeleteDevicesHandler(),
             new QueryHandler(),
         };
 
@@ -38,10 +39,18 @@ public sealed class CommandProcessor
             handler => handler.CommandType,
             StringComparer.OrdinalIgnoreCase);
 
-        // equip_room orchestrates the others, so it is registered last with a
+        // /list_sheets is the same read as /query what=sheet, under the name
+        // people actually ask it by.
+        _handlers[QueryHandler.SheetListCommandType] =
+            handlers.OfType<QueryHandler>().First();
+
+        // These orchestrate the others, so they are registered last with a
         // read-only view of the registry built so far.
         var orchestrated = new EquipRoomHandler(_handlers);
         _handlers[orchestrated.CommandType] = orchestrated;
+
+        var modify = new ModifyDevicesHandler(_handlers);
+        _handlers[modify.CommandType] = modify;
     }
 
     public IReadOnlyDictionary<string, ICommandHandler> Handlers => _handlers;
