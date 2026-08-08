@@ -21,11 +21,11 @@ internal sealed class ProjectRow
 /// <summary>
 /// Settings dialog.
 ///
-/// Configuration used to mean hand-editing JSON at a path the user had to read
-/// out of a log window, with a project identified by a bare UUID they had no
-/// way to look up. This asks for the two things only they can know — the
-/// Supabase URL and key — then discovers the projects itself and lets them pick
-/// one by name.
+/// Asks only for what this machine alone can know: the Supabase URL and key.
+/// The project is deliberately absent — that choice belongs in Telegram, where
+/// /project lists the open Revit models and a tap sets the active one. Asking
+/// for it here as well meant configuring the same fact in two places that had
+/// to agree.
 ///
 /// Built in code rather than XAML: a Revit add-in loads from an arbitrary
 /// folder, and resource-URI lookups for loose XAML are a common source of
@@ -41,8 +41,6 @@ internal sealed class SettingsWindow : Window
 
     private readonly TextBox _url = new();
     private readonly PasswordBox _key = new();
-    private readonly ComboBox _project = new();
-    private readonly TextBox _projectIdFallback = new();
     private readonly TextBox _pollInterval = new();
     private readonly TextBox _hangerFamily = new();
     private readonly TextBox _exportDirectory = new();
@@ -90,31 +88,6 @@ internal sealed class SettingsWindow : Window
         _status.TextWrapping = TextWrapping.Wrap;
         _status.Margin = new Thickness(0, 8, 0, 0);
         root.Children.Add(_status);
-
-        root.Children.Add(Heading("Project — optional"));
-        root.Children.Add(Hint(
-            "Leave this empty. Which project a command belongs to is chosen in Telegram "
-            + "with /project, and this instance serves whichever one you pick there. "
-            + "Set it only when two Revit machines each serve a different site, so each "
-            + "ignores the other's commands."));
-        _project.DisplayMemberPath = nameof(ProjectRow.Display);
-        _project.IsEnabled = false;
-        root.Children.Add(Field("Pin to one project", _project));
-        root.Children.Add(Field("…or paste a project id", _projectIdFallback));
-
-        var clear = new Button
-        {
-            Content = "Serve every project",
-            Padding = new Thickness(12, 4, 12, 4),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 6, 0, 0),
-        };
-        clear.Click += (_, _) =>
-        {
-            _project.SelectedItem = null;
-            _projectIdFallback.Text = string.Empty;
-        };
-        root.Children.Add(clear);
 
         root.Children.Add(Heading("Behaviour"));
         root.Children.Add(Field("Poll interval (seconds)", _pollInterval, "4 — lower feels faster and costs more API calls"));
@@ -197,7 +170,6 @@ internal sealed class SettingsWindow : Window
     {
         _url.Text = _config.SupabaseUrl;
         _key.Password = _config.SupabaseKey;
-        _projectIdFallback.Text = _config.ProjectId;
         _pollInterval.Text = _config.PollingIntervalSeconds.ToString();
         _hangerFamily.Text = _config.HangerFamilyName;
         _exportDirectory.Text = _config.ExportDirectory;
@@ -208,7 +180,6 @@ internal sealed class SettingsWindow : Window
         // if they were real is what sent the first attempt at "your-project".
         if (_url.Text.Contains("YOUR-PROJECT", StringComparison.OrdinalIgnoreCase)) _url.Text = string.Empty;
         if (_key.Password.StartsWith("YOUR-", StringComparison.OrdinalIgnoreCase)) _key.Password = string.Empty;
-        if (_projectIdFallback.Text.StartsWith("00000000", StringComparison.Ordinal)) _projectIdFallback.Text = string.Empty;
 
         if (!_config.IsUsable)
         {
@@ -247,30 +218,15 @@ internal sealed class SettingsWindow : Window
                 return;
             }
 
+            // Reads the table to prove the key really works — a URL that
+            // resolves and a key that is rejected both "ping" the same.
             var projects = await client
                 .SelectAsync<ProjectRow>("projects", "select=id,code,name&order=code")
                 .ConfigureAwait(true);
 
-            _project.ItemsSource = projects;
-            _project.IsEnabled = projects.Count > 0;
-
-            if (projects.Count == 0)
-            {
-                Say(
-                    "Connected, but there are no rows in the projects table. Create a project "
-                    + "first — see docs/DEPLOYMENT.md step 5.",
-                    Bad);
-                return;
-            }
-
-            var current = _projectIdFallback.Text.Trim();
-            _project.SelectedItem =
-                projects.FirstOrDefault(p => p.Id.Equals(current, StringComparison.OrdinalIgnoreCase))
-                ?? projects[0];
-
             Say(
-                $"Connected. {projects.Count} project(s) found. Leave the picker empty to "
-                + "serve all of them, then Save.",
+                $"Connected. {projects.Count} project(s) visible. Save, then Connect — "
+                + "pick the project in Telegram with /project.",
                 Ok);
         }
         catch (SupabaseException ex)
@@ -297,10 +253,6 @@ internal sealed class SettingsWindow : Window
         var url = _url.Text.Trim().TrimEnd('/');
         var key = _key.Password.Trim();
 
-        var projectId = _project.SelectedItem is ProjectRow row && !string.IsNullOrWhiteSpace(row.Id)
-            ? row.Id
-            : _projectIdFallback.Text.Trim();
-
         if (url.Length == 0 || key.Length == 0)
         {
             // projectId stays optional: empty means serve every project.
@@ -316,7 +268,6 @@ internal sealed class SettingsWindow : Window
 
         _config.SupabaseUrl = url;
         _config.SupabaseKey = key;
-        _config.ProjectId = projectId;
         _config.PollingIntervalSeconds = Math.Clamp(interval, 2, 300);
         _config.HangerFamilyName = _hangerFamily.Text.Trim();
         _config.ExportDirectory = _exportDirectory.Text.Trim();

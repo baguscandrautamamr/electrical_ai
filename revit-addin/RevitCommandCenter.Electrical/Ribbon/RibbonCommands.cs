@@ -2,6 +2,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitCommandCenter.Electrical.Config;
+using RevitCommandCenter.Electrical.Database;
 using RevitCommandCenter.Electrical.Utils;
 
 namespace RevitCommandCenter.Electrical.Ribbon;
@@ -31,6 +32,14 @@ public sealed class ConnectCommand : IExternalCommand
             app.Connect();
 
             var reachable = app.Supabase?.PingAsync().GetAwaiter().GetResult() ?? false;
+
+            // Announce the open model so /project in Telegram lists the file the
+            // engineer is actually looking at, not rows someone typed into SQL.
+            var title = data.Application.ActiveUIDocument?.Document?.Title;
+            if (reachable && app.Supabase is not null && !string.IsNullOrWhiteSpace(title))
+            {
+                ProjectRegistrar.RegisterAsync(app.Supabase, title!).GetAwaiter().GetResult();
+            }
 
             TaskDialog.Show(
                 "Command Center",

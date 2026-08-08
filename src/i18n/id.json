@@ -35,7 +35,13 @@
     "execution_failed": "Perintah gagal dijalankan",
     "timeout": "Perintah melebihi batas waktu. Pastikan Revit add-in berjalan.",
     "credential_expired": "Kredensial API sudah kedaluwarsa. Jalankan /api connect lagi.",
-    "your_telegram_id": "ID Telegram Anda {id} — berikan ke admin agar bisa didaftarkan."
+    "your_telegram_id": "ID Telegram Anda {id} — berikan ke admin agar bisa didaftarkan.",
+    "nlp_unavailable": "Bahasa bebas sedang mati: ANTHROPIC_API_KEY belum diisi di server. Perintah slash tetap jalan — lihat /help.",
+    "low_confidence": "Saya menangkapnya sebagai perintah perangkat tapi belum cukup yakin untuk menjalankannya. Coba tulis ulang, atau pakai bentuk persis dari /help.",
+    "bad_telegram_id": "Itu bukan ID Telegram. Bentuknya angka — bot menyebutkan ID milik siapa pun yang mengirim pesan kepadanya.",
+    "usage_user_add": "Cara pakai: /user add <id_telegram> <nama> [viewer|editor|admin]",
+    "user_not_found": "Tidak ada pengguna dengan ID Telegram itu. Dia harus mengirim pesan ke bot dulu.",
+    "cannot_remove_self": "Anda tidak bisa menghapus diri sendiri — proyek ini akan kehilangan admin."
   },
   "validation": {
     "required": "wajib diisi",
@@ -171,7 +177,14 @@
     "language_set": "Bahasa diubah ke",
     "no_users": "Belum ada pengguna.",
     "no_projects": "Belum ada proyek.",
-    "pick_project": "Ketuk sebuah proyek untuk mengaktifkannya bagi semua perintah Anda."
+    "pick_project": "Ketuk sebuah proyek untuk mengaktifkannya bagi semua perintah Anda.",
+    "user_added": "Pengguna terdaftar",
+    "user_granted": "Akses diberikan",
+    "user_removed": "Akses dicabut",
+    "user_role_set": "Peran diperbarui",
+    "user_added_hint": "Dia sudah bisa memakai bot. Minta dia mengirim /start.",
+    "role": "Peran",
+    "project": "Proyek"
   },
   "help": {
     "title": "PERINTAH TERSEDIA",
