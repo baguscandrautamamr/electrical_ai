@@ -90,7 +90,11 @@ public sealed class LightingHandler : DevicePlacementHandler
         FamilyInstance instance,
         XYZ point)
     {
-        var wattage = ExtractWattage(command.GetString("fixture_type", "LED_15W"));
+        // The fixture in front of us knows its own wattage; the family name is
+        // only a guess at it, and one that reads "15" off every family whose
+        // name does not happen to end in a number.
+        var wattage = ElectricalLoad.WattsOf(instance)
+                      ?? ExtractWattage(command.GetString("fixture_type", "LED_15W"));
 
         return new
         {
@@ -119,8 +123,7 @@ public sealed class LightingHandler : DevicePlacementHandler
         Room room,
         List<FamilyInstance> placed)
     {
-        var wattage = ExtractWattage(command.GetString("fixture_type", "LED_15W"));
-        var totalLoad = wattage * placed.Count;
+        var (totalLoad, source) = ResolveLoad(command, placed);
         const double voltage = 230;
 
         var circuits = CircuitsFor(totalLoad, BreakerAmps, voltage);
@@ -128,6 +131,9 @@ public sealed class LightingHandler : DevicePlacementHandler
         var details = new Dictionary<string, object?>
         {
             ["lighting.spacing"] = command.GetString("spacing", "auto"),
+            // Where the wattage came from — the family's own electrical data,
+            // or a guess at it read out of the family name.
+            ["common.load_source"] = source,
         };
 
         var grid = RevitUtils.ParseGrid(command.GetString("grid"));
@@ -157,6 +163,28 @@ public sealed class LightingHandler : DevicePlacementHandler
                 totalLoad <= BreakerAmps * voltage * 0.8 * circuits,
                 $"{totalLoad:F0} W / {circuits} circuit(s)"),
         };
+    }
+
+    /// <summary>
+    /// Total watts for the fixtures just placed, and where the number came from.
+    ///
+    /// The fixtures know their own wattage — Revit publishes it as the family's
+    /// electrical data, and it is the figure the lighting schedule totals. The
+    /// family name is only consulted when they do not, and a name like
+    /// "act_e_downlight" states nothing at all.
+    /// </summary>
+    private static (double Watts, string Source) ResolveLoad(
+        CommandModel command,
+        List<FamilyInstance> placed)
+    {
+        var declared = ElectricalLoad.Summarise(placed);
+        if (declared.IsComplete && declared.TotalWatts is > 0)
+        {
+            return (declared.TotalWatts.Value, ElectricalLoad.Source.Family);
+        }
+
+        var wattage = ExtractWattage(command.GetString("fixture_type", "LED_15W"));
+        return (wattage * placed.Count, ElectricalLoad.Source.FamilyName);
     }
 
     /// <summary>

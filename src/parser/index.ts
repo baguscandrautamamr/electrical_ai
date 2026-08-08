@@ -2,7 +2,7 @@
  * Parser entry point: grammar first, Claude second.
  */
 
-import type { Language, ParsedCommand } from '../types/index.js';
+import type { ParsedCommand } from '../types/index.js';
 import { hasAnthropicKey } from '../config/env.js';
 import { parseGrammar, parseAdmin, hasProseArguments, type AdminParse } from './grammar.js';
 import { parseWithClaude, MIN_CONFIDENCE, NlpError } from './claude.js';
@@ -10,6 +10,7 @@ import { parseWithClaude, MIN_CONFIDENCE, NlpError } from './claude.js';
 export * from './schema.js';
 export * from './grammar.js';
 export * from './validate.js';
+export * from './models.js';
 export { NlpError, checkNlp, describeApiError } from './claude.js';
 
 export type UnparsedReason =
@@ -25,23 +26,13 @@ export type UnparsedReason =
 export type ParseOutcome =
   | { kind: 'admin'; admin: AdminParse }
   | { kind: 'device'; command: ParsedCommand }
-  /**
-   * `note` is what the model had to say about a message it could not turn into
-   * a command — an answer to a question, or why the request has no command
-   * behind it. Worth more to the sender than the generic reason alone.
-   */
-  | { kind: 'unparsed'; reason: UnparsedReason; detail?: string; note?: string };
-
-export interface ParseOptions {
-  /** Language the AI's advice is written in. */
-  language?: Language;
-}
+  | { kind: 'unparsed'; reason: UnparsedReason; detail?: string };
 
 /**
  * Resolves a raw Telegram message into either an admin action, a device
  * command, or a failure the caller can explain to the user.
  */
-export async function parseMessage(text: string, options: ParseOptions = {}): Promise<ParseOutcome> {
+export async function parseMessage(text: string): Promise<ParseOutcome> {
   const trimmed = text.trim();
   if (trimmed === '') return { kind: 'unparsed', reason: 'unknown_command' };
 
@@ -67,7 +58,7 @@ export async function parseMessage(text: string, options: ParseOptions = {}): Pr
 
   let result;
   try {
-    result = await parseWithClaude(trimmed, options.language ?? 'id');
+    result = await parseWithClaude(trimmed);
   } catch (error) {
     // A broken key or an unreachable model is not a phrasing problem, and
     // telling the user to rephrase would send them chasing the wrong thing.
@@ -78,18 +69,10 @@ export async function parseMessage(text: string, options: ParseOptions = {}): Pr
   }
 
   if (result.kind === 'unknown') {
-    return {
-      kind: 'unparsed',
-      reason: 'not_a_device_command',
-      ...(result.note ? { note: result.note } : {}),
-    };
+    return { kind: 'unparsed', reason: 'not_a_device_command' };
   }
   if (result.confidence < MIN_CONFIDENCE) {
-    return {
-      kind: 'unparsed',
-      reason: 'low_confidence',
-      ...(result.parsed.note ? { note: result.parsed.note } : {}),
-    };
+    return { kind: 'unparsed', reason: 'low_confidence' };
   }
 
   return { kind: 'device', command: result.parsed };

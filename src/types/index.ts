@@ -25,6 +25,8 @@ export const DEVICE_COMMAND_TYPES = [
   'place_communication',
   'equip_room',
   'export',
+  'print_pdf',
+  'dimension',
   'query',
 ] as const;
 
@@ -209,6 +211,38 @@ export interface ExportResult {
   exports: ExportLinks;
 }
 
+/** One printed sheet, named as it is named in the title block. */
+export interface PrintedSheet {
+  number: string;
+  name: string;
+  /** Link or local path to the PDF, absent when several sheets share one file. */
+  file?: string | null;
+}
+
+export interface PrintResult {
+  kind: 'print';
+  sheets: PrintedSheet[];
+  /** Files written — one when combined, one per sheet otherwise. */
+  files: string[];
+  /**
+   * Patterns that matched no sheet. Reported rather than silently dropped: a
+   * typo in a sheet number otherwise prints the rest and says nothing.
+   */
+  not_found?: string[];
+}
+
+export interface DimensionResult {
+  kind: 'dimension';
+  /** View that was dimensioned. */
+  view: string;
+  dimensions_created: number;
+  /** How many faces and grid lines the dimension strings picked up. */
+  references_used: number;
+  /** i18n keys naming what got dimensioned, e.g. `dimension.grids`. */
+  targets: string[];
+  notes?: string[];
+}
+
 /** One counted category in a query result. */
 export interface QueryGroup {
   /** i18n key under `query.` or a device namespace, or a literal label. */
@@ -264,6 +298,8 @@ export type CommandResult =
   | PlacementResult
   | EquipRoomResult
   | ExportResult
+  | PrintResult
+  | DimensionResult
   | QueryResult;
 
 // ---------------------------------------------------------------------------
@@ -279,16 +315,6 @@ export interface ParsedCommand {
   source: 'grammar' | 'claude';
   /** Raw text the user typed. */
   raw: string;
-  /**
-   * A short engineering remark from the natural-language parse, in the user's
-   * language: a standard the stated value sits outside of, a value it filled in
-   * from the room's use, something worth checking before the drawing is issued.
-   *
-   * Advisory only. It never changes what gets queued — the command is built
-   * from `params` alone — so a suggestion the engineer disagrees with costs
-   * them nothing but the line it is written on.
-   */
-  note?: string;
 }
 
 export interface ValidationIssue {

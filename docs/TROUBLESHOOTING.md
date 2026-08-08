@@ -205,6 +205,33 @@ The reply tells you which of these you have:
 | "Kalimatnya saya mengerti, tapi bukan perintah Revit / not a Revit command" | The key works. The sentence asked for something outside what the bot does — placing or modifying elements, or reading them back with `/query` | See `/help` |
 | "belum cukup yakin / not sure enough to run it" | Parsed below the 0.55 confidence floor and rejected rather than guessed at | Rephrase, or use the exact form from `/help` |
 
+### It broke the moment `ANTHROPIC_MODEL` changed
+
+Changing the model changes what the request may contain. `output_config`
+carries two unrelated things — `format`, which pins the reply to a JSON schema,
+and `effort` — and they are available on different models. Sending either to a
+model that lacks it rejects the whole request.
+
+The parser now builds the request from what the configured model can do, so a
+supported model needs no other change. `/health` reports which mode it picked:
+
+| **AI reply format** | Meaning |
+| --- | --- |
+| `json_schema` | Structured outputs — the reply cannot come back malformed |
+| `prose_json` | The model has no structured outputs, or this build has never heard of its id, so the shape is asked for in prose |
+
+`prose_json` is not broken; it is how every model was asked before structured
+outputs existed. But **a model this build does not recognise lands there
+silently**, which is the one case where the row is worth checking. Models are
+listed in `src/parser/models.ts`; adding a row is a one-line change.
+
+Two more things to check after a model change:
+
+- The row shows a model you did not set → the deployment did not pick up the
+  env change. Redeploy.
+- The reply names the model (`[model=claude-sonnet-4.6]`) → the id is wrong.
+  Ids use hyphens, never dots: `claude-sonnet-4-6`.
+
 ### Using a gateway instead of Anthropic
 
 A key that is not Anthropic's own — anything that does not start with
@@ -239,12 +266,19 @@ Other notes:
 - `max_tokens` for the parse call is 4096. Current models think by default and
   the cap covers thinking *and* the JSON, so a smaller value truncates the
   answer; a truncated response is reported as such rather than as bad phrasing.
+- A rejected `output_config` is remembered for the life of the deployment, so a
+  wrong capability guess costs one request rather than one per message.
 
 ## Cost is higher than expected
 
 Slash commands never call Claude. High spend means people are writing prose.
 Share [COMMANDS.md](COMMANDS.md), or register the command list with
 `/setcommands` so Telegram autocompletes them.
+
+The parse asks for a command and nothing else. It used to also ask for a line of
+engineering advice on every message, which was billed on every message and asked
+for by nobody; that is gone. The big system block is cached, so a repeated
+message costs little more than its own words.
 
 ## Supabase API quota
 

@@ -413,6 +413,10 @@ export async function handleAdminCommand(
         // Only when it is not Anthropic: on the default endpoint this row is
         // noise, but against a gateway it is the first thing to check.
         ...(nlp.gateway ? [{ label: t('admin.health_ai_endpoint'), value: nlp.endpoint }] : []),
+        // Whether the reply is pinned to a schema or merely asked for in prose.
+        // A model this build has never heard of lands on prose silently, and
+        // this row is the only place that shows it.
+        { label: t('admin.health_ai_reply'), value: nlp.reply_format },
         { label: t('common.project'), value: access?.project.code ?? t('common.none') },
         { label: t('admin.health_queue_pending'), value: String(stats.pending) },
         { label: t('admin.health_queue_processing'), value: String(stats.processing) },

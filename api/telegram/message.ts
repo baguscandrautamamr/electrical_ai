@@ -31,7 +31,6 @@ import {
 } from '../../src/services/users.js';
 import {
   formatAck,
-  formatAdvice,
   formatError,
   formatValidationIssues,
   type FormatContext,
@@ -176,7 +175,7 @@ export async function POST(request: Request): Promise<Response> {
   // --- 3. Parse -------------------------------------------------------------
   let outcome;
   try {
-    outcome = await parseMessage(text, { language: user.language });
+    outcome = await parseMessage(text);
   } catch (error) {
     console.error('[webhook] parse failed', error);
     await telegram().sendMessage(chatId, formatError(ctx, 'errors.parse_failed'));
@@ -195,14 +194,9 @@ export async function POST(request: Request): Promise<Response> {
       nlp_error: 'errors.nlp_error',
     }[outcome.reason];
 
-    // When the model had something useful to say about the message, lead with
-    // that: someone asking a question about the design is better served by the
-    // answer than by being told their question was not a command.
     await telegram().sendMessage(
       chatId,
-      outcome.note
-        ? formatAdvice(ctx, key, outcome.note)
-        : formatError(ctx, key, { command: text.split(/\s+/)[0] ?? text }, outcome.detail),
+      formatError(ctx, key, { command: text.split(/\s+/)[0] ?? text }, outcome.detail),
     );
     return ok();
   }
@@ -287,7 +281,6 @@ export async function POST(request: Request): Promise<Response> {
       commandType: command.type,
       queuePosition: enqueued.queuePosition,
       pollSeconds: env.pollingIntervalSeconds,
-      ...(command.note ? { note: command.note } : {}),
     }),
     { replyToMessageId: message.message_id },
   );

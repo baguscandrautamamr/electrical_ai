@@ -15,14 +15,13 @@
     "seconds": "detik",
     "units": "unit",
     "schedules": "Jadwal",
-    "note": "Catatan",
+    "load_source": "Sumber beban",
     "unknown_error": "Terjadi kesalahan yang tidak diketahui."
   },
   "ack": {
     "queued": "Perintah masuk antrean. Sedang diproses...",
     "position": "Posisi antrean",
     "command": "Perintah",
-    "suggestion": "Saran",
     "waiting_revit": "Menunggu Revit add-in mengambil perintah (polling tiap {seconds} detik)."
   },
   "errors": {
@@ -171,6 +170,33 @@
     "dwg": "DWG",
     "ifc": "IFC"
   },
+  "load_source": {
+    "family": "Electrical data pada family (Revit)",
+    "stated": "Nilai yang Anda tulis di perintah",
+    "family_name": "Dibaca dari nama family",
+    "default": "Bawaan sistem (family belum mengisi electrical data)"
+  },
+  "print": {
+    "title": "Cetak PDF",
+    "created": "SHEET DICETAK KE PDF",
+    "sheets": "Sheet",
+    "printed": "Sheet yang dicetak",
+    "files": "Berkas",
+    "not_found": "Tidak ada sheet yang cocok dengan: {sheets}"
+  },
+  "dimension": {
+    "title": "Dimensi",
+    "created": "DIMENSI DITEMPATKAN",
+    "view": "View",
+    "strings": "Rangkaian dimensi",
+    "references": "Titik acuan",
+    "target": "Objek",
+    "grids": "Grid",
+    "walls": "Dinding",
+    "no_grids": "Tidak ada grid di view ini, jadi tidak ada dimensi grid.",
+    "no_walls": "Tidak ada muka dinding yang bisa diukur di view ini.",
+    "nothing": "Tidak ada yang bisa diberi dimensi di view ini."
+  },
   "compliance": {
     "title": "Kepatuhan",
     "passed": "sesuai",
@@ -199,6 +225,7 @@
     "health_title": "Status Sistem",
     "health_ai": "Parser AI",
     "health_ai_endpoint": "Endpoint AI",
+    "health_ai_reply": "Format balasan AI",
     "health_database": "Database",
     "health_queue_pending": "Antrean menunggu",
     "health_queue_processing": "Sedang diproses",

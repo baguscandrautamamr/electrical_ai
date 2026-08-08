@@ -255,8 +255,16 @@ describe('natural language parsing', () => {
   });
 });
 
-describe('AI advice', () => {
+/**
+ * Changing ANTHROPIC_MODEL from an Opus to `claude-sonnet-4-6` stopped the bot
+ * understanding Indonesian, because the request carried an `output_config`
+ * shape Sonnet 4.6 does not accept and every message paid a rejected call
+ * before falling back. The request now has to be built from what the configured
+ * model can do.
+ */
+describe('adapting the request to the configured model', () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousModel = process.env.ANTHROPIC_MODEL;
 
   beforeEach(() => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
@@ -266,105 +274,167 @@ describe('AI advice', () => {
     __setAnthropicClient(null);
     if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = previousKey;
+    if (previousModel === undefined) delete process.env.ANTHROPIC_MODEL;
+    else process.env.ANTHROPIC_MODEL = previousModel;
   });
 
-  it('carries a suggestion alongside the command', async () => {
-    stubClient(() =>
-      reply({
-        command_type: 'place_lighting',
-        subject: 'Meeting_1',
-        params: { count: '2' },
-        confidence: 0.9,
-        note: 'Dua fixture untuk ruang meeting biasanya di bawah 300 lux.',
-      }),
-    );
-
-    const outcome = await parseMessage('pasang 2 lampu di Meeting_1');
-
-    expect(outcome.kind).toBe('device');
-    if (outcome.kind !== 'device') return;
-    // Advice, not instruction: the command is still exactly what was asked for.
-    expect(outcome.command.params.count).toBe('2');
-    expect(outcome.command.note).toContain('300 lux');
-  });
-
-  it('leaves the note off when the model had nothing to add', async () => {
-    stubClient(() =>
-      reply({
-        command_type: 'place_lighting',
-        subject: 'Meeting_1',
-        params: {},
-        confidence: 0.9,
-        note: '   ',
-      }),
-    );
-
-    const outcome = await parseMessage('pasang lampu di Meeting_1');
-
-    expect(outcome.kind).toBe('device');
-    if (outcome.kind !== 'device') return;
-    expect(outcome.command.note).toBeUndefined();
-  });
-
-  it('answers a message that is not a command instead of only refusing it', async () => {
-    stubClient(() =>
-      reply({
-        command_type: 'unknown',
-        subject: null,
-        params: {},
-        confidence: 0.9,
-        note: 'Saklar biasanya dipasang 1,2 m dari lantai.',
-      }),
-    );
-
-    const outcome = await parseMessage('tinggi saklar standarnya berapa?');
-
-    expect(outcome.kind).toBe('unparsed');
-    if (outcome.kind !== 'unparsed') return;
-    expect(outcome.reason).toBe('not_a_device_command');
-    expect(outcome.note).toContain('1,2 m');
-  });
-
-  it('asks for the note in the language the user reads', async () => {
-    const languages: string[] = [];
+  /** Captures the request bodies the parser sends. */
+  function recordingClient(): Array<Record<string, any>> {
+    const sent: Array<Record<string, any>> = [];
     __setAnthropicClient({
       messages: {
-        create: async (params: { system: Array<{ text: string }> }) => {
-          languages.push(params.system.map((block) => block.text).join('\n'));
+        create: async (params: Record<string, any>) => {
+          sent.push(params);
           return reply({
-            command_type: 'place_lighting',
-            subject: 'Lounge',
-            params: {},
+            command_type: 'place_receptacle',
+            subject: 'meeting 1',
+            params: { count: '3' },
             confidence: 0.9,
-            note: '',
+          });
+        },
+      },
+    } as unknown as Anthropic);
+    return sent;
+  }
+
+  it('sends no JSON schema to a model without structured outputs', async () => {
+    process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+    const sent = recordingClient();
+
+    const outcome = await parseMessage('pasang receptacle 3 di ruangan meeting 1');
+
+    // One call, not a rejected one followed by a working one.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.output_config?.format).toBeUndefined();
+    // Sonnet 4.6 does take the effort hint, and it is what keeps the round-trip short.
+    expect(sent[0]!.output_config?.effort).toBe('low');
+    // The shape has to be asked for in prose instead.
+    expect(sent[0]!.system.map((block: { text: string }) => block.text).join('\n')).toContain(
+      'single JSON object',
+    );
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.type).toBe('place_receptacle');
+    expect(outcome.command.subject).toBe('meeting 1');
+  });
+
+  it('sends the schema to a model that has structured outputs', async () => {
+    process.env.ANTHROPIC_MODEL = 'claude-opus-5';
+    const sent = recordingClient();
+
+    await parseMessage('pasang receptacle 3 di ruangan meeting 1');
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.output_config.format.type).toBe('json_schema');
+    expect(sent[0]!.output_config.effort).toBe('low');
+  });
+
+  it('asks a model it has never heard of for plain JSON rather than guessing', async () => {
+    process.env.ANTHROPIC_MODEL = 'claude-something-unreleased';
+    const sent = recordingClient();
+
+    const outcome = await parseMessage('pasang receptacle 3 di ruangan meeting 1');
+
+    expect(sent[0]!.output_config).toBeUndefined();
+    expect(outcome.kind).toBe('device');
+  });
+
+  it('reads a dated or provider-prefixed id as the model it is', async () => {
+    process.env.ANTHROPIC_MODEL = 'anthropic.claude-sonnet-4-6';
+    const sent = recordingClient();
+
+    await parseMessage('pasang receptacle 3 di ruangan meeting 1');
+
+    expect(sent[0]!.output_config?.format).toBeUndefined();
+    expect(sent[0]!.output_config?.effort).toBe('low');
+  });
+
+  it('pays for a wrong capability guess once, not once per message', async () => {
+    process.env.ANTHROPIC_MODEL = 'claude-opus-5';
+
+    const sent: Array<Record<string, any>> = [];
+    __setAnthropicClient({
+      messages: {
+        create: async (params: Record<string, any>) => {
+          sent.push(params);
+          if (params.output_config?.format) {
+            throw new Anthropic.BadRequestError(
+              400,
+              {
+                type: 'error',
+                error: { type: 'invalid_request_error', message: 'unknown field output_config' },
+              },
+              'unknown field output_config',
+              new Headers(),
+            );
+          }
+          return reply({
+            command_type: 'query',
+            subject: 'Office_A',
+            params: { what: 'lighting' },
+            confidence: 0.88,
           });
         },
       },
     } as unknown as Anthropic);
 
-    await parseMessage('put lights in the lounge', { language: 'en' });
-    await parseMessage('pasang lampu di lounge', { language: 'id' });
+    await parseMessage('ada berapa lampu di Office_A?');
+    await parseMessage('ada berapa stop kontak di Office_A?');
 
-    expect(languages[0]).toContain('Write "note" in English.');
-    expect(languages[1]).toContain('Write "note" in Indonesian.');
+    // Rejected once on the first message, then never attempted again.
+    expect(sent.filter((params) => params.output_config?.format).length).toBe(1);
+    expect(sent).toHaveLength(3);
   });
 
-  it('truncates a note long enough to bury the acknowledgement', async () => {
-    stubClient(() =>
-      reply({
-        command_type: 'place_lighting',
-        subject: 'Lounge',
-        params: {},
-        confidence: 0.9,
-        note: 'x'.repeat(2000),
-      }),
+  it('names the configured model when the API rejects the request', async () => {
+    // A typo in ANTHROPIC_MODEL reaches the user as "cannot understand that
+    // command" unless the model is in the message.
+    process.env.ANTHROPIC_MODEL = 'claude-sonnet-4.6';
+    stubClient(
+      () =>
+        new Anthropic.NotFoundError(
+          404,
+          { type: 'error', error: { type: 'not_found_error', message: 'model not found' } },
+          'model not found',
+          new Headers(),
+        ),
     );
 
-    const outcome = await parseMessage('pasang lampu di lounge');
+    const outcome = await parseMessage('pasang lampu di Office_A');
 
+    expect(outcome.kind).toBe('unparsed');
+    if (outcome.kind !== 'unparsed') return;
+    expect(outcome.detail).toContain('claude-sonnet-4.6');
+  });
+
+  it('never asks the model for design advice', async () => {
+    // The advice field was billed on every message; the parser now ignores one
+    // even if a model volunteers it.
+    process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+    const prompts: string[] = [];
+    __setAnthropicClient({
+      messages: {
+        create: async (params: { system: Array<{ text: string }> }) => {
+          prompts.push(params.system.map((block) => block.text).join('\n'));
+          return reply({
+            command_type: 'place_lighting',
+            subject: 'Meeting_1',
+            params: { count: '2' },
+            confidence: 0.9,
+            note: 'Dua fixture untuk ruang meeting biasanya di bawah 300 lux.',
+          });
+        },
+      },
+    } as unknown as Anthropic);
+
+    const outcome = await parseMessage('pasang 2 lampu di Meeting_1');
+
+    expect(prompts[0]).not.toContain('note');
     expect(outcome.kind).toBe('device');
     if (outcome.kind !== 'device') return;
-    expect(outcome.command.note!.length).toBeLessThanOrEqual(400);
+    expect(outcome.command.params.count).toBe('2');
+    expect(outcome.command).not.toHaveProperty('note');
   });
 });
 
@@ -394,8 +464,9 @@ describe('an Anthropic-compatible gateway', () => {
     const seen: boolean[] = [];
     __setAnthropicClient({
       messages: {
-        create: async (params: { output_config?: unknown }) => {
-          const structured = params.output_config !== undefined;
+        create: async (params: { output_config?: { format?: unknown } }) => {
+          // The effort hint stays on the retry; only the schema is dropped.
+          const structured = params.output_config?.format !== undefined;
           seen.push(structured);
           if (structured) {
             throw new Anthropic.BadRequestError(

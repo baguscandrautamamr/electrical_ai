@@ -29,6 +29,8 @@ public sealed class CommandProcessor
             new SecurityHandler(),
             new CommunicationHandler(),
             new ExportHandler(),
+            new PrintPdfHandler(),
+            new DimensionHandler(),
             new QueryHandler(),
         };
 

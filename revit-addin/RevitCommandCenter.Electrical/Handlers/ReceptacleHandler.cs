@@ -14,6 +14,15 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
     protected override BuiltInCategory Category => BuiltInCategory.OST_ElectricalFixtures;
     protected override string TableName => "receptacle_devices";
 
+    /// <summary>
+    /// Design load per outlet when neither the family nor the engineer says.
+    ///
+    /// A general-purpose socket circuit is sized at 1500 W per outlet in every
+    /// office spec this places into. It is a last resort, not a starting point:
+    /// see <see cref="ElectricalLoad"/> for why.
+    /// </summary>
+    private const double FallbackLoadPerOutletW = 1500;
+
     protected override int ResolveCount(CommandModel command, Room room) =>
         Math.Max(1, command.GetInt("count", 4));
 
@@ -62,8 +71,7 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
         Room room,
         List<FamilyInstance> placed)
     {
-        var loadPerOutlet = command.GetDouble("load_per_outlet", 1500);
-        var totalLoad = loadPerOutlet * placed.Count;
+        var (totalLoad, source) = ResolveLoad(command, placed);
         var breakerAmps = command.GetDouble("breaker_size", 20);
         var voltage = command.GetDouble("voltage", 230);
 
@@ -74,6 +82,10 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
         result.Details = new Dictionary<string, object?>
         {
             ["receptacle.height"] = $"{command.GetDouble("height", 0.4):F2} m",
+            // Where the figure came from. Without it, a total that disagrees
+            // with the Revit schedule looks like a bug rather than a family
+            // whose electrical data has not been filled in.
+            ["common.load_source"] = source,
         };
         result.Compliance = new List<ComplianceCheckDto>
         {
@@ -82,5 +94,32 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
                 totalLoad <= breakerAmps * voltage * 0.8 * circuits,
                 $"{totalLoad:F0} W across {circuits} circuit(s) at {breakerAmps:F0} A"),
         };
+    }
+
+    /// <summary>
+    /// Total watts for the outlets just placed, and where the number came from.
+    ///
+    /// The family's electrical data wins, because it is the one figure that is
+    /// also in the Revit schedule. A load the engineer typed comes next — they
+    /// know about a load the family does not. The design default is last.
+    /// </summary>
+    private static (double Watts, string Source) ResolveLoad(
+        CommandModel command,
+        List<FamilyInstance> placed)
+    {
+        var declared = ElectricalLoad.Summarise(placed);
+        if (declared.IsComplete && declared.TotalWatts is > 0)
+        {
+            return (declared.TotalWatts.Value, ElectricalLoad.Source.Family);
+        }
+
+        // `load_per_outlet` has no schema default, so its presence means the
+        // engineer wrote a figure rather than the validator filling one in.
+        if (command.Has("load_per_outlet"))
+        {
+            return (command.GetDouble("load_per_outlet") * placed.Count, ElectricalLoad.Source.Stated);
+        }
+
+        return (FallbackLoadPerOutletW * placed.Count, ElectricalLoad.Source.Default);
     }
 }

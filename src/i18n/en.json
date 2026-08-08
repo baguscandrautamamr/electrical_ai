@@ -15,14 +15,13 @@
     "seconds": "seconds",
     "units": "units",
     "schedules": "Schedules",
-    "note": "Note",
+    "load_source": "Load source",
     "unknown_error": "An unknown error occurred."
   },
   "ack": {
     "queued": "Command queued. Processing...",
     "position": "Queue position",
     "command": "Command",
-    "suggestion": "Suggestion",
     "waiting_revit": "Waiting for the Revit add-in to pick it up (polls every {seconds} seconds)."
   },
   "errors": {
@@ -171,6 +170,33 @@
     "dwg": "DWG",
     "ifc": "IFC"
   },
+  "load_source": {
+    "family": "The family's electrical data in Revit",
+    "stated": "The figure stated in your command",
+    "family_name": "Read out of the family name",
+    "default": "System default (the family states no electrical data)"
+  },
+  "print": {
+    "title": "Print PDF",
+    "created": "SHEETS PRINTED TO PDF",
+    "sheets": "Sheets",
+    "printed": "Sheets printed",
+    "files": "Files",
+    "not_found": "No sheet matched: {sheets}"
+  },
+  "dimension": {
+    "title": "Dimensions",
+    "created": "DIMENSIONS PLACED",
+    "view": "View",
+    "strings": "Dimension strings",
+    "references": "References picked up",
+    "target": "Dimensioned",
+    "grids": "Grids",
+    "walls": "Walls",
+    "no_grids": "No grids in this view, so no grid dimensions.",
+    "no_walls": "No measurable wall faces in this view.",
+    "nothing": "Nothing in this view could be dimensioned."
+  },
   "compliance": {
     "title": "Compliance",
     "passed": "pass",
@@ -199,6 +225,7 @@
     "health_title": "System Health",
     "health_ai": "AI parser",
     "health_ai_endpoint": "AI endpoint",
+    "health_ai_reply": "AI reply format",
     "health_database": "Database",
     "health_queue_pending": "Queue pending",
     "health_queue_processing": "Processing",

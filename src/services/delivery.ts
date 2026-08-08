@@ -110,6 +110,10 @@ function summarize(result: CommandResult | null): string {
       return `${result.room ?? 'room'}: ${result.results.length} categories`;
     case 'export':
       return 'exports generated';
+    case 'print':
+      return `${result.sheets.length} sheet(s) printed`;
+    case 'dimension':
+      return `${result.view}: ${result.dimensions_created} dimension string(s)`;
     case 'query':
       return `${result.what} in ${result.room ?? 'model'}: ${result.total} found`;
     default:

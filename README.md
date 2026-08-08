@@ -35,10 +35,15 @@ Nine device categories, each placeable from Telegram:
 | Security | `/place_security` | Cameras/sensors, coverage from FoV and resolution |
 | Communication | `/place_communication` | Speakers/antennas, coverage radius |
 
+Loads are read off each family's own electrical data in Revit, so the figure in
+the Telegram reply is the figure in the panel schedule.
+
 Plus `/equip_room` to run them all against one room, `/export` for schedules
-and reports, and `/query` to read back what is already in the model —
-`/query Office_A what=lighting`, or just "ada berapa lampu di Office_A?".
-`/query` opens no Revit transaction, so it cannot change the drawing.
+and reports, `/print_pdf E-101` to print sheets by their number, `/dimension` to
+dimension a plan view along its grids and walls, and `/query` to read back what
+is already in the model — `/query Office_A what=lighting`, or just "ada berapa
+lampu di Office_A?". `/query` opens no Revit transaction, so it cannot change
+the drawing.
 
 Every device command also answers to a `pasang_` name — `/pasang_lampu`,
 `/pasang_saklar`, `/pasang_stopkontak` — because "pasang" is the word the

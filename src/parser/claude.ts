@@ -2,8 +2,15 @@
  * Natural-language fallback parser, backed by the Claude API.
  *
  * Only reached when grammar.ts cannot parse the message, so the common path
- * costs nothing. Structured outputs pin the response to the schema below, which
- * removes the "model returned prose instead of JSON" failure mode entirely.
+ * costs nothing.
+ *
+ * The request is built from what the configured model can actually do (see
+ * models.ts). `output_config` carries structured outputs and the effort hint,
+ * and neither is available on every model — sending one to a model without it
+ * rejects the whole request, which is how a bot that understood Indonesian on
+ * Opus stopped understanding anything the day ANTHROPIC_MODEL became
+ * `claude-sonnet-4-6`. When the schema cannot be used, the reply is asked for
+ * as bare JSON instead, which every model can do.
  *
  * Every way this can fail is reported, not swallowed: a rejected API key, an
  * unavailable model and an exhausted credit balance all used to reach the user
@@ -13,7 +20,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { DEFAULT_ANTHROPIC_BASE_URL, env } from '../config/env.js';
-import type { Language, ParsedCommand } from '../types/index.js';
+import type { ParsedCommand } from '../types/index.js';
+import { capabilitiesOf } from './models.js';
 import { COMMAND_SPECS, aliasMap, specFor } from './schema.js';
 
 let client: Anthropic | null = null;
@@ -27,7 +35,18 @@ function anthropic(): Anthropic {
 
 export function __setAnthropicClient(next: Anthropic | null): void {
   client = next;
+  rejectedStructured.clear();
 }
+
+/**
+ * Models observed rejecting `output_config` at runtime, by id.
+ *
+ * The capability table is the first answer; this is what happens when it is
+ * wrong — a model newer than this build, or a gateway that forwards the message
+ * body but not the schema. Remembering the rejection is what keeps the cost of
+ * being wrong at one request per deployment instead of one per message.
+ */
+const rejectedStructured = new Set<string>();
 
 /**
  * The Claude call failed in a way the user cannot fix by rephrasing.
@@ -94,7 +113,9 @@ The engineer writes in Indonesian or English, often mixing both, and often infor
 
 Vocabulary, so an unfamiliar word is read rather than refused:
 - "pasang", "pasangkan", "tambah", "tambahkan", "kasih", "taruh", "buat", "bikin" all mean place/create. So do the English verbs: place, add, put, install, run, route, drop in.
-- "hapus", "buang", "delete" mean the engineer wants something removed. There is no delete command here, so that is "unknown" — say so in the note rather than placing something instead.
+- "hapus", "buang", "delete" mean the engineer wants something removed. There is no delete command here, so that is "unknown".
+- "cetak", "print", "plot" mean print to PDF, and a sheet number like "E-101" or "EL-201" is the subject of that command.
+- "dimensi", "ukuran", "dimension" as a verb mean place dimensions in a view.
 - Device words: lampu/downlight/luminaire = lighting; saklar/switch/dimmer = lighting_device; stop kontak/stopkontak/outlet/colokan = receptacle; kabel tray/tray/rak kabel = cable_tray; detektor/smoke/heat/alarm = fire_alarm; telepon/PABX = telephone; LAN/data/jaringan/UTP = lan; CCTV/kamera/sensor = security; speaker/PA/antena = communication.
 - A word you have not seen before is usually a room name or a Revit family name. Pass it through untranslated rather than discarding it.
 
@@ -104,17 +125,14 @@ Rules:
 - Extract only values the engineer actually stated or clearly implied. Do not invent values for parameters they did not mention — omitted parameters get their documented defaults downstream.
 - Convert units to the parameter's documented unit: metres for heights, m² for areas, millimetres for hanger spacing (so "every 1.5 m" becomes 1500).
 - Never guess "space". The add-in measures the room in Revit; only set it when the engineer gave a floor area themselves.
+- Never guess a load or a wattage. The add-in reads those off the family in Revit; only set them when the engineer stated a figure themselves.
 - A stated quantity of devices is "count" ("6 lampu" -> count=6), and a stated Revit family is the family parameter ("familynya pake act_e_downlight" -> fixture_type=act_e_downlight). Do not translate a family name — pass it through exactly as written.
 - A layout written as "3x2", "3 x 2" or "grid 3x2" is the grid parameter on place_lighting, columns by rows. Set grid, and leave count alone — the add-in multiplies them out.
 - Use the exact parameter names from the reference. Values go in as plain strings; numeric conversion happens downstream.
-- subject is the room name or tray id the command acts on. Room names on a drawing carry their number — "ruangan meeting 1" is the room "meeting 1", not "meeting". Keep every word of it, and never drop a trailing number.
+- subject is the room name, tray id or sheet number the command acts on. Room names on a drawing carry their number — "ruangan meeting 1" is the room "meeting 1", not "meeting". Keep every word of it, and never drop a trailing number.
 - confidence reflects how sure you are of the command_type and the extracted values.
 
-The note — one or two sentences, or "" when you have nothing worth saying:
-- Write it as an engineer reviewing a colleague's instruction, not as a chatbot. No greetings, no restating the command back, no offers to help further.
-- Say something the engineer can act on: a design value theirs sits well outside (offices and meeting rooms want ~300-500 lux, corridors ~100, car parks ~75; switches sit at ~1.2 m, outlets at ~0.3-0.4 m, tray hangers at 1.5-2 m); a parameter they left out that this room's use makes worth stating; a consequence worth knowing before the drawing is issued.
-- Base it on what the message actually says. If everything in it is ordinary and sound, return "" — an empty note is the normal case, and inventing a remark to fill the field wastes the engineer's attention.
-- The note never changes what is placed. Only params does that.
+Answer with the command only. No prose, no explanation, no advice about the design — the engineer asked for a placement, not a review.
 
 Command reference:
 
@@ -130,7 +148,7 @@ const OUTPUT_SCHEMA = {
     },
     subject: {
       type: ['string', 'null'],
-      description: 'Room name or tray id, or null when the command takes none.',
+      description: 'Room name, tray id or sheet number, or null when the command takes none.',
     },
     params: {
       type: 'object',
@@ -141,68 +159,72 @@ const OUTPUT_SCHEMA = {
       type: 'number',
       description: 'Confidence between 0 and 1.',
     },
-    note: {
-      type: 'string',
-      description:
-        'One or two sentences of engineering advice for the engineer, or "" when there is nothing worth saying. Never changes what is placed.',
-    },
   },
-  required: ['command_type', 'subject', 'params', 'confidence', 'note'],
+  required: ['command_type', 'subject', 'params', 'confidence'],
   additionalProperties: false,
 } as const;
 
 /**
- * Roomy on purpose. Current models think by default, and `max_tokens` caps
- * thinking *and* the JSON together — the old 1024 was enough for the answer
- * alone and would truncate the moment the model reasoned about the message.
+ * Roomy on purpose. Models that think by default cap thinking *and* the JSON
+ * together against `max_tokens`, so a budget sized for the answer alone
+ * truncates the moment the model reasons about the message.
  */
 const MAX_TOKENS = 4096;
 
 /**
- * Stands in for the schema when structured outputs are unavailable — some
- * Anthropic-compatible gateways forward the message body but reject
- * `output_config`. Asking in prose is weaker than a schema, which is why it is
- * the fallback and not the default.
+ * Stands in for the schema when structured outputs are unavailable — which is
+ * most models, and every Anthropic-compatible gateway that forwards the message
+ * body but not `output_config`. Asking in prose is weaker than a schema, so it
+ * is worth spelling out both the shape and the ban on anything around it.
  */
-const JSON_ONLY_INSTRUCTION = `Reply with a single JSON object and nothing else — no prose, no explanation, no code fence.
+const JSON_ONLY_INSTRUCTION = `Reply with a single JSON object and nothing else — no prose, no explanation, no code fence, no leading or trailing text.
 
-{"command_type": "<one of: ${[...Object.keys(COMMAND_SPECS), 'unknown'].join(', ')}>", "subject": <string or null>, "params": {"<parameter name>": "<value as a string>"}, "confidence": <number between 0 and 1>, "note": "<advice, or an empty string>"}`;
+{"command_type": "<one of: ${[...Object.keys(COMMAND_SPECS), 'unknown'].join(', ')}>", "subject": <string or null>, "params": {"<parameter name>": "<value as a string>"}, "confidence": <number between 0 and 1>}
 
-/** Names the language the note must be written in. */
-const LANGUAGE_INSTRUCTION: Record<Language, string> = {
-  id: 'Write "note" in Indonesian.',
-  en: 'Write "note" in English.',
-};
+Every key is required. Use null for a subject the command does not take, and {} for no parameters.`;
+
+interface RequestPlan {
+  /** Constrain the reply with a JSON schema rather than asking for JSON in prose. */
+  structured: boolean;
+  /** Send the effort hint. Parsing one sentence never needs deep reasoning. */
+  effort: boolean;
+}
+
+/** How this model should be asked, given its capabilities and its history. */
+function planFor(model: string): RequestPlan {
+  const capabilities = capabilitiesOf(model);
+  return {
+    structured: capabilities.structuredOutputs && !rejectedStructured.has(model),
+    effort: capabilities.effort,
+  };
+}
 
 async function requestParse(
+  model: string,
   text: string,
-  structured: boolean,
-  language: Language,
+  plan: RequestPlan,
 ): Promise<Anthropic.Message> {
-  // The big block is cached and must stay byte-identical across users; the
-  // language line is short, so it rides after the cache breakpoint rather than
-  // splitting the cache one way per language.
+  // The big block is cached and must stay byte-identical across every request;
+  // the JSON instruction rides after the cache breakpoint so switching modes
+  // does not rewrite the prefix.
   const system: Anthropic.TextBlockParam[] = [
     { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: LANGUAGE_INSTRUCTION[language] },
   ];
-  if (!structured) system.push({ type: 'text', text: JSON_ONLY_INSTRUCTION });
+  if (!plan.structured) system.push({ type: 'text', text: JSON_ONLY_INSTRUCTION });
+
+  const outputConfig = {
+    ...(plan.effort ? { effort: 'low' as const } : {}),
+    ...(plan.structured
+      ? { format: { type: 'json_schema' as const, schema: OUTPUT_SCHEMA } }
+      : {}),
+  };
 
   return anthropic().messages.create({
-    model: env.anthropicModel,
+    model,
     max_tokens: MAX_TOKENS,
     system,
     messages: [{ role: 'user', content: text }],
-    // Parsing one short sentence does not need deep reasoning; low effort keeps
-    // the user's round-trip inside the ~8-12s budget.
-    ...(structured
-      ? {
-          output_config: {
-            effort: 'low' as const,
-            format: { type: 'json_schema' as const, schema: OUTPUT_SCHEMA },
-          },
-        }
-      : {}),
+    ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
   });
 }
 
@@ -229,44 +251,35 @@ function extractJson(text: string): string | null {
 
 export type ClaudeParseResult =
   | { kind: 'command'; parsed: ParsedCommand; confidence: number }
-  /**
-   * Understood, but not a request to place or modify anything in Revit. `note`
-   * carries whatever the model had to say about it, which is more use to the
-   * sender than a bare "that is not a device command".
-   */
-  | { kind: 'unknown'; confidence: number; note?: string };
+  /** Understood, but not a request to place, change or read anything in Revit. */
+  | { kind: 'unknown'; confidence: number };
 
 /** Below this, we ask the user to rephrase rather than guessing. */
 export const MIN_CONFIDENCE = 0.55;
 
-/** Long enough for two sentences of advice, short enough not to bury the ack. */
-const MAX_NOTE_LENGTH = 400;
+export async function parseWithClaude(text: string): Promise<ClaudeParseResult> {
+  const model = env.anthropicModel;
+  const plan = planFor(model);
 
-/** Trims the note to something that belongs on the end of a chat message. */
-function cleanNote(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const text = value.trim().replace(/\s+/g, ' ');
-  return text === '' ? undefined : text.slice(0, MAX_NOTE_LENGTH);
-}
-
-export async function parseWithClaude(
-  text: string,
-  language: Language = 'id',
-): Promise<ClaudeParseResult> {
   let response: Anthropic.Message;
   try {
-    response = await requestParse(text, true, language);
+    response = await requestParse(model, text, plan);
   } catch (error) {
-    if (!looksLikeUnsupportedRequest(error)) {
-      throw new NlpError(describeApiError(error), { cause: error });
+    if (!plan.structured || !looksLikeUnsupportedRequest(error)) {
+      throw new NlpError(`${describeApiError(error)} [model=${model}]`, { cause: error });
     }
-    // The endpoint took the message but not the schema. Ask for JSON in prose
-    // instead of failing outright; the second failure is the one reported.
-    console.warn('[claude] structured outputs rejected, retrying in plain JSON:', describeApiError(error));
+    // The endpoint took the message but not the schema — the capability table
+    // is behind, or a gateway is in the way. Remember it so this is the last
+    // message that pays for the discovery, and ask again in prose.
+    console.warn(
+      `[claude] ${model} rejected output_config.format, falling back to plain JSON:`,
+      describeApiError(error),
+    );
+    rejectedStructured.add(model);
     try {
-      response = await requestParse(text, false, language);
+      response = await requestParse(model, text, { ...plan, structured: false });
     } catch (retryError) {
-      throw new NlpError(describeApiError(retryError), { cause: retryError });
+      throw new NlpError(`${describeApiError(retryError)} [model=${model}]`, { cause: retryError });
     }
   }
 
@@ -287,7 +300,6 @@ export async function parseWithClaude(
     subject: string | null;
     params: Record<string, string>;
     confidence: number;
-    note?: string;
   };
   const json = extractJson(textBlock.text);
   try {
@@ -298,11 +310,10 @@ export async function parseWithClaude(
   }
 
   const confidence = payload.confidence ?? 0;
-  const note = cleanNote(payload.note);
   // The model is told to answer with a command_type, but an alias is a name it
   // has been shown, so accept either.
   const spec = specFor(payload.command_type);
-  if (!spec) return { kind: 'unknown', confidence, ...(note ? { note } : {}) };
+  if (!spec) return { kind: 'unknown', confidence };
 
   // Map any aliases the model used back onto canonical names.
   const aliases = aliasMap(spec);
@@ -319,7 +330,6 @@ export async function parseWithClaude(
       params,
       source: 'claude',
       raw: text,
-      ...(note ? { note } : {}),
     },
     confidence,
   };
@@ -332,6 +342,8 @@ export interface NlpHealth {
   endpoint: string;
   /** True when requests go somewhere other than Anthropic. */
   gateway: boolean;
+  /** How the reply is constrained: a JSON schema, or an instruction in prose. */
+  reply_format: 'json_schema' | 'prose_json';
   detail?: string;
 }
 
@@ -351,6 +363,10 @@ export async function checkNlp(): Promise<NlpHealth> {
     model,
     endpoint: baseUrl.replace(/^https?:\/\//, ''),
     gateway: baseUrl !== DEFAULT_ANTHROPIC_BASE_URL,
+    // Reported because it is the difference between a model that answers
+    // reliably and one that has to be asked nicely — and because an unknown
+    // model id lands here silently.
+    reply_format: planFor(model).structured ? 'json_schema' : 'prose_json',
   };
 
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {

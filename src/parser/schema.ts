@@ -219,7 +219,21 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
       },
       height: { kind: 'number', default: 0.4, min: 0, max: 3, describe: 'Height from floor (m)' },
       placement: { kind: 'enum', values: ['walls', 'perimeter', 'manual'], default: 'walls', describe: 'Placement strategy' },
-      load_per_outlet: { kind: 'number', default: 1500, min: 1, max: 20000, describe: 'Design load per outlet (W)' },
+      /**
+       * Deliberately without a default.
+       *
+       * The add-in reads the outlet's load off the family's electrical data in
+       * Revit, which is the figure the schedule totals. A default here would be
+       * indistinguishable from a stated one by the time it reached the add-in,
+       * and would overrule the model on every placement — which is how three
+       * 200 VA outlets were reported to Telegram as 4500 W.
+       */
+      load_per_outlet: {
+        kind: 'number',
+        min: 1,
+        max: 20000,
+        describe: 'Load per outlet in W; overrides the family\'s electrical data when stated',
+      },
       breaker_size: { kind: 'number', default: 20, min: 1, max: 400, describe: 'Breaker size (A)' },
       circuit_type: { kind: 'enum', values: ['general', 'dedicated'], default: 'general', describe: 'Circuit type' },
       voltage: { kind: 'number', default: 230, min: 12, max: 1000, describe: 'Voltage (V)' },
@@ -443,6 +457,74 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         aliases: ['export_type'],
       },
       format: { kind: 'enum', values: ['excel', 'pdf', 'dwg', 'dxf', 'ifc'], default: 'excel', describe: 'Output format' },
+    },
+  },
+
+  // -------------------------------------------------------------- print PDF
+  /**
+   * Printing is not exporting.
+   *
+   * `/export format=pdf` writes the compliance report — a document this system
+   * generates. This prints the drawing: the sheets already laid out in Revit,
+   * picked by the number in their title block, which is how anyone asking for a
+   * drawing asks for it.
+   */
+  print_pdf: {
+    type: 'print_pdf',
+    name: 'print_pdf',
+    aliases: ['pdf', 'cetak_pdf', 'print', 'cetak'],
+    role: 'viewer',
+    describe: 'Print sheets to PDF, chosen by sheet number.',
+    example: '/print_pdf E-101,E-102 combine=true',
+    subject: {
+      name: 'sheets',
+      required: true,
+      describe: 'Sheet number, a comma-separated list, or a pattern like E-1* — "all" prints every sheet',
+    },
+    params: {
+      combine: {
+        kind: 'boolean',
+        default: true,
+        describe: 'One PDF holding every sheet, rather than a file per sheet',
+        aliases: ['merge', 'gabung'],
+      },
+    },
+  },
+
+  // -------------------------------------------------------------- dimension
+  dimension: {
+    type: 'dimension',
+    name: 'dimension',
+    aliases: ['dimensi', 'beri_dimensi', 'auto_dimension', 'ukur'],
+    role: 'editor',
+    describe: 'Dimension a plan view automatically, along the grids and the walls.',
+    example: '/dimension "Level 1" target=all offset=1000',
+    subject: {
+      name: 'view',
+      required: false,
+      describe: 'Plan view to dimension; omit to use the view open in Revit',
+    },
+    params: {
+      target: {
+        kind: 'enum',
+        values: ['grids', 'walls', 'all'],
+        default: 'all',
+        describe: 'What to dimension',
+        aliases: ['what', 'objek'],
+      },
+      /**
+       * How far outside the drawing the dimension line sits. 1 m at 1:100 is
+       * about 10 mm on the sheet, which clears a title block's margin without
+       * stranding the string halfway across the page.
+       */
+      offset: {
+        kind: 'number',
+        default: 1000,
+        min: 0,
+        max: 20000,
+        describe: 'Distance from the outermost element to the dimension line (mm)',
+        aliases: ['jarak', 'gap'],
+      },
     },
   },
 

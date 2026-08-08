@@ -257,11 +257,22 @@ public sealed class QueryHandler : ICommandHandler
 
     private static double TotalWatts(Element element)
     {
-        var declared = ParameterMapper.GetFirstAvailable(
-            element,
-            new[] { "Wattage", "Apparent Load", "Load" });
-
-        if (declared > 0) return declared;
+        // The same reading the placement handlers use, so counting the fixtures
+        // and placing them cannot report two different totals for one room.
+        // It looks at the type as well as the instance, which matters because
+        // Apparent Load is a type parameter on most families.
+        if (element is FamilyInstance instance)
+        {
+            var declared = ElectricalLoad.WattsOf(instance);
+            if (declared is > 0) return declared.Value;
+        }
+        else
+        {
+            var declared = ParameterMapper.GetFirstAvailable(
+                element,
+                new[] { "Wattage", "Apparent Load", "Load" });
+            if (declared > 0) return declared;
+        }
 
         // Nothing declared: fall back to the wattage in the family name, the
         // same reading LightingHandler used when it placed the fixture.

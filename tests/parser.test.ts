@@ -473,12 +473,15 @@ describe('command specs', () => {
   });
 
   it('lets a viewer read the model but not change it', () => {
-    // The read-only command is the only one a viewer may run; everything else
-    // writes to the drawing.
-    expect(COMMAND_SPECS.query!.role).toBe('viewer');
+    // A viewer may run anything that leaves the drawing as it found it —
+    // reading it, scheduling it, printing it. Everything else needs an editor.
+    const readOnly = new Set(['query', 'export', 'print_pdf']);
+    for (const name of readOnly) {
+      expect(COMMAND_SPECS[name]!.role, `${name} should be readable by a viewer`).toBe('viewer');
+    }
 
     const writers = Object.values(COMMAND_SPECS)
-      .filter((spec) => spec.name !== 'query' && spec.name !== 'export')
+      .filter((spec) => !readOnly.has(spec.name))
       .filter((spec) => spec.role === 'viewer');
 
     expect(writers.map((spec) => spec.name)).toEqual([]);
