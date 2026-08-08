@@ -136,6 +136,40 @@ public sealed class ExportResultDto
     [JsonProperty("exports")] public ExportLinksDto Exports { get; set; } = new();
 }
 
+/// <summary>One sheet sent to the printer, as it is named in the title block.</summary>
+public sealed class PrintedSheetDto
+{
+    [JsonProperty("number")] public string Number { get; set; } = string.Empty;
+    [JsonProperty("name")] public string Name { get; set; } = string.Empty;
+
+    [JsonProperty("file", NullValueHandling = NullValueHandling.Ignore)]
+    public string? File { get; set; }
+}
+
+/// <summary>Matches the TypeScript <c>PrintResult</c>.</summary>
+public sealed class PrintResultDto
+{
+    [JsonProperty("kind")] public string Kind => "print";
+    [JsonProperty("sheets")] public List<PrintedSheetDto> Sheets { get; set; } = new();
+    [JsonProperty("files")] public List<string> Files { get; set; } = new();
+
+    [JsonProperty("not_found", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? NotFound { get; set; }
+}
+
+/// <summary>Matches the TypeScript <c>DimensionResult</c>.</summary>
+public sealed class DimensionResultDto
+{
+    [JsonProperty("kind")] public string Kind => "dimension";
+    [JsonProperty("view")] public string View { get; set; } = string.Empty;
+    [JsonProperty("dimensions_created")] public int DimensionsCreated { get; set; }
+    [JsonProperty("references_used")] public int ReferencesUsed { get; set; }
+    [JsonProperty("targets")] public List<string> Targets { get; set; } = new();
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}
+
 /// <summary>One counted category in a query result.</summary>
 public sealed class QueryGroupDto
 {

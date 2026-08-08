@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatAck,
-  formatAdvice,
   formatError,
   formatHelp,
   formatCommandHelp,
@@ -13,8 +12,10 @@ import {
 import { escapeHtml } from '../src/lib/telegram.js';
 import type {
   CableTrayResult,
+  DimensionResult,
   EquipRoomResult,
   PlacementResult,
+  PrintResult,
   QueryResult,
   ValidationIssue,
 } from '../src/types/index.js';
@@ -160,6 +161,38 @@ describe('placement formatting', () => {
 
   it('renders the stated fixture grid', () => {
     expect(formatResult(lighting, EN)).toContain('Grid: 4x3');
+  });
+
+  it('says where a reported load came from, in the reader’s language', () => {
+    // Three 200 VA outlets reported as 4500 W looked like a bug until the reply
+    // said which of the two figures it was quoting.
+    const outlets: PlacementResult = {
+      kind: 'receptacle',
+      room: 'MEETING 1',
+      devices_placed: 3,
+      device_ids: ['OP-001', 'OP-002', 'OP-003'],
+      total_load_w: 600,
+      details: { 'receptacle.height': '0.40 m', 'common.load_source': 'load_source.family' },
+    };
+
+    const english = formatResult(outlets, EN);
+    expect(english).toContain('Load: 600 W');
+    expect(english).toContain("Load source: The family's electrical data in Revit");
+
+    expect(formatResult(outlets, ID)).toContain('Sumber beban: Electrical data pada family');
+  });
+
+  it('leaves a measurement alone even though it contains a dot', () => {
+    // The value "0.40 m" must not be mistaken for a translation key.
+    const outlets: PlacementResult = {
+      kind: 'receptacle',
+      room: 'MEETING 1',
+      devices_placed: 1,
+      device_ids: ['OP-001'],
+      details: { 'receptacle.height': '0.40 m' },
+    };
+
+    expect(formatResult(outlets, EN)).toContain('0.40 m');
   });
 
   it('uses the per-category count label', () => {
@@ -308,6 +341,64 @@ describe('query formatting', () => {
   });
 });
 
+describe('print formatting', () => {
+  const printed: PrintResult = {
+    kind: 'print',
+    sheets: [
+      { number: 'E-101', name: 'Lighting Plan — Level 1' },
+      { number: 'E-102', name: 'Power Plan — Level 1' },
+    ],
+    files: ['https://files.example.test/sheets-20260808.pdf'],
+  };
+
+  it('names every sheet it printed and links the file', () => {
+    const text = formatResult(printed, EN);
+
+    expect(text).toContain('SHEETS PRINTED TO PDF');
+    expect(text).toContain('Sheets: 2 units');
+    expect(text).toContain('E-101');
+    expect(text).toContain('Power Plan');
+    expect(text).toContain('sheets-20260808.pdf');
+  });
+
+  it('says which sheet numbers matched nothing', () => {
+    // Printing four of the five sheets asked for, silently, is how a drawing
+    // set goes out incomplete.
+    const partial: PrintResult = { ...printed, not_found: ['E-999'] };
+    expect(formatResult(partial, EN)).toContain('No sheet matched: E-999');
+  });
+
+  it('renders in both languages', () => {
+    expect(formatResult(printed, ID)).toContain('SHEET DICETAK KE PDF');
+  });
+});
+
+describe('dimension formatting', () => {
+  const dimensioned: DimensionResult = {
+    kind: 'dimension',
+    view: 'Level 1',
+    dimensions_created: 4,
+    references_used: 26,
+    targets: ['dimension.grids', 'dimension.walls'],
+  };
+
+  it('reports the view, the strings and what they picked up', () => {
+    const text = formatResult(dimensioned, EN);
+
+    expect(text).toContain('DIMENSIONS PLACED');
+    expect(text).toContain('View: Level 1');
+    expect(text).toContain('Dimension strings: 4 units');
+    expect(text).toContain('References picked up: 26');
+    expect(text).toContain('Grids, Walls');
+  });
+
+  it('translates a note the add-in sent as a key', () => {
+    const partial: DimensionResult = { ...dimensioned, notes: ['dimension.no_grids'] };
+    expect(formatResult(partial, EN)).toContain('No grids in this view');
+    expect(formatResult(partial, ID)).toContain('Tidak ada grid di view ini');
+  });
+});
+
 describe('acknowledgement and errors', () => {
   it('acknowledges a queued command with the poll interval', () => {
     const text = formatAck(EN, { commandType: 'create_cable_tray', pollSeconds: 4 });
@@ -326,34 +417,11 @@ describe('acknowledgement and errors', () => {
     );
   });
 
-  it('appends the AI suggestion below the acknowledgement', () => {
-    const text = formatAck(EN, {
-      commandType: 'place_lighting',
-      pollSeconds: 4,
-      note: 'A meeting room usually wants 300-500 lux.',
-    });
-
-    expect(text).toContain('Command queued');
-    expect(text).toContain('Suggestion');
-    expect(text).toContain('300-500 lux');
-  });
-
-  it('says nothing about suggestions when there is none', () => {
+  it('offers no design advice — the model is never asked to write any', () => {
+    // Advice cost an output-token tail on every single message for something
+    // nobody had asked for. The acknowledgement is the command and the wait.
     const text = formatAck(EN, { commandType: 'place_lighting', pollSeconds: 4 });
     expect(text).not.toContain('Suggestion');
-  });
-
-  it('leads with the answer when a message was not a command', () => {
-    const text = formatAdvice(
-      EN,
-      'errors.not_a_device_command',
-      'Switches are usually set 1.2 m above the floor.',
-    );
-
-    expect(text).toContain('1.2 m above the floor');
-    // The reason is still there, below the answer, so nobody is left thinking
-    // something was placed.
-    expect(text).toContain('not a Revit command');
   });
 
   it('interpolates error variables', () => {

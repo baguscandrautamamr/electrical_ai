@@ -8,11 +8,13 @@ import type {
   CableTrayResult,
   CommandResult,
   ComplianceCheck,
+  DimensionResult,
   EquipRoomResult,
   ExportLinks,
   ExportResult,
   Language,
   PlacementResult,
+  PrintResult,
   QueryResult,
   Theme,
 } from '../types/index.js';
@@ -55,6 +57,20 @@ function exportRows(t: Translate, exports: ExportLinks | undefined): Array<[stri
     [t('export.dwg'), exports.dwg],
     [t('export.ifc'), exports.ifc],
   ];
+}
+
+/**
+ * An i18n key looks like `load_source.family` and nothing else does.
+ *
+ * Detail *labels* are keyed on containing a dot, which is fine for a label but
+ * not for a value: "0.40 m" contains one too. This pattern matches a dotted
+ * lowercase identifier and nothing a measurement can look like.
+ */
+const I18N_KEY = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+
+/** Translates a value the add-in sent as a key, and passes anything else through. */
+function maybeTranslate(t: Translate, value: string): string {
+  return I18N_KEY.test(value) ? t(value) : value;
 }
 
 function appendCompliance(
@@ -177,7 +193,11 @@ export function formatPlacement(result: PlacementResult, ctx: FormatContext): st
   for (const [label, value] of Object.entries(result.details ?? {})) {
     if (value === null || value === undefined || value === '') continue;
     // Detail keys may be i18n keys or literals, same rule as compliance labels.
-    rows.push({ label: label.includes('.') ? t(label) : label, value: String(value) });
+    // Values may be either too — "load_source.family" is a key, "0.40 m" is not.
+    rows.push({
+      label: label.includes('.') ? t(label) : label,
+      value: maybeTranslate(t, String(value)),
+    });
   }
 
   b.tree(rows);
@@ -241,6 +261,75 @@ export function formatExport(result: ExportResult, ctx: FormatContext): string {
   const b = new MessageBuilder(ctx.theme);
   b.title(t('common.success'), t('export.created'));
   b.links(exportRows(t, result.exports));
+  return b.build();
+}
+
+// ---------------------------------------------------------------------------
+// Printing sheets
+// ---------------------------------------------------------------------------
+
+export function formatPrint(result: PrintResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title(t('common.success'), t('print.created'));
+  b.tree([{ label: t('print.sheets'), value: `${result.sheets.length} ${t('common.units')}` }]);
+
+  if (result.sheets.length > 0) {
+    b.section(t('print.printed'));
+    b.bullets(result.sheets.map((sheet) => `${sheet.number} — ${sheet.name}`));
+  }
+
+  // The file is the point of the command, so it goes last, where a link is
+  // easiest to tap.
+  const files = result.files ?? [];
+  if (files.length > 0) {
+    b.section(t('print.files'));
+    b.links(
+      files.map((file, index) => [
+        files.length === 1 ? t('export.pdf') : `${t('export.pdf')} ${index + 1}`,
+        file,
+      ]),
+    );
+  }
+
+  const missing = result.not_found ?? [];
+  if (missing.length > 0) {
+    b.blank().bullets([t('print.not_found', { sheets: missing.join(', ') })]);
+  }
+
+  return b.build();
+}
+
+// ---------------------------------------------------------------------------
+// Automatic dimensioning
+// ---------------------------------------------------------------------------
+
+export function formatDimension(result: DimensionResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title(t('common.success'), t('dimension.created'));
+
+  const rows: Row[] = [
+    { label: t('dimension.view'), value: result.view },
+    {
+      label: t('dimension.strings'),
+      value: `${result.dimensions_created} ${t('common.units')}`,
+    },
+    { label: t('dimension.references'), value: String(result.references_used) },
+  ];
+  if (result.targets.length > 0) {
+    rows.push({
+      label: t('dimension.target'),
+      value: result.targets.map((target) => maybeTranslate(t, target)).join(', '),
+    });
+  }
+  b.tree(rows);
+
+  const notes = (result.notes ?? []).map((note) => maybeTranslate(t, note));
+  if (notes.length > 0) b.blank().bullets(notes);
+
   return b.build();
 }
 
@@ -314,6 +403,10 @@ export function formatResult(result: CommandResult, ctx: FormatContext): string 
       return formatEquipRoom(result, ctx);
     case 'export':
       return formatExport(result, ctx);
+    case 'print':
+      return formatPrint(result, ctx);
+    case 'dimension':
+      return formatDimension(result, ctx);
     case 'query':
       return formatQuery(result, ctx);
     default:

@@ -30,8 +30,10 @@ reads better:
 | `/place_security` | `/pasang_cctv`, `/pasang_kamera` |
 | `/place_communication` | `/pasang_speaker`, `/pasang_komunikasi` |
 | `/equip_room` | `/lengkapi_ruangan`, `/pasang_semua` |
+| `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
+| `/dimension` | `/dimensi`, `/beri_dimensi`, `/ukur` |
 
-Only the `place_` names appear in Telegram's command menu — one entry per
+Only the canonical names appear in Telegram's command menu — one entry per
 command keeps it readable — but the parser accepts either everywhere.
 
 ## Room names
@@ -49,7 +51,7 @@ first.
 
 | Role | Can |
 |---|---|
-| `viewer` | `/query`, `/export`, and all read-only admin commands |
+| `viewer` | `/query`, `/export`, `/print_pdf`, and all read-only admin commands |
 | `editor` | everything above, plus every device command and `/api connect` |
 | `admin` | everything above, plus `/user list` |
 
@@ -71,7 +73,7 @@ load across circuits.
 | `grid` | size | — | Explicit layout, columns × rows, e.g. `3x2` |
 | `height` | number | 2.8 | Ceiling height in m |
 | `lux_target` | number | 300 | Target illumination |
-| `fixture_type` | string | LED_15W | Revit family name; wattage is read from it |
+| `fixture_type` | string | LED_15W | Revit family name; the wattage in it is only used when the family states none |
 | `mounting` | ceiling\|wall\|floor | ceiling | |
 | `spacing` | string | auto | `auto` or an explicit grid like `3.5x3.2` |
 | `distribution` | balanced\|manual | balanced | |
@@ -98,6 +100,16 @@ so the same `3x2` reads correctly in a room of either proportion.
 Lux is not reported back. The lumen-method figure is an estimate over the floor
 area with an assumed efficacy — fine for sizing a count nobody stated, not
 something to grade a count somebody did.
+
+**Load.** The reported wattage is read off each placed fixture's own electrical
+data in Revit — `Apparent Load`, `Wattage` or `Load`, on the instance or its
+type. The number in a family name like `LED_15W` is only a fallback for a family
+that states nothing, and it reads 15 W off every family whose name has no number
+in it. The reply's **Load source** row says which of the two you got.
+
+The lumen method still sizes an unstated `count` from the family name, so a
+family with no wattage in its name is counted as 15 W per fixture even when its
+electrical data says otherwise. State `count` or `grid` when that matters.
 
 `space` was called `area`; both names still work, as does the Indonesian `luas`.
 `breaker_max` is gone — lighting circuits are split at 16 A, which is not a
@@ -137,14 +149,27 @@ does `placement=walls`.
 | `type` | single\|double\|grounded\|double_grounded\|gfci\|20a | double_grounded | |
 | `height` | number | 0.4 | Height from floor (m) |
 | `placement` | walls\|perimeter\|manual | walls | |
-| `load_per_outlet` | number | 1500 | Design load (W) |
+| `load_per_outlet` | number | *(the family's)* | Overrides the family's electrical data (W) |
 | `breaker_size` | number | 20 | A |
 | `circuit_type` | general\|dedicated | general | |
 | `voltage` | number | 230 | V |
 
 ```
-/place_receptacle Office_A count=4 type=double_grounded height=0.4 placement=walls load_per_outlet=1500 breaker_size=20
+/place_receptacle Office_A count=4 type=double_grounded height=0.4 placement=walls breaker_size=20
 ```
+
+The reported load comes from the outlet's own **electrical data in Revit** — the
+`Apparent Load` on its connector, which is what the panel schedule totals. Three
+200 VA outlets are reported as 600 W, not as three times a design figure.
+
+`load_per_outlet` is only for a load the family does not state: a dedicated
+circuit for a machine, or a family whose electrical data was never filled in.
+When neither the family nor you states one, 1500 W per outlet is assumed, and
+the reply says so.
+
+Every placement reply carries a **Load source** row saying which of the three it
+used, so a total that disagrees with the Revit schedule can be traced without
+opening the model.
 
 ### `/create_cable_tray <tray_id>`
 
@@ -300,6 +325,72 @@ Set any count to `0`, or `fire_alarm=none`, to skip that category.
 ```
 /export type=hanger_schedule format=excel
 ```
+
+### `/print_pdf <sheets>`
+
+Prints sheets to PDF, chosen by the number in their title block. Aliases:
+`/pdf`, `/cetak_pdf`, `/print`, `/cetak`.
+
+Not the same thing as `/export format=pdf`, which writes the compliance report
+this system generates. This prints the drawing.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `sheets` | string | **required** | Sheet number, a comma-separated list, or a pattern |
+| `combine` | boolean | true | One PDF holding every sheet, rather than a file per sheet |
+
+```
+/print_pdf E-101
+/print_pdf E-101,E-102,E-103
+/print_pdf E-1* combine=false
+/print_pdf all
+```
+
+`*` and `?` work as they do in a file dialog, so `E-1*` takes every sheet
+numbered `E-1…`. `all` takes the set. A pattern is matched against the sheet
+number and the sheet name, so `/pdf "Lighting Plan"` finds it too. A pattern
+that matches nothing is named back to you rather than silently skipped — that is
+how a drawing set goes out one sheet short.
+
+Placeholder sheets are left out: they have no drawing on them, and Revit rejects
+a whole batch that contains one.
+
+Files land in the add-in's export directory, and come back as links when
+`export_base_url` is configured. A viewer may run this — it reads the model and
+writes a file, and changes neither.
+
+### `/dimension [view]`
+
+Dimensions a plan view automatically. Aliases: `/dimensi`, `/beri_dimensi`,
+`/auto_dimension`, `/ukur`.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `view` | string | the open view | Plan view to dimension |
+| `target` | grids\|walls\|all | all | What to measure to |
+| `offset` | number | 1000 | Distance from the outermost element to the dimension line (mm) |
+
+```
+/dimension
+/dimension "Level 1" target=grids
+/dimension "Level 1 - Power" target=all offset=1500
+```
+
+Two strings per run: one below the plan picking up everything running
+north-south, one to its left picking up everything running east-west. Grids are
+measured to the grid line; walls to the vertical faces the view actually shows,
+so a wall hidden by the view's crop or a filter is not measured.
+
+Omit the view to dimension the one open in Revit. Only plan views: a string laid
+out in plan coordinates means nothing in a section or a 3D view.
+
+**It adds and never removes.** Running it twice draws the strings twice rather
+than replacing them — deciding that an existing dimension was this command's
+rather than yours is a guess, and the wrong guess deletes your work. Undo in
+Revit is one step.
+
+A view with nothing dimensionable in it comes back as a success with zero
+strings and a note saying so, not as an error.
 
 ### `/query [room]`
 
