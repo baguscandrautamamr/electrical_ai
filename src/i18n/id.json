@@ -192,6 +192,19 @@
     "admin": "Admin",
     "example": "Contoh",
     "params_note": "Parameter ditulis sebagai kunci=nilai, dipisah spasi.",
-    "natural_language": "Anda juga bisa menulis dengan bahasa biasa, misalnya: \"pasang lampu di Office_A luas 45 m2 target 300 lux\"."
+    "natural_language": "Anda juga bisa menulis dengan bahasa biasa, misalnya: \"pasang lampu di Office_A luas 45 m2 target 300 lux\".",
+    "admin_project": "daftar proyek, ketuk salah satu untuk mengaktifkannya",
+    "admin_user_list": "siapa saja yang bisa memakai proyek ini",
+    "admin_user_add": "daftarkan seseorang dan beri akses",
+    "admin_user_role": "ubah kewenangannya",
+    "admin_user_remove": "cabut akses ke proyek ini",
+    "admin_api_connect": "simpan kredensial API",
+    "admin_api_status": "status kredensial",
+    "admin_api_disconnect": "nonaktifkan kredensial",
+    "admin_status": "antrean perintah Anda",
+    "admin_health": "kesehatan sistem",
+    "admin_theme": "ganti tema",
+    "admin_lang": "ganti bahasa",
+    "admin_help": "seluruh parameter satu perintah, lengkap dengan rentang dan nilai bawaan"
   }
 }
