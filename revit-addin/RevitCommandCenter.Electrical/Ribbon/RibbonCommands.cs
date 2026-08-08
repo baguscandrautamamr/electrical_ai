@@ -126,22 +126,72 @@ public sealed class StatusCommand : IExternalCommand
         var app = App.Current;
         var poller = app?.Poller;
 
+        var pending = CountPending(app);
+
         var lines = new List<string>
         {
             $"Connected: {(app?.IsConnected == true ? "yes" : "no")}",
             $"Project: {(string.IsNullOrWhiteSpace(app?.Config.ProjectId) ? "all (chosen in Telegram)" : app!.Config.ProjectId)}",
             $"Poll interval: {app?.Config.PollingIntervalSeconds ?? 0}s",
             string.Empty,
+            $"Waiting in queue: {(pending < 0 ? "could not read" : pending.ToString())}",
             $"Processed: {poller?.CommandsProcessed ?? 0}",
             $"Failed: {poller?.CommandsFailed ?? 0}",
             $"Last poll: {poller?.LastPollAt?.ToString("HH:mm:ss") ?? "never"}",
-            string.Empty,
-            $"Config: {AddinConfig.ConfigPath}",
-            $"Log: {Logger.LogPath}",
         };
+
+        // Polling, work waiting, nothing taken: the claim is being refused
+        // silently. The usual cause is a database still on 0001_init, where
+        // claim_next_command requires a project id and the add-in sends none.
+        if (poller is { IsRunning: true } && pending > 0 && poller.CommandsProcessed == 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add(
+                $"{pending} command(s) are waiting and none have been claimed. Check that "
+                + "0002_claim_any_project.sql has been applied to Supabase — before it, "
+                + "claim_next_command matches nothing when no project id is sent.");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add($"Config: {AddinConfig.ConfigPath}");
+        lines.Add($"Log: {Logger.LogPath}");
 
         TaskDialog.Show("Command Center — status", string.Join(Environment.NewLine, lines));
         return Result.Succeeded;
+    }
+
+    /// <summary>
+    /// Commands queued for this add-in, or -1 when the count could not be read.
+    ///
+    /// Only runs when someone opens Status, so it costs nothing per poll.
+    /// </summary>
+    private static int CountPending(App? app)
+    {
+        if (app?.Supabase is null) return -1;
+
+        var scope = string.IsNullOrWhiteSpace(app.Config.ProjectId)
+            ? string.Empty
+            : $"&project_id=eq.{app.Config.ProjectId}";
+
+        try
+        {
+            return app.Supabase
+                .SelectAsync<PendingRow>("commands_queue", $"select=id&status=eq.pending&limit=200{scope}")
+                .GetAwaiter()
+                .GetResult()
+                .Count;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not count pending commands: {ex.Message}");
+            return -1;
+        }
+    }
+
+    private sealed class PendingRow
+    {
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
     }
 }
 
