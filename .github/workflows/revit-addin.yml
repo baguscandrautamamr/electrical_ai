@@ -50,11 +50,51 @@ jobs:
           -p:UseRevitNuGet=true
           -warnaserror:CS0618,CS0612
 
+      # Revit only scans for .addin manifests sitting directly in
+      # Addins\2025 — never inside a subfolder. But dropping ~100 dependency
+      # DLLs loose in that shared folder invites version clashes with every
+      # other add-in installed. So: manifest at the top, everything else in one
+      # subfolder, with the manifest's Assembly path rewritten to match.
+      - name: Stage the install folder
+        shell: pwsh
+        run: |
+          $out   = "revit-addin/RevitCommandCenter.Electrical/bin/Release"
+          $stage = "artifact"
+          $lib   = Join-Path $stage "RevitCommandCenter.Electrical"
+          New-Item -ItemType Directory -Force $lib | Out-Null
+
+          $manifest = Join-Path $out "RevitCommandCenter.Electrical.addin"
+          if (-not (Test-Path $manifest)) {
+            throw "RevitCommandCenter.Electrical.addin is missing from the build output"
+          }
+          if (-not (Test-Path (Join-Path $out "RevitCommandCenter.Electrical.dll"))) {
+            throw "RevitCommandCenter.Electrical.dll is missing from the build output"
+          }
+
+          Get-ChildItem $out -Exclude '*.addin' |
+            Copy-Item -Destination $lib -Recurse -Force
+
+          # Revit resolves Assembly relative to the .addin file.
+          $from = '<Assembly>RevitCommandCenter.Electrical.dll</Assembly>'
+          $to   = '<Assembly>RevitCommandCenter.Electrical\RevitCommandCenter.Electrical.dll</Assembly>'
+          $xml  = Get-Content $manifest -Raw
+          if ($xml -notmatch [regex]::Escape($from)) {
+            throw "Assembly element not in the expected form; cannot rewrite its path"
+          }
+          $xml.Replace($from, $to) | Set-Content (Join-Path $stage "RevitCommandCenter.Electrical.addin")
+
+          # Revit supplies these itself; a second copy in the load path is a
+          # known source of type-identity errors.
+          $leaked = Get-ChildItem $lib -Recurse -Filter 'RevitAPI*.dll'
+          if ($leaked) { throw "Revit API assemblies leaked into the output: $($leaked.Name -join ', ')" }
+
+          Write-Host "--- staged layout ---"
+          Get-ChildItem $stage -Recurse -Name | Sort-Object
+          Write-Host "--- $((Get-ChildItem $lib -Recurse -File).Count) files in the library folder ---"
+
       - name: Upload add-in
         uses: actions/upload-artifact@v4
         with:
           name: RevitCommandCenter.Electrical-2025
           if-no-files-found: error
-          path: |
-            revit-addin/RevitCommandCenter.Electrical/bin/Release/**/*
-            !revit-addin/RevitCommandCenter.Electrical/bin/Release/**/RevitAPI*.dll
+          path: artifact/**
