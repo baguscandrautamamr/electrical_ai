@@ -123,10 +123,34 @@ workflow.
 a URL you have registered, so `/api/health` can be perfectly green while the bot
 ignores every message.
 
+### From a browser (easiest)
+
+The deployment can wire itself up. Open, with your `CRON_SECRET`:
+
+```
+https://<your-deployment>.vercel.app/api/admin/setup?secret=<CRON_SECRET>&action=all
+```
+
+That registers the webhook **and** publishes the command menu, then reports what
+Telegram thinks. Because the same process holds both `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_WEBHOOK_SECRET`, and derives its own URL from the request, the usual
+failure — a `secret_token` that does not match the one the webhook checks, so
+every update is silently rejected with 403 — cannot happen.
+
+Other actions: `?action=info` (default, changes nothing), `?action=webhook`,
+`?action=menu`. Pass `&url=https://your-domain` if the deployment sits behind a
+custom domain it cannot see in the request.
+
+The secret is in the query string, so it lands in browser history and request
+logs. That is a fair trade for a step run once — rotate `CRON_SECRET` afterwards
+if those logs are shared.
+
+### From a clone
+
 `npm run` only works **inside a clone of this repository** — it reads the
 scripts out of `package.json`, so running it from your home directory fails with
-`Could not read package.json`. If you have no clone, skip to
-[By hand](#by-hand) below; it needs nothing but PowerShell.
+`Could not read package.json`. If you have no clone, use the browser route above
+or [By hand](#by-hand) below.
 
 With `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env.local`:
 
