@@ -1,15 +1,17 @@
 # Revit add-in: build and install
 
-Requires **Windows**, **.NET 8 SDK**, and **Revit 2025** installed (the build
-references `RevitAPI.dll` from the install directory).
+Requires **Windows** and the **.NET 8 SDK**. A **Revit 2025** install is used
+when present but is not required to compile — see [Where the Revit API comes
+from](#where-the-revit-api-comes-from).
 
-> **This add-in has not been compiled.** It was written in an environment
-> without Windows, the .NET SDK, or the Revit API assemblies. Expect to fix
-> compile errors on the first build — see [First build](#first-build) below for
-> the specific places to look. The pure geometry it depends on *is* tested, via
-> the TypeScript mirror in `src/hangers/gapfill.ts`.
+## Build in CI
 
-## Build
+The `Revit add-in` workflow builds this project on every push that touches
+`revit-addin/`, and on demand from the Actions tab. The run uploads an artifact
+named `RevitCommandCenter.Electrical-2025` — download it, unzip it, and it is
+the folder to install. Use this if you do not have a Windows machine handy.
+
+## Build locally
 
 ```powershell
 cd revit-addin\RevitCommandCenter.Electrical
@@ -21,6 +23,25 @@ If Revit is not on the default path:
 ```powershell
 dotnet build -c Release -p:RevitApiDir="D:\Autodesk\Revit 2025"
 ```
+
+### Where the Revit API comes from
+
+The project builds against `RevitAPI.dll` and `RevitAPIUI.dll` from your Revit
+install when it finds them, and against Nice3point's published reference
+assemblies when it does not — which is what lets CI compile without Revit. Same
+public API surface either way; the reference assemblies contain no runtime code
+and are excluded from the output, because Revit loads the real ones itself and
+must not find a second copy.
+
+Force one or the other:
+
+```powershell
+dotnet build -c Release -p:UseRevitNuGet=true    # reference assemblies
+dotnet build -c Release -p:UseRevitNuGet=false   # your local install
+```
+
+A CI build proves the code compiles against the Revit 2025 API. It cannot prove
+behaviour inside Revit — that still needs a real install and a real model.
 
 ## Install
 

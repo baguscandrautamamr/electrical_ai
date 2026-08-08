@@ -119,7 +119,25 @@ workflow.
 
 ## 4. Register the webhook
 
-Point Telegram at the deployed function:
+**A deployed bot stays silent until this step.** Telegram only pushes updates to
+a URL you have registered, so `/api/health` can be perfectly green while the bot
+ignores every message.
+
+With `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env.local`:
+
+```bash
+npm run webhook:set -- https://<your-deployment>.vercel.app
+npm run webhook:info
+```
+
+Use the **production** URL. Preview URLs change on every deploy, so a webhook
+pointed at one breaks as soon as you push again.
+
+`webhook:info` prints what Telegram thinks the state is, including
+`last_error_message` — where a mismatched secret (403) or a crashing function
+(500) actually shows up. `npm run webhook:delete` unregisters it.
+
+The equivalent by hand, if you prefer:
 
 ```bash
 curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
@@ -127,14 +145,13 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   -d '{
     "url": "https://<your-deployment>.vercel.app/api/telegram/message",
     "secret_token": "<TELEGRAM_WEBHOOK_SECRET>",
-    "allowed_updates": ["message", "edited_message"]
+    "allowed_updates": ["message", "edited_message", "callback_query"]
   }'
 ```
 
-Verify:
+Then check the deployment itself:
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
 curl "https://<your-deployment>.vercel.app/api/health"
 ```
 

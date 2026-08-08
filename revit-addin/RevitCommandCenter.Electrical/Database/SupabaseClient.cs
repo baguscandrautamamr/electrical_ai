@@ -1,3 +1,7 @@
+// Explicit because ImplicitUsings does not cover System.Net.Http in a WPF
+// project — only System.Net.Http.Headers being imported is what made this look
+// covered.
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using Newtonsoft.Json;
