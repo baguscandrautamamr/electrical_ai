@@ -1,0 +1,182 @@
+{
+  "common": {
+    "success": "✅",
+    "error": "❌",
+    "warning": "⚠️",
+    "processing": "⏳",
+    "queued": "Queued",
+    "yes": "Yes",
+    "no": "No",
+    "none": "none",
+    "total": "Total",
+    "room": "Room",
+    "project": "Project",
+    "duration": "Duration",
+    "seconds": "seconds",
+    "units": "units",
+    "schedules": "Schedules",
+    "unknown_error": "An unknown error occurred."
+  },
+  "ack": {
+    "queued": "Command queued. Processing...",
+    "position": "Queue position",
+    "command": "Command",
+    "waiting_revit": "Waiting for the Revit add-in to pick it up (polls every {seconds} seconds)."
+  },
+  "errors": {
+    "not_registered": "You are not registered. Ask an admin for access.",
+    "inactive_user": "Your account is disabled. Contact an admin.",
+    "no_active_project": "No active project. Use /project list then /project use <code>.",
+    "no_project_access": "You do not have access to this project.",
+    "insufficient_role": "This command requires the {required} role; yours is {actual}.",
+    "unknown_command": "Unknown command: {command}. Type /help for the list.",
+    "parse_failed": "Could not understand that command. Type /help for examples.",
+    "validation_failed": "Invalid parameters",
+    "execution_failed": "Command execution failed",
+    "timeout": "Command timed out. Check that the Revit add-in is running.",
+    "credential_expired": "Your API credential has expired. Run /api connect again."
+  },
+  "validation": {
+    "required": "is required",
+    "not_a_number": "must be a number",
+    "not_an_integer": "must be a whole number",
+    "out_of_range": "must be between {min} and {max}",
+    "not_in_enum": "must be one of: {allowed}",
+    "not_a_boolean": "must be true or false",
+    "bad_size_format": "bad size format, e.g. 150x100",
+    "bad_date": "bad date format, use YYYY-MM-DD",
+    "date_in_past": "must be a future date"
+  },
+  "lighting": {
+    "title": "Lighting",
+    "created": "LIGHTING PLACED",
+    "fixtures": "Fixtures",
+    "load": "Load",
+    "circuits": "Circuits",
+    "lux_achieved": "Lux achieved",
+    "spacing": "Fixture spacing"
+  },
+  "receptacle": {
+    "title": "Receptacles",
+    "created": "RECEPTACLES PLACED",
+    "outlets": "Outlets",
+    "load": "Load",
+    "circuits": "Circuits",
+    "height": "Height from floor"
+  },
+  "cable_tray": {
+    "title": "Cable Tray",
+    "created": "CABLE TRAY CREATED",
+    "tray": "Tray",
+    "route": "Route",
+    "length": "Length",
+    "material": "Material",
+    "fill": "Cable fill",
+    "hangers": "HANGERS",
+    "hangers_total": "Total hangers",
+    "hangers_preserved": "Existing hangers preserved",
+    "hangers_new": "New hangers (gap-fill)",
+    "hanger_type_auto_matched": "Hanger type (auto-matched)",
+    "hanger_spacing": "Hanger spacing",
+    "load_per_hanger": "Load per hanger",
+    "load_capacity": "Capacity",
+    "skipped_vertical": "Vertical segments skipped",
+    "panel_updated": "Panel updated"
+  },
+  "fire_alarm": {
+    "title": "Fire Alarm",
+    "created": "FIRE ALARM PLACED",
+    "detectors": "Detectors",
+    "loop": "Loop",
+    "addresses": "Addresses",
+    "coverage": "Coverage",
+    "apex_detectors": "Apex detectors"
+  },
+  "telephone": {
+    "title": "Telephone",
+    "created": "TELEPHONE JACKS PLACED",
+    "jacks": "Jacks",
+    "jack_type": "Jack type"
+  },
+  "lan": {
+    "title": "LAN",
+    "created": "LAN JACKS PLACED",
+    "jacks": "Jacks",
+    "port_type": "Port type",
+    "switch_panel": "Switch panel",
+    "poe": "PoE"
+  },
+  "security": {
+    "title": "Security",
+    "created": "SECURITY DEVICES PLACED",
+    "devices": "Devices",
+    "camera_type": "Camera type",
+    "coverage": "Coverage",
+    "fov": "Field of view"
+  },
+  "communication": {
+    "title": "Communication",
+    "created": "COMMUNICATION DEVICES PLACED",
+    "devices": "Devices",
+    "system": "System",
+    "coverage": "Coverage radius"
+  },
+  "equip_room": {
+    "title": "Equip Room",
+    "created": "ROOM EQUIPPED",
+    "summary": "Summary"
+  },
+  "export": {
+    "title": "Export",
+    "created": "EXPORT FILES READY",
+    "excel": "Excel",
+    "pdf": "PDF",
+    "hanger_schedule": "Hanger Schedule",
+    "dwg": "DWG",
+    "ifc": "IFC"
+  },
+  "compliance": {
+    "title": "Compliance",
+    "passed": "pass",
+    "failed": "fail",
+    "nfpa72_smoke_spacing": "Smoke detector spacing ≤5.5 m",
+    "nfpa72_heat_spacing": "Heat detector spacing ≤7.0 m",
+    "nfpa72_apex": "Apex coverage (pitched roof >14°)",
+    "nfpa72_manual_call": "Manual call points ≤25 m",
+    "tray_fill": "Cable fill within limit",
+    "hanger_load": "Hanger load within capacity",
+    "breaker_load": "Breaker load within limit"
+  },
+  "admin": {
+    "api_connected": "API credential saved.",
+    "api_key_once": "Save this key now — it will not be shown again.",
+    "api_expires": "Valid until",
+    "api_disconnected": "API credential deactivated.",
+    "api_none": "No active API credential.",
+    "api_status": "API status",
+    "api_active": "Active",
+    "api_expired": "Expired",
+    "user_list": "Users",
+    "project_list": "Projects",
+    "project_switched": "Active project switched to",
+    "project_not_found": "Project not found: {code}",
+    "health_title": "System Health",
+    "health_database": "Database",
+    "health_queue_pending": "Queue pending",
+    "health_queue_processing": "Processing",
+    "health_ok": "ok",
+    "health_down": "down",
+    "theme_set": "Theme changed to",
+    "language_set": "Language changed to",
+    "no_users": "No users yet.",
+    "no_projects": "No projects yet."
+  },
+  "help": {
+    "title": "AVAILABLE COMMANDS",
+    "devices": "Devices",
+    "admin": "Admin",
+    "example": "Example",
+    "params_note": "Parameters are written as key=value, separated by spaces.",
+    "natural_language": "You can also write in plain language, e.g. \"place lighting in Office_A area 45 m2 target 300 lux\"."
+  }
+}

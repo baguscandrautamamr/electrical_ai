@@ -1,0 +1,149 @@
+using Newtonsoft.Json;
+
+namespace RevitCommandCenter.Electrical.Models;
+
+/// <summary>
+/// One hanger, placed or preserved.
+/// Mirrors <c>HangerSummary</c> entries on the TypeScript side.
+/// </summary>
+public sealed class HangerInfo
+{
+    [JsonProperty("hanger_id")] public string HangerId { get; set; } = string.Empty;
+    [JsonProperty("position_mm")] public double PositionMm { get; set; }
+    [JsonProperty("is_new")] public bool IsNew { get; set; }
+    [JsonProperty("is_existing_preserved")] public bool IsExistingPreserved { get; set; }
+    [JsonProperty("host_tray")] public string HostTray { get; set; } = string.Empty;
+    [JsonProperty("family_type")] public string FamilyType { get; set; } = string.Empty;
+    [JsonProperty("calculated_load_kg")] public double CalculatedLoadKg { get; set; }
+    [JsonProperty("load_capacity_kg")] public double LoadCapacityKg { get; set; }
+    [JsonProperty("revit_element_id")] public string? RevitElementId { get; set; }
+    [JsonProperty("coordinates")] public XyzDto? Coordinates { get; set; }
+}
+
+public sealed class XyzDto
+{
+    [JsonProperty("x")] public double X { get; set; }
+    [JsonProperty("y")] public double Y { get; set; }
+    [JsonProperty("z")] public double Z { get; set; }
+}
+
+/// <summary>Shape of the <c>hangers</c> block in a cable-tray result.</summary>
+public sealed class HangerSummaryDto
+{
+    [JsonProperty("total")] public int Total { get; set; }
+    [JsonProperty("existing_preserved")] public int ExistingPreserved { get; set; }
+    [JsonProperty("new_added_gap_fill")] public int NewAddedGapFill { get; set; }
+    [JsonProperty("hanger_type_auto_matched")] public string? HangerTypeAutoMatched { get; set; }
+    [JsonProperty("spacing_mm")] public double SpacingMm { get; set; }
+    [JsonProperty("load_per_hanger_kg")] public List<double> LoadPerHangerKg { get; set; } = new();
+    [JsonProperty("load_capacity_kg")] public double? LoadCapacityKg { get; set; }
+    [JsonProperty("load_utilization_pct")] public double? LoadUtilizationPct { get; set; }
+    [JsonProperty("skipped_vertical_segments")] public int SkippedVerticalSegments { get; set; }
+}
+
+public sealed class ExportLinksDto
+{
+    [JsonProperty("schedule_excel", NullValueHandling = NullValueHandling.Ignore)]
+    public string? ScheduleExcel { get; set; }
+
+    [JsonProperty("hanger_schedule", NullValueHandling = NullValueHandling.Ignore)]
+    public string? HangerSchedule { get; set; }
+
+    [JsonProperty("pdf_report", NullValueHandling = NullValueHandling.Ignore)]
+    public string? PdfReport { get; set; }
+
+    [JsonProperty("dwg", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Dwg { get; set; }
+
+    [JsonProperty("ifc", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Ifc { get; set; }
+
+    public bool HasAny =>
+        ScheduleExcel is not null || HangerSchedule is not null || PdfReport is not null
+        || Dwg is not null || Ifc is not null;
+}
+
+public sealed class ComplianceCheckDto
+{
+    [JsonProperty("label")] public string Label { get; set; } = string.Empty;
+    [JsonProperty("passed")] public bool Passed { get; set; }
+
+    [JsonProperty("detail", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Detail { get; set; }
+
+    public static ComplianceCheckDto Of(string label, bool passed, string? detail = null) =>
+        new() { Label = label, Passed = passed, Detail = detail };
+}
+
+/// <summary>Matches the TypeScript <c>CableTrayResult</c>.</summary>
+public sealed class CableTrayResultDto
+{
+    [JsonProperty("kind")] public string Kind => "cable_tray";
+    [JsonProperty("tray_id")] public string TrayId { get; set; } = string.Empty;
+    [JsonProperty("cable_tray_size")] public string CableTraySize { get; set; } = string.Empty;
+    [JsonProperty("material")] public string? Material { get; set; }
+    [JsonProperty("from_location")] public string? FromLocation { get; set; }
+    [JsonProperty("to_location")] public string? ToLocation { get; set; }
+    [JsonProperty("route_length_m")] public double? RouteLengthM { get; set; }
+    [JsonProperty("fill_percentage")] public double? FillPercentage { get; set; }
+    [JsonProperty("hangers")] public HangerSummaryDto Hangers { get; set; } = new();
+    [JsonProperty("panel_updated")] public string? PanelUpdated { get; set; }
+
+    [JsonProperty("exports", NullValueHandling = NullValueHandling.Ignore)]
+    public ExportLinksDto? Exports { get; set; }
+}
+
+/// <summary>Matches the TypeScript <c>PlacementResult</c>.</summary>
+public sealed class PlacementResultDto
+{
+    [JsonProperty("kind")] public string Kind { get; set; } = string.Empty;
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("devices_placed")] public int DevicesPlaced { get; set; }
+    [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
+
+    [JsonProperty("total_load_w", NullValueHandling = NullValueHandling.Ignore)]
+    public double? TotalLoadW { get; set; }
+
+    [JsonProperty("circuits_created", NullValueHandling = NullValueHandling.Ignore)]
+    public int? CircuitsCreated { get; set; }
+
+    [JsonProperty("circuit_ids", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? CircuitIds { get; set; }
+
+    [JsonProperty("details", NullValueHandling = NullValueHandling.Ignore)]
+    public Dictionary<string, object?>? Details { get; set; }
+
+    [JsonProperty("compliance", NullValueHandling = NullValueHandling.Ignore)]
+    public List<ComplianceCheckDto>? Compliance { get; set; }
+
+    [JsonProperty("exports", NullValueHandling = NullValueHandling.Ignore)]
+    public ExportLinksDto? Exports { get; set; }
+}
+
+public sealed class EquipRoomResultDto
+{
+    [JsonProperty("kind")] public string Kind => "equip_room";
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("results")] public List<object> Results { get; set; } = new();
+
+    [JsonProperty("exports", NullValueHandling = NullValueHandling.Ignore)]
+    public ExportLinksDto? Exports { get; set; }
+}
+
+public sealed class ExportResultDto
+{
+    [JsonProperty("kind")] public string Kind => "export";
+    [JsonProperty("exports")] public ExportLinksDto Exports { get; set; } = new();
+}
+
+/// <summary>Geometry of one straight run of tray, in millimetres.</summary>
+public sealed class TraySegment
+{
+    public required Autodesk.Revit.DB.Element Element { get; init; }
+    public required Autodesk.Revit.DB.XYZ Start { get; init; }
+    public required Autodesk.Revit.DB.XYZ End { get; init; }
+    public required double LengthMm { get; init; }
+    public required bool IsHorizontal { get; init; }
+    public double WidthMm { get; init; }
+    public double HeightMm { get; init; }
+}

@@ -1,0 +1,182 @@
+{
+  "common": {
+    "success": "✅",
+    "error": "❌",
+    "warning": "⚠️",
+    "processing": "⏳",
+    "queued": "Masuk antrean",
+    "yes": "Ya",
+    "no": "Tidak",
+    "none": "tidak ada",
+    "total": "Total",
+    "room": "Ruangan",
+    "project": "Proyek",
+    "duration": "Durasi",
+    "seconds": "detik",
+    "units": "unit",
+    "schedules": "Jadwal",
+    "unknown_error": "Terjadi kesalahan yang tidak diketahui."
+  },
+  "ack": {
+    "queued": "Perintah masuk antrean. Sedang diproses...",
+    "position": "Posisi antrean",
+    "command": "Perintah",
+    "waiting_revit": "Menunggu Revit add-in mengambil perintah (polling tiap {seconds} detik)."
+  },
+  "errors": {
+    "not_registered": "Anda belum terdaftar. Hubungi admin untuk mendapatkan akses.",
+    "inactive_user": "Akun Anda dinonaktifkan. Hubungi admin.",
+    "no_active_project": "Belum ada proyek aktif. Gunakan /project list lalu /project use <kode>.",
+    "no_project_access": "Anda tidak punya akses ke proyek ini.",
+    "insufficient_role": "Perintah ini butuh peran {required}, peran Anda {actual}.",
+    "unknown_command": "Perintah tidak dikenal: {command}. Ketik /help untuk daftar perintah.",
+    "parse_failed": "Tidak bisa memahami perintah tersebut. Ketik /help untuk contoh.",
+    "validation_failed": "Parameter tidak valid",
+    "execution_failed": "Perintah gagal dijalankan",
+    "timeout": "Perintah melebihi batas waktu. Pastikan Revit add-in berjalan.",
+    "credential_expired": "Kredensial API sudah kedaluwarsa. Jalankan /api connect lagi."
+  },
+  "validation": {
+    "required": "wajib diisi",
+    "not_a_number": "harus berupa angka",
+    "not_an_integer": "harus berupa bilangan bulat",
+    "out_of_range": "harus antara {min} dan {max}",
+    "not_in_enum": "harus salah satu dari: {allowed}",
+    "not_a_boolean": "harus true atau false",
+    "bad_size_format": "format ukuran salah, contoh: 150x100",
+    "bad_date": "format tanggal salah, gunakan YYYY-MM-DD",
+    "date_in_past": "tanggal harus di masa depan"
+  },
+  "lighting": {
+    "title": "Lampu",
+    "created": "LAMPU DITEMPATKAN",
+    "fixtures": "Fixture",
+    "load": "Beban",
+    "circuits": "Circuit",
+    "lux_achieved": "Lux tercapai",
+    "spacing": "Jarak antar fixture"
+  },
+  "receptacle": {
+    "title": "Stop Kontak",
+    "created": "STOP KONTAK DITEMPATKAN",
+    "outlets": "Outlet",
+    "load": "Beban",
+    "circuits": "Circuit",
+    "height": "Tinggi dari lantai"
+  },
+  "cable_tray": {
+    "title": "Kabel Tray",
+    "created": "KABEL TRAY DIBUAT",
+    "tray": "Tray",
+    "route": "Rute",
+    "length": "Panjang",
+    "material": "Material",
+    "fill": "Cable fill",
+    "hangers": "HANGER",
+    "hangers_total": "Total hanger",
+    "hangers_preserved": "Hanger lama dipertahankan",
+    "hangers_new": "Hanger baru (isi celah)",
+    "hanger_type_auto_matched": "Tipe hanger (cocok otomatis)",
+    "hanger_spacing": "Jarak hanger",
+    "load_per_hanger": "Beban per hanger",
+    "load_capacity": "Kapasitas",
+    "skipped_vertical": "Segmen vertikal dilewati",
+    "panel_updated": "Panel diperbarui"
+  },
+  "fire_alarm": {
+    "title": "Fire Alarm",
+    "created": "FIRE ALARM DITEMPATKAN",
+    "detectors": "Detektor",
+    "loop": "Loop",
+    "addresses": "Alamat",
+    "coverage": "Cakupan",
+    "apex_detectors": "Detektor apex"
+  },
+  "telephone": {
+    "title": "Telepon",
+    "created": "JACK TELEPON DITEMPATKAN",
+    "jacks": "Jack",
+    "jack_type": "Tipe jack"
+  },
+  "lan": {
+    "title": "LAN",
+    "created": "JACK LAN DITEMPATKAN",
+    "jacks": "Jack",
+    "port_type": "Tipe port",
+    "switch_panel": "Panel switch",
+    "poe": "PoE"
+  },
+  "security": {
+    "title": "Sekuriti",
+    "created": "PERANGKAT SEKURITI DITEMPATKAN",
+    "devices": "Perangkat",
+    "camera_type": "Tipe kamera",
+    "coverage": "Cakupan",
+    "fov": "Field of view"
+  },
+  "communication": {
+    "title": "Komunikasi",
+    "created": "PERANGKAT KOMUNIKASI DITEMPATKAN",
+    "devices": "Perangkat",
+    "system": "Sistem",
+    "coverage": "Radius cakupan"
+  },
+  "equip_room": {
+    "title": "Lengkapi Ruangan",
+    "created": "RUANGAN DILENGKAPI",
+    "summary": "Ringkasan"
+  },
+  "export": {
+    "title": "Ekspor",
+    "created": "FILE EKSPOR SIAP",
+    "excel": "Excel",
+    "pdf": "PDF",
+    "hanger_schedule": "Jadwal Hanger",
+    "dwg": "DWG",
+    "ifc": "IFC"
+  },
+  "compliance": {
+    "title": "Kepatuhan",
+    "passed": "sesuai",
+    "failed": "tidak sesuai",
+    "nfpa72_smoke_spacing": "Jarak detektor asap ≤5.5 m",
+    "nfpa72_heat_spacing": "Jarak detektor panas ≤7.0 m",
+    "nfpa72_apex": "Cakupan apex (atap miring >14°)",
+    "nfpa72_manual_call": "Titik panggil manual ≤25 m",
+    "tray_fill": "Cable fill dalam batas",
+    "hanger_load": "Beban hanger dalam kapasitas",
+    "breaker_load": "Beban breaker dalam batas"
+  },
+  "admin": {
+    "api_connected": "Kredensial API tersimpan.",
+    "api_key_once": "Simpan kunci ini sekarang — tidak akan ditampilkan lagi.",
+    "api_expires": "Berlaku sampai",
+    "api_disconnected": "Kredensial API dinonaktifkan.",
+    "api_none": "Belum ada kredensial API aktif.",
+    "api_status": "Status API",
+    "api_active": "Aktif",
+    "api_expired": "Kedaluwarsa",
+    "user_list": "Daftar pengguna",
+    "project_list": "Daftar proyek",
+    "project_switched": "Proyek aktif diganti ke",
+    "project_not_found": "Proyek tidak ditemukan: {code}",
+    "health_title": "Status Sistem",
+    "health_database": "Database",
+    "health_queue_pending": "Antrean menunggu",
+    "health_queue_processing": "Sedang diproses",
+    "health_ok": "normal",
+    "health_down": "gangguan",
+    "theme_set": "Tema diubah ke",
+    "language_set": "Bahasa diubah ke",
+    "no_users": "Belum ada pengguna.",
+    "no_projects": "Belum ada proyek."
+  },
+  "help": {
+    "title": "PERINTAH TERSEDIA",
+    "devices": "Perangkat",
+    "admin": "Admin",
+    "example": "Contoh",
+    "params_note": "Parameter ditulis sebagai kunci=nilai, dipisah spasi.",
+    "natural_language": "Anda juga bisa menulis dengan bahasa biasa, misalnya: \"pasang lampu di Office_A luas 45 m2 target 300 lux\"."
+  }
+}

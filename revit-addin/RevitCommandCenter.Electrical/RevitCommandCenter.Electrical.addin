@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copy this file (and the built DLL) to:
+    %APPDATA%\Autodesk\Revit\Addins\2025\
+
+  Assembly may be an absolute path or relative to the .addin file.
+-->
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Revit Electrical Command Center</Name>
+    <Assembly>RevitCommandCenter.Electrical.dll</Assembly>
+    <FullClassName>RevitCommandCenter.Electrical.App</FullClassName>
+    <ClientId>7f3c1a92-8d64-4b17-9e2a-5c0f4b6d8e31</ClientId>
+    <VendorId>RCC</VendorId>
+    <VendorDescription>Revit Electrical Command Center</VendorDescription>
+  </AddIn>
+</RevitAddIns>

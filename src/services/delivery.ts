@@ -1,0 +1,153 @@
+/**
+ * Delivers finished command results back to Telegram.
+ *
+ * Two callers share this:
+ *   - the webhook, which waits a bounded number of seconds inline so the common
+ *     case feels synchronous (~8-12s end to end);
+ *   - the callback sweeper, which catches anything that finished after the
+ *     webhook gave up (a cold Revit instance, a retry, a long transaction).
+ *
+ * `webhook_sent` is flipped before the reply is composed for the *next* command
+ * so the two paths can never double-post the same result.
+ */
+
+import { telegram } from '../lib/telegram.ts';
+import { supabase } from '../lib/supabase.ts';
+import { formatExecutionFailure, formatResult, type FormatContext } from '../format/index.ts';
+import { findUndeliveredResults, getCommand, markDelivered } from './queue.ts';
+import { DEFAULT_LANGUAGE } from '../i18n/index.ts';
+import { DEFAULT_THEME } from '../theme/tokens.ts';
+import type { CommandResult, QueuedCommand, User } from '../types/index.ts';
+
+async function contextForCommand(command: QueuedCommand): Promise<FormatContext> {
+  const user = await supabase().selectOne<User>('users', {
+    columns: 'language,theme',
+    eq: { id: command.user_id },
+  });
+  return {
+    language: user?.language ?? DEFAULT_LANGUAGE,
+    theme: user?.theme ?? DEFAULT_THEME,
+  };
+}
+
+export function renderCommandOutcome(command: QueuedCommand, ctx: FormatContext): string {
+  if (command.status === 'completed' && command.result_json) {
+    return formatResult(command.result_json as CommandResult, ctx);
+  }
+  return formatExecutionFailure(ctx, {
+    commandType: command.command_type,
+    error: command.error_message,
+    retryCount: command.retry_count,
+    maxRetries: command.max_retries,
+  });
+}
+
+/**
+ * Sends one command's result. Returns false when there was nothing to send.
+ *
+ * Marks the row delivered *before* the network call: a duplicate Telegram
+ * message is a worse outcome for the user than a rare lost one, and the result
+ * stays queryable via /status either way.
+ */
+export async function deliverCommandResult(command: QueuedCommand): Promise<boolean> {
+  if (command.webhook_sent) return false;
+  if (command.status !== 'completed' && command.status !== 'failed') return false;
+  if (!command.chat_id) {
+    await markDelivered(command.id);
+    return false;
+  }
+
+  await markDelivered(command.id);
+
+  const ctx = await contextForCommand(command);
+  const text = renderCommandOutcome(command, ctx);
+
+  try {
+    if (command.ack_message_id) {
+      // Edit the "⏳ queued" bubble in place so the thread stays tidy.
+      await telegram().editMessageText(command.chat_id, command.ack_message_id, text);
+    } else {
+      await telegram().sendMessage(command.chat_id, text);
+    }
+  } catch {
+    // Editing fails if the ack was deleted or is too old; fall back to a new
+    // message rather than losing the result.
+    await telegram().sendMessage(command.chat_id, text);
+  }
+
+  await archiveCommand(command);
+  return true;
+}
+
+/** Mirrors a finished command into the audit log. */
+async function archiveCommand(command: QueuedCommand): Promise<void> {
+  await supabase().insert(
+    'commands_history',
+    {
+      command_id: command.id,
+      user_id: command.user_id,
+      project_id: command.project_id,
+      command_type: command.command_type,
+      command_text: command.command_text,
+      parsed_intent: command.command_json,
+      status: command.status === 'completed' ? 'success' : 'failed',
+      result_summary:
+        command.status === 'completed'
+          ? summarize(command.result_json)
+          : (command.error_message ?? 'failed'),
+      execution_time_ms: command.execution_time_ms,
+    },
+    { returning: false },
+  );
+}
+
+function summarize(result: CommandResult | null): string {
+  if (!result) return 'completed';
+  switch (result.kind) {
+    case 'cable_tray':
+      return `${result.tray_id}: ${result.hangers.total} hangers (+${result.hangers.new_added_gap_fill} new, ${result.hangers.existing_preserved} preserved)`;
+    case 'equip_room':
+      return `${result.room ?? 'room'}: ${result.results.length} categories`;
+    case 'export':
+      return 'exports generated';
+    default:
+      return `${result.kind}: ${result.devices_placed} devices`;
+  }
+}
+
+/** Sweeps every undelivered result. Returns how many were sent. */
+export async function deliverPendingResults(limit = 20): Promise<number> {
+  const commands = await findUndeliveredResults(limit);
+  let sent = 0;
+  for (const command of commands) {
+    try {
+      if (await deliverCommandResult(command)) sent += 1;
+    } catch (error) {
+      console.error('[delivery] failed for command', command.id, error);
+    }
+  }
+  return sent;
+}
+
+/**
+ * Waits inline for one command to finish, polling the queue.
+ *
+ * Returns the finished command, or null if it is still running when the budget
+ * runs out — in which case the sweeper will deliver it later.
+ */
+export async function waitForCommand(
+  commandId: string,
+  options: { timeoutMs: number; intervalMs: number },
+): Promise<QueuedCommand | null> {
+  const deadline = Date.now() + options.timeoutMs;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
+
+    const command = await getCommand(commandId);
+    if (!command) return null;
+    if (command.status === 'completed' || command.status === 'failed') return command;
+  }
+
+  return null;
+}

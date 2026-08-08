@@ -1,0 +1,40 @@
+# ---- Secrets / environment ----
+.env
+.env.*
+!.env.example
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Vercel ----
+.vercel/
+
+# ---- .NET / Revit add-in ----
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userprefs
+.vs/
+packages/
+*.nupkg
+
+# ---- Editors / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# ---- Logs / temp ----
+logs/
+*.log
+tmp/
+temp/
