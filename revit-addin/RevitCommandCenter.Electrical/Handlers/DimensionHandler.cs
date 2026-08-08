@@ -173,7 +173,7 @@ public sealed class DimensionHandler : ICommandHandler
     // ----------------------------------------------------------- collection
 
     /// <summary>One thing a dimension string can measure to, and where it is.</summary>
-    private readonly record struct Anchor(Reference Reference, double Position, XYZ Point);
+    private readonly record struct Anchor(Reference Ref, double Position, XYZ Point);
 
     /// <summary>
     /// Grids visible in the view.
@@ -375,7 +375,7 @@ public sealed class DimensionHandler : ICommandHandler
         if (chain.Count < 2) return false;
 
         var references = new ReferenceArray();
-        foreach (var anchor in chain) references.Append(anchor.Reference);
+        foreach (var anchor in chain) references.Append(anchor.Ref);
 
         try
         {
