@@ -357,6 +357,15 @@ public static class RevitUtils
     /// the right XYZ with no host looks identical on the first day and drifts
     /// away from the drawing on every day after.
     /// </summary>
+    /// <summary>
+    /// How far clear of a door or window a wall device is kept, in feet.
+    ///
+    /// 150 mm past the opening's edge puts the device clear of the architrave
+    /// rather than merely off the opening. An outlet in a doorway is not a
+    /// near miss to be tightened up — there is no wall behind it.
+    /// </summary>
+    private static readonly double OpeningClearanceFeet = RevitUnits.MToFeet(0.15);
+
     public static List<DevicePlacement> GeneratePerimeterPlacements(
         Room room,
         int count,
@@ -365,46 +374,72 @@ public static class RevitUtils
         var placements = new List<DevicePlacement>();
         if (count <= 0) return placements;
 
-        var options = new SpatialElementBoundaryOptions
-        {
-            SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish,
-        };
-
-        var loops = room.GetBoundarySegments(options);
-        if (loops is null || loops.Count == 0) return placements;
-
-        // Outer loop only; inner loops are columns and shafts.
-        var segments = loops[0].ToList();
-        var perimeter = segments.Sum(segment => segment.GetCurve().Length);
-        if (perimeter <= 0) return placements;
+        var perimeter = RoomPerimeter.Of(room);
+        if (perimeter is null || perimeter.Total <= 0) return placements;
 
         var doc = room.Document;
-        var step = perimeter / count;
+        var step = perimeter.Total / count;
         var baseZ = (RoomCenter(room)?.Z ?? 0) + heightFeet;
 
-        var walked = 0.0;
-        var target = step / 2.0; // offset so no device lands exactly on a corner
+        // Half a step in, so no device lands exactly on a corner.
+        var target = step / 2.0;
+        var used = new List<double>();
 
-        foreach (var segment in segments)
+        for (var i = 0; i < count; i++, target += step)
         {
-            var curve = segment.GetCurve();
-            var length = curve.Length;
-            var wall = doc.GetElement(segment.ElementId) as Wall;
-
-            while (target <= walked + length && placements.Count < count)
+            // The even spacing is the intention; an opening is a fact about the
+            // wall. So the position moves rather than the count.
+            var free = perimeter.NearestFree(target, OpeningClearanceFeet);
+            if (free is null)
             {
-                var localT = (target - walked) / length;
-                var point = curve.Evaluate(localT, true);
-                var at = new XYZ(point.X, point.Y, baseZ);
-
-                placements.Add(OnWallFace(doc, wall, at, room) ?? DevicePlacement.At(at));
-                target += step;
+                Logger.Warn(
+                    $"Room '{room.Name}' has no wall clear of its openings for device {i + 1}; skipping it.");
+                continue;
             }
 
-            walked += length;
+            var at = Spread(perimeter, free.Value, used, step);
+            used.Add(at);
+
+            var point = perimeter.PointAt(at);
+            if (point is null) continue;
+
+            var location = new XYZ(point.X, point.Y, baseZ);
+            placements.Add(
+                OnWallFace(doc, perimeter.WallAt(at), location, room) ?? DevicePlacement.At(location));
         }
 
         return placements;
+    }
+
+    /// <summary>
+    /// Keeps two devices from being pushed onto the same spot.
+    ///
+    /// Two positions either side of one doorway are both nudged to its edges,
+    /// and without this they would stack on the nearer one — two outlets in the
+    /// same place, which reads on the drawing as one.
+    /// </summary>
+    private static double Spread(
+        RoomPerimeter perimeter,
+        double at,
+        List<double> used,
+        double step)
+    {
+        // A quarter of the nominal spacing is close enough to count as the same
+        // position, and far enough not to fight the layout.
+        var tooClose = Math.Min(step / 4.0, RevitUnits.MToFeet(0.3));
+
+        var candidate = at;
+        for (var attempt = 0; attempt < used.Count + 1; attempt++)
+        {
+            var clash = used.Any(other => perimeter.Separation(other, candidate) < tooClose);
+            if (!clash) return candidate;
+
+            var shifted = perimeter.NearestFree(candidate + tooClose * 1.5, OpeningClearanceFeet);
+            if (shifted is null) return candidate;
+            candidate = shifted.Value;
+        }
+
+        return candidate;
     }
 
     /// <summary>
@@ -425,44 +460,39 @@ public static class RevitUtils
         var baseZ = (RoomCenter(room)?.Z ?? 0) + heightFeet;
         var placements = new List<DevicePlacement>();
 
-        var options = new SpatialElementBoundaryOptions
-        {
-            SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish,
-        };
+        var perimeter = RoomPerimeter.Of(room);
 
-        // The walls this room is made of, and the curve each contributes. A
-        // wall can bound the room in more than one segment, so the first is
-        // kept and the rest ignored — a door belongs to one stretch of wall.
-        var walls = new Dictionary<ElementId, Curve>();
-        foreach (var segment in room.GetBoundarySegments(options)?.FirstOrDefault()
-                                ?? Enumerable.Empty<BoundarySegment>())
+        if (perimeter is not null)
         {
-            if (doc.GetElement(segment.ElementId) is not Wall wall) continue;
-            if (!walls.ContainsKey(wall.Id)) walls[wall.Id] = segment.GetCurve();
-        }
-
-        if (walls.Count > 0)
-        {
-            // One pass over the doors, rather than one pass per wall.
-            var doors = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Doors)
-                .WhereElementIsNotElementType()
-                .OfType<FamilyInstance>();
-
-            foreach (var door in doors)
+            foreach (var door in perimeter.Doors)
             {
                 if (placements.Count >= count) break;
-                if (door.Host is not Wall wall) continue;
-                if (!walls.TryGetValue(wall.Id, out var curve)) continue;
 
-                var placement = BesideDoor(doc, wall, curve, door, baseZ, room);
-                if (placement is not null) placements.Add(placement);
+                // Measured from the jamb the boundary map found, not from the
+                // door's centre plus a guessed half-leaf. That guess, projected
+                // onto the wrong segment of a wall the door had split in two,
+                // is what put a switch in the middle of the doorway.
+                var at = perimeter.BesideOpening(door, SwitchOffsetFeet, OpeningClearanceFeet);
+                if (at is null)
+                {
+                    Logger.Debug($"No wall clear of the opening beside door {door.Id} in '{room.Name}'.");
+                    continue;
+                }
+
+                var point = perimeter.PointAt(at.Value);
+                if (point is null) continue;
+
+                var location = new XYZ(point.X, point.Y, baseZ);
+                placements.Add(
+                    OnWallFace(doc, perimeter.WallAt(at.Value), location, room)
+                    ?? DevicePlacement.At(location));
             }
         }
 
         if (placements.Count >= count) return placements;
 
-        // No door, or not enough of them: the rest go on the walls.
+        // No door, or not enough of them: the rest go on the walls, still clear
+        // of the openings.
         foreach (var fallback in GeneratePerimeterPlacements(room, count - placements.Count, heightFeet))
         {
             placements.Add(fallback);
@@ -479,56 +509,6 @@ public static class RevitUtils
     /// by "300 from the door", and what a builder will set out.
     /// </summary>
     private static readonly double SwitchOffsetFeet = RevitUnits.MToFeet(0.30);
-
-    /// <summary>
-    /// A point on the wall a short distance to one side of a door, staying
-    /// inside the wall's own extent.
-    /// </summary>
-    private static DevicePlacement? BesideDoor(
-        Document doc,
-        Wall wall,
-        Curve wallCurve,
-        FamilyInstance door,
-        double baseZ,
-        Room room)
-    {
-        if (door.Location is not LocationPoint location) return null;
-
-        var length = wallCurve.Length;
-        if (length <= 0) return null;
-
-        // Width lives on the instance in some families and on the type in
-        // others; 900 mm is a single leaf, which is what most doors are.
-        var widthFeet = ParameterMapper.GetDoubleParameter(door, "Width");
-        if (widthFeet <= 0 && door.Symbol is not null)
-        {
-            widthFeet = ParameterMapper.GetDoubleParameter(door.Symbol, "Width");
-        }
-        var halfLeaf = widthFeet > 0 ? widthFeet / 2.0 : RevitUnits.MToFeet(0.45);
-
-        var projected = wallCurve.Project(location.Point);
-        if (projected is null) return null;
-
-        var start = wallCurve.GetEndParameter(0);
-        var end = wallCurve.GetEndParameter(1);
-        if (Math.Abs(end - start) < 1e-9) return null;
-
-        var doorAt = (projected.Parameter - start) / (end - start);
-        var offset = (halfLeaf + SwitchOffsetFeet) / length;
-
-        // Either side of the door will do; take the first that still has wall
-        // under it, since a door hard against a corner only has one.
-        foreach (var candidate in new[] { doorAt + offset, doorAt - offset })
-        {
-            if (candidate < 0.02 || candidate > 0.98) continue;
-
-            var point = wallCurve.Evaluate(candidate, true);
-            var at = new XYZ(point.X, point.Y, baseZ);
-            return OnWallFace(doc, wall, at, room) ?? DevicePlacement.At(at);
-        }
-
-        return null;
-    }
 
     /// <summary>How far into the room to probe when deciding which face is which, in feet.</summary>
     private static readonly double FaceProbeFeet = RevitUnits.MToFeet(0.1);
