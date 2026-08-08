@@ -211,7 +211,7 @@
     "admin": "Admin",
     "example": "Contoh",
     "params_note": "Parameter ditulis sebagai kunci=nilai, dipisah spasi.",
-    "natural_language": "Anda juga bisa menulis dengan bahasa biasa, misalnya: \"pasang lampu di Office_A luas 45 m2 target 300 lux\".",
+    "natural_language": "Anda juga bisa menulis dengan bahasa biasa, misalnya: \"pasang lampu di ruangan lounge 6 lampu, tinggi 3 meter, familynya pake act_e_downlight\".",
     "admin_project": "daftar proyek, ketuk salah satu untuk mengaktifkannya",
     "admin_user_list": "siapa saja yang bisa memakai proyek ini",
     "admin_user_add": "daftarkan seseorang dan beri akses",

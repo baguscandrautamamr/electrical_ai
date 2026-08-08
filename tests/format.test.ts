@@ -321,13 +321,13 @@ describe('acknowledgement and errors', () => {
 describe('validation feedback', () => {
   it('names each bad field and interpolates the allowed range', () => {
     const issues: ValidationIssue[] = [
-      { field: 'area', code: 'required' },
+      { field: 'from', code: 'required' },
       { field: 'hanger_spacing', code: 'out_of_range', detail: JSON.stringify({ min: 100, max: 6000 }) },
     ];
 
     const text = formatValidationIssues(EN, 'create_cable_tray', issues);
 
-    expect(text).toContain('area is required');
+    expect(text).toContain('from is required');
     expect(text).toContain('hanger_spacing must be between 100 and 6000');
   });
 

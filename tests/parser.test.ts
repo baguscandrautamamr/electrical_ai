@@ -5,10 +5,10 @@ import { COMMAND_SPECS, specFor } from '../src/parser/schema.js';
 
 describe('tokenize', () => {
   it('splits on whitespace', () => {
-    expect(tokenize('/place_lighting Office_A area=45')).toEqual([
+    expect(tokenize('/place_lighting Office_A space=45')).toEqual([
       '/place_lighting',
       'Office_A',
-      'area=45',
+      'space=45',
     ]);
   });
 
@@ -30,12 +30,12 @@ describe('tokenize', () => {
 
 describe('parseGrammar', () => {
   it('parses a key=value command', () => {
-    const parsed = parseGrammar('/place_lighting Office_A area=45 lux_target=300');
+    const parsed = parseGrammar('/place_lighting Office_A space=45 lux_target=300');
 
     expect(parsed).not.toBeNull();
     expect(parsed!.type).toBe('place_lighting');
     expect(parsed!.subject).toBe('Office_A');
-    expect(parsed!.params).toMatchObject({ area: '45', lux_target: '300' });
+    expect(parsed!.params).toMatchObject({ space: '45', lux_target: '300' });
     expect(parsed!.source).toBe('grammar');
   });
 
@@ -65,6 +65,23 @@ describe('parseGrammar', () => {
     const parsed = parseGrammar('/create_cable_tray CT-A1 from=P1 to=Z1 spacing=2000');
     expect(parsed!.params.hanger_spacing).toBe('2000');
     expect(parsed!.params.spacing).toBeUndefined();
+  });
+
+  it('still accepts the old name for space, and the Indonesian one', () => {
+    // `space` was `area`. Commands people already have saved must keep working.
+    expect(parseGrammar('/place_lighting Office_A area=45')!.params.space).toBe('45');
+    expect(parseGrammar('/place_lighting Office_A luas=45')!.params.space).toBe('45');
+  });
+
+  it('parses the fixture count and family an engineer states', () => {
+    const parsed = parseGrammar('/place_lighting Lounge count=6 height=3 fixture_type=act_e_downlight');
+
+    expect(parsed!.subject).toBe('Lounge');
+    expect(parsed!.params).toMatchObject({
+      count: '6',
+      height: '3',
+      fixture_type: 'act_e_downlight',
+    });
   });
 
   it('strips the @botname suffix Telegram adds in groups', () => {
@@ -140,16 +157,43 @@ describe('validateParams', () => {
   const cableTray = specFor('create_cable_tray')!;
 
   it('applies defaults for omitted parameters', () => {
-    const outcome = validateParams(lighting, 'Office_A', { area: '45' });
+    const outcome = validateParams(lighting, 'Office_A', { space: '45' });
 
     expect(outcome.ok).toBe(true);
     expect(outcome.normalized).toMatchObject({
       room: 'Office_A',
-      area: 45,
+      space: 45,
       height: 2.8,
       lux_target: 300,
       mounting: 'ceiling',
     });
+  });
+
+  it('places lighting with nothing but a room', () => {
+    // The add-in measures the space and derives the count, so a bare
+    // "/place_lighting Lounge" is a complete command, not a half-written one.
+    const outcome = validateParams(lighting, 'Lounge', {});
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.issues).toEqual([]);
+    expect(outcome.normalized.space).toBeUndefined();
+    expect(outcome.normalized.count).toBeUndefined();
+  });
+
+  it('takes a stated fixture count', () => {
+    const outcome = validateParams(lighting, 'Lounge', { count: '6', height: '3' });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.count).toBe(6);
+    expect(outcome.normalized.height).toBe(3);
+  });
+
+  it('ignores breaker_max now that it is not a parameter', () => {
+    // Dropped rather than rejected, so a saved command carrying it still runs.
+    const outcome = validateParams(lighting, 'Lounge', { breaker_max: '16' });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.breaker_max).toBeUndefined();
   });
 
   it('coerces strings to numbers and booleans', () => {
@@ -177,25 +221,25 @@ describe('validateParams', () => {
 
   it('tolerates units the user types', () => {
     // "45 m2" and "2.8m" are what people actually write.
-    const outcome = validateParams(lighting, 'Office_A', { area: '45 m2', height: '2.8m' });
-    expect(outcome.normalized.area).toBe(45);
+    const outcome = validateParams(lighting, 'Office_A', { space: '45 m2', height: '2.8m' });
+    expect(outcome.normalized.space).toBe(45);
     expect(outcome.normalized.height).toBe(2.8);
   });
 
   it('accepts a comma decimal separator', () => {
-    const outcome = validateParams(lighting, 'Office_A', { area: '45,5' });
-    expect(outcome.normalized.area).toBe(45.5);
+    const outcome = validateParams(lighting, 'Office_A', { space: '45,5' });
+    expect(outcome.normalized.space).toBe(45.5);
   });
 
   it('reports a missing required parameter', () => {
-    const outcome = validateParams(lighting, 'Office_A', {});
+    const outcome = validateParams(cableTray, 'CT-A1', {});
 
     expect(outcome.ok).toBe(false);
-    expect(outcome.issues).toContainEqual({ field: 'area', code: 'required' });
+    expect(outcome.issues).toContainEqual({ field: 'from', code: 'required' });
   });
 
   it('reports a missing required subject', () => {
-    const outcome = validateParams(lighting, null, { area: '45' });
+    const outcome = validateParams(lighting, null, { space: '45' });
 
     expect(outcome.ok).toBe(false);
     expect(outcome.issues).toContainEqual({ field: 'room', code: 'required' });
@@ -235,7 +279,7 @@ describe('validateParams', () => {
   });
 
   it('rejects a non-numeric value for a numeric field', () => {
-    const outcome = validateParams(lighting, 'Office_A', { area: 'banyak' });
+    const outcome = validateParams(lighting, 'Office_A', { space: 'banyak' });
     expect(outcome.ok).toBe(false);
     expect(outcome.issues[0]!.code).toBe('not_a_number');
   });
@@ -251,7 +295,7 @@ describe('validateParams', () => {
   it('drops unknown parameters instead of failing the command', () => {
     // A natural-language parse routinely produces one stray key; losing the
     // whole command over it would be worse than ignoring it.
-    const outcome = validateParams(lighting, 'Office_A', { area: '45', nonsense: 'x' });
+    const outcome = validateParams(lighting, 'Office_A', { space: '45', nonsense: 'x' });
 
     expect(outcome.ok).toBe(true);
     expect(outcome.normalized.nonsense).toBeUndefined();
@@ -259,16 +303,16 @@ describe('validateParams', () => {
 
   it('reports every bad field at once rather than stopping at the first', () => {
     const outcome = validateParams(lighting, 'Office_A', {
-      area: 'abc',
+      space: 'abc',
       height: '999',
       mounting: 'floating',
     });
 
     expect(outcome.issues).toHaveLength(3);
     expect(outcome.issues.map((issue) => issue.field).sort()).toEqual([
-      'area',
       'height',
       'mounting',
+      'space',
     ]);
   });
 });

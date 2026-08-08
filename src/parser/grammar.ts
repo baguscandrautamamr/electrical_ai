@@ -7,7 +7,7 @@
  * Accepted shapes (both `=` and `:` separators, since the spec's own examples
  * mix them):
  *
- *   /place_lighting Office_A area=45 lux_target=300
+ *   /place_lighting Lounge count=6 height=3
  *   /create_cable_tray CT-A1 from: PA-01 to: Zone_A hanger_spacing: 1500
  *   /place_security Lobby type=camera zone_id="North Wing"
  *   /api connect abc123 2026-12-31

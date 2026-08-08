@@ -52,8 +52,36 @@ describe('natural language parsing', () => {
     if (outcome.kind !== 'device') return;
     expect(outcome.command.type).toBe('place_lighting');
     expect(outcome.command.subject).toBe('Office_A');
-    // `lux` is an alias and must land on the canonical name.
+    // `lux` and `area` are aliases and must land on the canonical names.
     expect(outcome.command.params.lux_target).toBe('300');
+    expect(outcome.command.params.space).toBe('45');
+  });
+
+  it('takes the count, height and family out of an informal request', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'place_lighting',
+        subject: 'lounge',
+        params: { count: '6', height: '3', fixture_type: 'act_e_downlight' },
+        confidence: 0.9,
+      }),
+    );
+
+    const outcome = await parseMessage(
+      'pasang lampu diruangan lounge 6 lampu, tinggi 3 meter familynya pake act_e_downlight',
+    );
+
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.type).toBe('place_lighting');
+    expect(outcome.command.subject).toBe('lounge');
+    expect(outcome.command.params).toMatchObject({
+      count: '6',
+      height: '3',
+      fixture_type: 'act_e_downlight',
+    });
+    // Nobody stated an area; the add-in reads it off the space.
+    expect(outcome.command.params.space).toBeUndefined();
   });
 
   it('routes a question about the model to the query command', async () => {

@@ -36,6 +36,29 @@ public static class RevitUtils
     /// <summary>Room area in m², or 0 when unplaced.</summary>
     public static double RoomAreaSqM(Room room) => RevitUnits.SqFeetToSqM(room.Area);
 
+    /// <summary>
+    /// The floor area a placement should work over, in m²: what the command
+    /// stated, or what the model says when it stated nothing.
+    ///
+    /// Reading it off the space is the normal path. Revit has already measured
+    /// every room on the drawing, so requiring the engineer to type the number
+    /// back in only created a way to disagree with it.
+    /// </summary>
+    public static double AreaSqM(CommandModel command, Room room)
+    {
+        // "area" is what "space" used to be called, and old messages, saved
+        // shortcuts and equip_room payloads still say it.
+        foreach (var key in new[] { "space", "area" })
+        {
+            if (!command.Has(key)) continue;
+
+            var stated = command.GetDouble(key);
+            if (stated > 0) return stated;
+        }
+
+        return RoomAreaSqM(room);
+    }
+
     /// <summary>Room centroid at floor level, in feet.</summary>
     public static XYZ? RoomCenter(Room room)
     {
@@ -57,56 +80,89 @@ public static class RevitUtils
     /// fits the room's bounding box, inset by half a cell so nothing lands on a
     /// wall. Good enough for an automated first placement, which an engineer
     /// then adjusts — it is not a photometric layout.
+    ///
+    /// Returns <paramref name="count"/> points whenever the room can hold them.
+    /// An L-shaped room rejects the cells that fall outside its boundary, so a
+    /// grid sized for exactly six used to return five — fine when the count was
+    /// derived from a lux target and approximate anyway, wrong now that someone
+    /// can ask for six fixtures and mean it.
     /// </summary>
     public static List<XYZ> GenerateCeilingGrid(Room room, int count, double mountHeightFeet)
     {
-        var points = new List<XYZ>();
-        if (count <= 0) return points;
+        if (count <= 0) return new List<XYZ>();
 
         var bounds = room.get_BoundingBox(null);
-        if (bounds is null)
+        if (bounds is null) return CenterOnly(room, mountHeightFeet);
+
+        // Widen the grid until enough cells land inside the room, then thin the
+        // result back to what was asked for — so the fixtures stay spread over
+        // the whole room rather than bunching into the first corner that fits.
+        var candidates = new List<XYZ>();
+        for (var target = count; target > 0 && target <= count * 8; target *= 2)
         {
-            var center = RoomCenter(room);
-            if (center is not null) points.Add(new XYZ(center.X, center.Y, mountHeightFeet));
-            return points;
+            candidates = GridPoints(room, target, mountHeightFeet, bounds);
+            if (candidates.Count >= count) break;
         }
+
+        // A concave room can reject every grid point; fall back to the centre so
+        // the command still produces something rather than nothing.
+        return candidates.Count == 0 ? CenterOnly(room, mountHeightFeet) : Thin(candidates, count);
+    }
+
+    /// <summary>Every cell centre of a <paramref name="target"/>-cell grid that falls inside the room.</summary>
+    private static List<XYZ> GridPoints(Room room, int target, double mountHeightFeet, BoundingBoxXYZ bounds)
+    {
+        var points = new List<XYZ>();
 
         var width = bounds.Max.X - bounds.Min.X;
         var depth = bounds.Max.Y - bounds.Min.Y;
 
         // Choose rows/cols so cells stay as square as possible.
         var aspect = width <= 0 ? 1 : depth / width;
-        var cols = Math.Max(1, (int)Math.Round(Math.Sqrt(count / Math.Max(aspect, 0.0001))));
-        var rows = (int)Math.Ceiling(count / (double)cols);
+        var cols = Math.Max(1, (int)Math.Round(Math.Sqrt(target / Math.Max(aspect, 0.0001))));
+        var rows = (int)Math.Ceiling(target / (double)cols);
 
         var cellW = width / cols;
         var cellD = depth / rows;
 
-        for (var row = 0; row < rows && points.Count < count; row++)
+        for (var row = 0; row < rows; row++)
         {
-            for (var col = 0; col < cols && points.Count < count; col++)
+            for (var col = 0; col < cols; col++)
             {
                 var x = bounds.Min.X + cellW * (col + 0.5);
                 var y = bounds.Min.Y + cellD * (row + 0.5);
-                var candidate = new XYZ(x, y, mountHeightFeet);
 
                 // Skip points outside a non-rectangular room's actual boundary.
                 if (room.IsPointInRoom(new XYZ(x, y, bounds.Min.Z + 0.1)))
                 {
-                    points.Add(candidate);
+                    points.Add(new XYZ(x, y, mountHeightFeet));
                 }
             }
         }
 
-        // A concave room can reject every grid point; fall back to the centre so
-        // the command still produces something rather than nothing.
-        if (points.Count == 0)
+        return points;
+    }
+
+    /// <summary>Evenly spaced <paramref name="count"/> entries, keeping the spread of the whole list.</summary>
+    private static List<XYZ> Thin(List<XYZ> points, int count)
+    {
+        if (points.Count <= count) return points;
+
+        var thinned = new List<XYZ>(count);
+        for (var i = 0; i < count; i++)
         {
-            var center = RoomCenter(room);
-            if (center is not null) points.Add(new XYZ(center.X, center.Y, mountHeightFeet));
+            thinned.Add(points[(int)((long)i * points.Count / count)]);
         }
 
-        return points;
+        return thinned;
+    }
+
+    private static List<XYZ> CenterOnly(Room room, double mountHeightFeet)
+    {
+        var center = RoomCenter(room);
+        return center is null
+            ? new List<XYZ>()
+            : new List<XYZ> { new(center.X, center.Y, mountHeightFeet) };
     }
 
     /// <summary>

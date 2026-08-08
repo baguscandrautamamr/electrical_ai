@@ -188,7 +188,7 @@ case-insensitive. Common causes:
   `Office_A`).
 - You are in the wrong view or the wrong model.
 
-Quote names with spaces: `/place_lighting "Meeting Room 2" area=30`.
+Quote names with spaces: `/place_lighting "Meeting Room 2"`.
 
 ## Natural language does not work
 

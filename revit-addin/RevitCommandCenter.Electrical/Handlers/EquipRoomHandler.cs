@@ -89,20 +89,25 @@ public sealed class EquipRoomHandler : ICommandHandler
     private static IEnumerable<(string CommandType, JObject Params)> BuildSubCommands(CommandModel command)
     {
         var room = command.GetString("room");
-        var area = command.GetDouble("area");
         var height = command.GetDouble("height", 2.8);
 
+        // Forwarded only when the engineer stated it. It used to go out
+        // unconditionally, so an omitted area reached the lighting handler as a
+        // stated 0 m² — which reads as "this room needs one fixture" rather
+        // than "nobody said, go measure it".
+        var space = command.Has("space") ? command.GetDouble("space") : command.GetDouble("area");
+
         // Lighting is always placed; it is the reason to equip a room.
-        yield return ("place_lighting", new JObject
+        var lighting = new JObject
         {
             ["room"] = room,
-            ["area"] = area,
             ["height"] = height,
             ["lux_target"] = command.GetDouble("lux_target", 300),
             ["fixture_type"] = "LED_15W",
             ["mounting"] = "ceiling",
-            ["breaker_max"] = 16,
-        });
+        };
+        if (space > 0) lighting["space"] = space;
+        yield return ("place_lighting", lighting);
 
         var outlets = command.GetInt("outlets", 4);
         if (outlets > 0)
@@ -176,7 +181,7 @@ public sealed class EquipRoomHandler : ICommandHandler
         var fireAlarm = command.GetString("fire_alarm", "auto");
         if (!string.Equals(fireAlarm, "none", StringComparison.OrdinalIgnoreCase))
         {
-            yield return ("place_fire_alarm", new JObject
+            var alarm = new JObject
             {
                 ["room"] = room,
                 ["type"] = string.Equals(fireAlarm, "auto", StringComparison.OrdinalIgnoreCase)
@@ -187,9 +192,10 @@ public sealed class EquipRoomHandler : ICommandHandler
                 ["address"] = "auto",
                 ["mounting"] = "ceiling",
                 ["coverage_target"] = 100,
-                ["area"] = area,
                 ["height"] = height,
-            });
+            };
+            if (space > 0) alarm["space"] = space;
+            yield return ("place_fire_alarm", alarm);
         }
 
         if (command.GetBool("cable_tray", true))

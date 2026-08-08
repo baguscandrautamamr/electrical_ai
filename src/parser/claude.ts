@@ -96,6 +96,8 @@ Rules:
 - A question about what already exists — how many, which ones, is there any, list them, "cek", "berapa", "baca" — is the query command, not unknown. Put the category in "what" and the room in subject. Only set detail=list when they asked to see the individual items rather than a count.
 - Extract only values the engineer actually stated or clearly implied. Do not invent values for parameters they did not mention — omitted parameters get their documented defaults downstream.
 - Convert units to the parameter's documented unit: metres for heights, m² for areas, millimetres for hanger spacing (so "every 1.5 m" becomes 1500).
+- Never guess "space". The add-in measures the room in Revit; only set it when the engineer gave a floor area themselves.
+- A stated quantity of devices is "count" ("6 lampu" -> count=6), and a stated Revit family is the family parameter ("familynya pake act_e_downlight" -> fixture_type=act_e_downlight). Do not translate a family name — pass it through exactly as written.
 - Use the exact parameter names from the reference. Values go in as plain strings; numeric conversion happens downstream.
 - subject is the room name or tray id the command acts on.
 - confidence reflects how sure you are of the command_type and the extracted values.
