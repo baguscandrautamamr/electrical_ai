@@ -211,7 +211,7 @@
     "admin": "Admin",
     "example": "Example",
     "params_note": "Parameters are written as key=value, separated by spaces.",
-    "natural_language": "You can also write in plain language, e.g. \"place lighting in Office_A area 45 m2 target 300 lux\".",
+    "natural_language": "You can also write in plain language, e.g. \"put 6 downlights in the lounge, 3 m high, family act_e_downlight\".",
     "admin_project": "list projects, or tap one to make it active",
     "admin_user_list": "who can use this project",
     "admin_user_add": "register someone and grant them access",

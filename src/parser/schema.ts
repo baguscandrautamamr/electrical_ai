@@ -40,6 +40,23 @@ export interface CommandSpec {
 const MOUNTING = ['ceiling', 'wall', 'floor'] as const;
 
 /**
+ * The floor area a placement command works over.
+ *
+ * Optional everywhere, because the add-in already reads it off the Revit space
+ * it is placing into — an engineer with the model open should never have to
+ * measure a room Revit has measured for them. Stating it overrides the model,
+ * which is what you want when designing against a space that is not drawn yet.
+ *
+ * Called `area` until the field found it confusing next to Revit's own Area
+ * elements; `area` and the Indonesian `luas` stay accepted as aliases.
+ */
+const SPACE = {
+  min: 0.5,
+  max: 100000,
+  describe: 'Floor area in m² — read from the Revit space when omitted',
+} as const;
+
+/**
  * What `/query` can count. Every entry maps to a Revit category (or, for
  * `hanger`, to the configured hanger family) in the add-in's QueryHandler —
  * adding one here without adding it there produces an empty group, not an error.
@@ -66,16 +83,27 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     name: 'place_lighting',
     role: 'editor',
     describe: 'Auto-place light fixtures, compute load and assign circuits.',
-    example: '/place_lighting Office_A area=45 height=2.8 lux_target=300 fixture_type=LED_15W mounting=ceiling spacing=auto breaker_max=16',
+    example: '/place_lighting Lounge count=6 height=3 fixture_type=act_e_downlight',
     subject: { name: 'room', required: true, describe: 'Room name' },
     params: {
-      area: { kind: 'number', required: true, min: 0.5, max: 100000, describe: 'Room area in m²' },
+      space: { kind: 'number', ...SPACE, aliases: ['area', 'luas'] },
+      count: {
+        kind: 'integer',
+        min: 1,
+        max: 500,
+        describe: 'Number of fixtures; stating it overrides the lux calculation',
+        aliases: ['jumlah', 'fixtures', 'quantity', 'qty'],
+      },
       height: { kind: 'number', default: 2.8, min: 1.5, max: 30, describe: 'Ceiling height in m' },
       lux_target: { kind: 'number', default: 300, min: 20, max: 5000, describe: 'Target illumination in lux', aliases: ['lux'] },
-      fixture_type: { kind: 'string', default: 'LED_15W', describe: 'Revit family name' },
+      fixture_type: {
+        kind: 'string',
+        default: 'LED_15W',
+        describe: 'Revit family name, e.g. act_e_downlight',
+        aliases: ['family', 'family_name', 'fixture', 'lamp'],
+      },
       mounting: { kind: 'enum', values: MOUNTING, default: 'ceiling', describe: 'Mounting type' },
       spacing: { kind: 'string', default: 'auto', describe: '"auto" or an explicit grid like 3.5x3.2' },
-      breaker_max: { kind: 'number', default: 16, min: 1, max: 400, describe: 'Max current per breaker (A)' },
       distribution: { kind: 'enum', values: ['balanced', 'manual'], default: 'balanced', describe: 'Circuit distribution strategy' },
       phase_preference: { kind: 'string', default: 'ABC', describe: 'Phase preference, e.g. ABC' },
     },
@@ -164,7 +192,7 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
       address: { kind: 'string', default: 'auto', describe: '"auto" or an explicit loop address' },
       mounting: { kind: 'enum', values: MOUNTING, default: 'ceiling', describe: 'Mounting type' },
       coverage_target: { kind: 'number', default: 100, min: 1, max: 100, describe: 'Required coverage (%)' },
-      area: { kind: 'number', min: 0.5, max: 100000, describe: 'Room area in m² (improves spacing calc)' },
+      space: { kind: 'number', ...SPACE, aliases: ['area', 'luas'] },
       roof_pitch_deg: { kind: 'number', default: 0, min: 0, max: 89, describe: 'Roof pitch in degrees; >14 triggers apex rules' },
     },
   },
@@ -260,10 +288,10 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     name: 'equip_room',
     role: 'editor',
     describe: 'One-shot: place all 8 device categories in a room.',
-    example: '/equip_room Office_A area=45 height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500',
+    example: '/equip_room Office_A height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500',
     subject: { name: 'room', required: true, describe: 'Room name' },
     params: {
-      area: { kind: 'number', required: true, min: 0.5, max: 100000, describe: 'Room area in m²' },
+      space: { kind: 'number', ...SPACE, aliases: ['area', 'luas'] },
       height: { kind: 'number', default: 2.8, min: 1.5, max: 30, describe: 'Ceiling height in m' },
       lux_target: { kind: 'number', default: 300, min: 20, max: 5000, describe: 'Target illumination (lux)' },
       outlets: { kind: 'integer', default: 4, min: 0, max: 500, describe: 'Number of receptacles' },

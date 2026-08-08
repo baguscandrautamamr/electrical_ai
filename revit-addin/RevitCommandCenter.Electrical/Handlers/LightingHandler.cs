@@ -26,9 +26,24 @@ public sealed class LightingHandler : DevicePlacementHandler
     /// </summary>
     private const double LightLossFactor = 0.6;
 
+    /// <summary>
+    /// Breaker size the circuit split is computed against.
+    ///
+    /// Was a parameter, which asked the engineer to make a switchgear decision
+    /// in the middle of a lighting request. 16 A is the lighting circuit in
+    /// every distribution board this places into.
+    /// </summary>
+    private const double BreakerAmps = 16;
+
     protected override int ResolveCount(CommandModel command, Room room)
     {
-        var areaSqM = command.Has("area") ? command.GetDouble("area") : RevitUtils.RoomAreaSqM(room);
+        // "pasang 6 lampu" means six. The lumen method is how many fixtures the
+        // room needs when nobody has said; it is not a correction to apply to
+        // somebody who has.
+        var stated = command.GetInt("count");
+        if (stated > 0) return stated;
+
+        var areaSqM = RevitUtils.AreaSqM(command, room);
         var luxTarget = command.GetDouble("lux_target", 300);
         var wattage = ExtractWattage(command.GetString("fixture_type", "LED_15W"));
 
@@ -95,12 +110,11 @@ public sealed class LightingHandler : DevicePlacementHandler
     {
         var wattage = ExtractWattage(command.GetString("fixture_type", "LED_15W"));
         var totalLoad = wattage * placed.Count;
-        var breakerAmps = command.GetDouble("breaker_max", 16);
         const double voltage = 230;
 
-        var circuits = CircuitsFor(totalLoad, breakerAmps, voltage);
+        var circuits = CircuitsFor(totalLoad, BreakerAmps, voltage);
 
-        var areaSqM = command.Has("area") ? command.GetDouble("area") : RevitUtils.RoomAreaSqM(room);
+        var areaSqM = RevitUtils.AreaSqM(command, room);
         var achievedLux = areaSqM > 0
             ? placed.Count * wattage * LumensPerWatt * LightLossFactor / areaSqM
             : 0;
@@ -118,7 +132,7 @@ public sealed class LightingHandler : DevicePlacementHandler
         {
             ComplianceCheckDto.Of(
                 "compliance.breaker_load",
-                totalLoad <= breakerAmps * voltage * 0.8 * circuits,
+                totalLoad <= BreakerAmps * voltage * 0.8 * circuits,
                 $"{totalLoad:F0} W / {circuits} circuit(s)"),
             ComplianceCheckDto.Of(
                 "lighting.lux_achieved",

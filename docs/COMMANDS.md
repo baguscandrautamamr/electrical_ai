@@ -32,22 +32,29 @@ load across circuits.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `area` | number | **required** | Room area in m² |
+| `space` | number | from the model | Floor area in m²; read off the Revit space when omitted |
+| `count` | integer | from `lux_target` | Number of fixtures; stating it overrides the lux calculation |
 | `height` | number | 2.8 | Ceiling height in m |
 | `lux_target` | number | 300 | Target illumination |
 | `fixture_type` | string | LED_15W | Revit family name; wattage is read from it |
 | `mounting` | ceiling\|wall\|floor | ceiling | |
 | `spacing` | string | auto | `auto` or an explicit grid like `3.5x3.2` |
-| `breaker_max` | number | 16 | Max current per breaker (A) |
 | `distribution` | balanced\|manual | balanced | |
 | `phase_preference` | string | ABC | |
 
 ```
-/place_lighting Office_A area=45 height=2.8 lux_target=300 fixture_type=LED_15W mounting=ceiling spacing=auto breaker_max=16
+/place_lighting Lounge count=6 height=3 fixture_type=act_e_downlight
 ```
 
-Count comes from the lumen method — `N = (E × A) / (F × UF × MF)` — with a 0.6
-combined utilisation and maintenance factor.
+Only the room is required. Everything else has an answer already: the area comes
+from the Revit space, and the fixture count from the lumen method —
+`N = (E × A) / (F × UF × MF)`, with a 0.6 combined utilisation and maintenance
+factor — unless you state `count`, in which case you get exactly that many and
+the reply reports the lux they actually achieve.
+
+`space` was called `area`; both names still work, as does the Indonesian `luas`.
+`breaker_max` is gone — lighting circuits are split at 16 A, which is not a
+decision worth making per command.
 
 ### `/place_receptacle <room>`
 
@@ -114,7 +121,7 @@ NFPA 72 spacing, addressable loop assignment, compliance reported per rule.
 | `address` | string | auto | `auto` or an explicit address |
 | `mounting` | ceiling\|wall\|floor | ceiling | |
 | `coverage_target` | number | 100 | % |
-| `area` | number | — | Improves the spacing calculation |
+| `space` | number | from the model | Floor area in m²; read off the Revit space when omitted |
 | `roof_pitch_deg` | number | 0 | Above 14° triggers apex rules |
 
 ```
@@ -187,7 +194,7 @@ placed fine.
 
 | Parameter | Type | Default |
 |---|---|---|
-| `area` | number | **required** |
+| `space` | number | from the model |
 | `height` | number | 2.8 |
 | `lux_target` | number | 300 |
 | `outlets` | integer | 4 |
@@ -203,7 +210,7 @@ placed fine.
 Set any count to `0`, or `fire_alarm=none`, to skip that category.
 
 ```
-/equip_room Office_A area=45 height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500
+/equip_room Office_A height=2.8 lux_target=300 outlets=4 phone_jacks=2 lan_jacks=4 security_cameras=2 fire_alarm=auto cable_tray=yes hanger_spacing=1500
 ```
 
 ### `/export`
@@ -280,7 +287,7 @@ example:
 
 ```
 ❌ Invalid parameters
-• area is required
+• from is required
 • hanger_spacing must be between 100 and 6000
 
 Example

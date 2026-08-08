@@ -43,7 +43,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
 
     protected override int ResolveCount(CommandModel command, Room room)
     {
-        var areaSqM = command.Has("area") ? command.GetDouble("area") : RevitUtils.RoomAreaSqM(room);
+        var areaSqM = RevitUtils.AreaSqM(command, room);
         var deviceType = command.GetString("type", "dual");
         var spacing = NominalSpacing(deviceType);
 
@@ -144,7 +144,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
         List<FamilyInstance> placed)
     {
         var deviceType = command.GetString("type", "dual");
-        var areaSqM = command.Has("area") ? command.GetDouble("area") : RevitUtils.RoomAreaSqM(room);
+        var areaSqM = RevitUtils.AreaSqM(command, room);
         var pitch = command.GetDouble("roof_pitch_deg");
 
         var lastAddress = _startAddress + placed.Count - 1;
