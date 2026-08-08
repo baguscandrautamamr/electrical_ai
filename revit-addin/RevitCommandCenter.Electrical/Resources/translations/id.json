@@ -185,6 +185,7 @@
     "project_not_found": "Proyek tidak ditemukan: {code}",
     "health_title": "Status Sistem",
     "health_ai": "Parser AI",
+    "health_ai_endpoint": "Endpoint AI",
     "health_database": "Database",
     "health_queue_pending": "Antrean menunggu",
     "health_queue_processing": "Sedang diproses",

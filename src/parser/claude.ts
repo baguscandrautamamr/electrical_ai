@@ -12,14 +12,16 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '../config/env.js';
+import { DEFAULT_ANTHROPIC_BASE_URL, env } from '../config/env.js';
 import type { ParsedCommand } from '../types/index.js';
 import { COMMAND_SPECS, aliasMap } from './schema.js';
 
 let client: Anthropic | null = null;
 
 function anthropic(): Anthropic {
-  client ??= new Anthropic({ apiKey: env.anthropicApiKey });
+  // baseURL is passed explicitly rather than left to the SDK's own env
+  // reading, so the endpoint in use is visible to /health and to config.
+  client ??= new Anthropic({ apiKey: env.anthropicApiKey, baseURL: env.anthropicBaseUrl });
   return client;
 }
 
@@ -135,6 +137,61 @@ const OUTPUT_SCHEMA = {
  */
 const MAX_TOKENS = 4096;
 
+/**
+ * Stands in for the schema when structured outputs are unavailable — some
+ * Anthropic-compatible gateways forward the message body but reject
+ * `output_config`. Asking in prose is weaker than a schema, which is why it is
+ * the fallback and not the default.
+ */
+const JSON_ONLY_INSTRUCTION = `Reply with a single JSON object and nothing else — no prose, no explanation, no code fence.
+
+{"command_type": "<one of: ${[...Object.keys(COMMAND_SPECS), 'unknown'].join(', ')}>", "subject": <string or null>, "params": {"<parameter name>": "<value as a string>"}, "confidence": <number between 0 and 1>}`;
+
+async function requestParse(text: string, structured: boolean): Promise<Anthropic.Message> {
+  const system: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+  ];
+  if (!structured) system.push({ type: 'text', text: JSON_ONLY_INSTRUCTION });
+
+  return anthropic().messages.create({
+    model: env.anthropicModel,
+    max_tokens: MAX_TOKENS,
+    system,
+    messages: [{ role: 'user', content: text }],
+    // Parsing one short sentence does not need deep reasoning; low effort keeps
+    // the user's round-trip inside the ~8-12s budget.
+    ...(structured
+      ? {
+          output_config: {
+            effort: 'low' as const,
+            format: { type: 'json_schema' as const, schema: OUTPUT_SCHEMA },
+          },
+        }
+      : {}),
+  });
+}
+
+/**
+ * Whether the request itself was refused, as opposed to the caller. Auth, rate
+ * limits and server faults are not fixed by dropping a parameter, so they are
+ * reported rather than retried.
+ */
+function looksLikeUnsupportedRequest(error: unknown): boolean {
+  return (
+    error instanceof Anthropic.APIError &&
+    (error.status === 400 || error.status === 404 || error.status === 422)
+  );
+}
+
+/** Pulls the JSON object out of a reply that may be fenced or padded with prose. */
+function extractJson(text: string): string | null {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+  const candidate = (fenced?.[1] ?? text).trim();
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  return start === -1 || end <= start ? null : candidate.slice(start, end + 1);
+}
+
 export type ClaudeParseResult =
   | { kind: 'command'; parsed: ParsedCommand; confidence: number }
   /** Understood, but not a request to place or modify anything in Revit. */
@@ -146,20 +203,19 @@ export const MIN_CONFIDENCE = 0.55;
 export async function parseWithClaude(text: string): Promise<ClaudeParseResult> {
   let response: Anthropic.Message;
   try {
-    response = await anthropic().messages.create({
-      model: env.anthropicModel,
-      max_tokens: MAX_TOKENS,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      // Parsing one short sentence does not need deep reasoning; low effort keeps
-      // the user's round-trip inside the ~8-12s budget.
-      output_config: {
-        effort: 'low',
-        format: { type: 'json_schema', schema: OUTPUT_SCHEMA },
-      },
-      messages: [{ role: 'user', content: text }],
-    });
+    response = await requestParse(text, true);
   } catch (error) {
-    throw new NlpError(describeApiError(error), { cause: error });
+    if (!looksLikeUnsupportedRequest(error)) {
+      throw new NlpError(describeApiError(error), { cause: error });
+    }
+    // The endpoint took the message but not the schema. Ask for JSON in prose
+    // instead of failing outright; the second failure is the one reported.
+    console.warn('[claude] structured outputs rejected, retrying in plain JSON:', describeApiError(error));
+    try {
+      response = await requestParse(text, false);
+    } catch (retryError) {
+      throw new NlpError(describeApiError(retryError), { cause: retryError });
+    }
   }
 
   if (response.stop_reason === 'refusal') {
@@ -180,8 +236,10 @@ export async function parseWithClaude(text: string): Promise<ClaudeParseResult> 
     params: Record<string, string>;
     confidence: number;
   };
+  const json = extractJson(textBlock.text);
   try {
-    payload = JSON.parse(textBlock.text);
+    if (json === null) throw new SyntaxError('no JSON object in reply');
+    payload = JSON.parse(json);
   } catch {
     throw new NlpError(`response was not JSON: ${textBlock.text.slice(0, 120)}`);
   }
@@ -210,21 +268,62 @@ export async function parseWithClaude(text: string): Promise<ClaudeParseResult> 
   };
 }
 
+export interface NlpHealth {
+  ok: boolean;
+  model: string;
+  /** Host serving the requests — Anthropic, or whichever gateway is configured. */
+  endpoint: string;
+  /** True when requests go somewhere other than Anthropic. */
+  gateway: boolean;
+  detail?: string;
+}
+
 /**
- * Checks that the configured key can actually reach the configured model.
+ * Checks that the configured key can actually reach the configured model at
+ * the configured endpoint. Used by /health.
  *
- * Used by /health. Retrieving the model costs no tokens, so this can be run as
- * often as someone cares to type the command.
+ * Retrieving the model costs no tokens, but /v1/models is the endpoint an
+ * Anthropic-compatible gateway is least likely to implement — so a 404 there
+ * falls through to a one-token message rather than reporting an outage that
+ * only exists in the probe.
  */
-export async function checkNlp(): Promise<{ ok: boolean; model: string; detail?: string }> {
-  const model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-opus-5';
+export async function checkNlp(): Promise<NlpHealth> {
+  const model = env.anthropicModel;
+  const baseUrl = env.anthropicBaseUrl;
+  const base: Omit<NlpHealth, 'ok'> = {
+    model,
+    endpoint: baseUrl.replace(/^https?:\/\//, ''),
+    gateway: baseUrl !== DEFAULT_ANTHROPIC_BASE_URL,
+  };
+
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    return { ok: false, model, detail: 'ANTHROPIC_API_KEY is not set' };
+    return { ...base, ok: false, detail: 'ANTHROPIC_API_KEY is not set' };
   }
+
   try {
     await anthropic().models.retrieve(model);
-    return { ok: true, model };
+    return { ...base, ok: true };
   } catch (error) {
-    return { ok: false, model, detail: describeApiError(error) };
+    if (!isUnsupportedEndpoint(error)) {
+      return { ...base, ok: false, detail: describeApiError(error) };
+    }
   }
+
+  // The gateway does not serve /v1/models. Fall back to the endpoint every
+  // Anthropic-compatible service must implement, kept to one token.
+  try {
+    await anthropic().messages.create({
+      model,
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'ping' }],
+    });
+    return { ...base, ok: true };
+  } catch (error) {
+    return { ...base, ok: false, detail: describeApiError(error) };
+  }
+}
+
+/** A 404/405 means "this service has no such endpoint", not "you are broken". */
+function isUnsupportedEndpoint(error: unknown): boolean {
+  return error instanceof Anthropic.APIError && (error.status === 404 || error.status === 405);
 }

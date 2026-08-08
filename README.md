@@ -115,6 +115,7 @@ values. Full list in [`.env.example`](.env.example).
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Claude API, for natural-language command parsing |
 | `ANTHROPIC_MODEL` | no | Model override; defaults to `claude-opus-5` |
+| `ANTHROPIC_BASE_URL` | no | Anthropic-compatible gateway to call instead of Anthropic; the key must then be the gateway's |
 | `TELEGRAM_BOT_TOKEN` | yes | Bot token from @BotFather |
 | `TELEGRAM_WEBHOOK_SECRET` | recommended | Shared secret that authenticates the webhook |
 | `SUPABASE_URL` | yes | Supabase project URL |

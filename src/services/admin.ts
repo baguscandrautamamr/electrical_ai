@@ -29,7 +29,7 @@ import {
 } from './membership.js';
 import {
   findProjectByCode,
-  accessForProject,
+  accessForProjectOrAdmin,
   listProjectsForUser,
   listProjectsVisibleTo,
   listUsersOnProject,
@@ -137,7 +137,9 @@ export async function handleAdminCommand(
         return { text: formatError(ctx, 'admin.project_not_found', { code }) };
       }
 
-      const access = await accessForProject(ctx.user.id, project.id);
+      // Same rule as the picker and as resolveActiveProject: an account-level
+      // admin reaches an auto-registered project that has no grant row yet.
+      const access = await accessForProjectOrAdmin(ctx.user, project.id);
       if (!access) return { text: formatError(ctx, 'errors.no_project_access') };
 
       await setActiveProject(ctx.user.id, project.id);
@@ -408,6 +410,9 @@ export async function handleAdminCommand(
           label: t('admin.health_ai'),
           value: nlp.ok ? `${t('admin.health_ok')} (${nlp.model})` : t('admin.health_down'),
         },
+        // Only when it is not Anthropic: on the default endpoint this row is
+        // noise, but against a gateway it is the first thing to check.
+        ...(nlp.gateway ? [{ label: t('admin.health_ai_endpoint'), value: nlp.endpoint }] : []),
         { label: t('common.project'), value: access?.project.code ?? t('common.none') },
         { label: t('admin.health_queue_pending'), value: String(stats.pending) },
         { label: t('admin.health_queue_processing'), value: String(stats.processing) },

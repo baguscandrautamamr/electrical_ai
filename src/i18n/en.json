@@ -185,6 +185,7 @@
     "project_not_found": "Project not found: {code}",
     "health_title": "System Health",
     "health_ai": "AI parser",
+    "health_ai_endpoint": "AI endpoint",
     "health_database": "Database",
     "health_queue_pending": "Queue pending",
     "health_queue_processing": "Processing",

@@ -34,12 +34,24 @@ function numeric(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/** Anthropic's own API. Anything else is a gateway or a proxy. */
+export const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+
 export const env = {
   get anthropicApiKey(): string {
     return required('ANTHROPIC_API_KEY');
   },
   get anthropicModel(): string {
     return optional('ANTHROPIC_MODEL', 'claude-opus-5');
+  },
+  /**
+   * Where to send Claude requests. Leave unset for Anthropic itself; point it
+   * at an Anthropic-compatible gateway to bill through a reseller. A gateway
+   * key sent to api.anthropic.com is rejected as `invalid x-api-key`, which
+   * reads like a bad key rather than a request that went to the wrong host.
+   */
+  get anthropicBaseUrl(): string {
+    return optional('ANTHROPIC_BASE_URL', DEFAULT_ANTHROPIC_BASE_URL).replace(/\/+$/, '');
   },
   get telegramBotToken(): string {
     return required('TELEGRAM_BOT_TOKEN');
