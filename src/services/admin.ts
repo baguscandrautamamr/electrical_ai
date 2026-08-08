@@ -410,6 +410,9 @@ export async function handleAdminCommand(
           label: t('admin.health_ai'),
           value: nlp.ok ? `${t('admin.health_ok')} (${nlp.model})` : t('admin.health_down'),
         },
+        // Only when it is not Anthropic: on the default endpoint this row is
+        // noise, but against a gateway it is the first thing to check.
+        ...(nlp.gateway ? [{ label: t('admin.health_ai_endpoint'), value: nlp.endpoint }] : []),
         { label: t('common.project'), value: access?.project.code ?? t('common.none') },
         { label: t('admin.health_queue_pending'), value: String(stats.pending) },
         { label: t('admin.health_queue_processing'), value: String(stats.processing) },

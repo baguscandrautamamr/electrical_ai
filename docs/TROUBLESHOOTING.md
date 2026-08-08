@@ -168,9 +168,36 @@ The reply tells you which of these you have:
 | Reply | Meaning | Fix |
 | --- | --- | --- |
 | "Bahasa bebas sedang mati / Plain-language messages are off" | `ANTHROPIC_API_KEY` is not set on the deployment | Add it in Vercel → Settings → Environment Variables, then **redeploy** — env changes do not reach the running deployment on their own |
-| "Panggilan ke Claude API gagal / The Claude API call failed" + a code block | The key exists but the call was rejected. The code block is the API's own message | `401 authentication_error` → wrong or revoked key (check for a pasted newline). `400 invalid_request_error … credit balance` → top up at console.anthropic.com. `404 not_found_error` → the account cannot use `ANTHROPIC_MODEL`; unset it to fall back to `claude-opus-5`, or set one it can use. `429` → rate limited, retry |
+| "Panggilan ke Claude API gagal / The Claude API call failed" + a code block | The key exists but the call was rejected. The code block is the API's own message | `401 authentication_error` → wrong or revoked key (check for a pasted newline), **or a gateway key sent to Anthropic — see below**. `400 invalid_request_error … credit balance` → top up at console.anthropic.com. `404 not_found_error` → the account cannot use `ANTHROPIC_MODEL`; unset it to fall back to `claude-opus-5`, or set one it can use. `429` → rate limited, retry |
 | "Kalimatnya saya mengerti, tapi bukan perintah Revit / not a Revit command" | The key works. The sentence asked for something outside what the bot does — placing or modifying elements, or reading them back with `/query` | See `/help` |
 | "belum cukup yakin / not sure enough to run it" | Parsed below the 0.55 confidence floor and rejected rather than guessed at | Rephrase, or use the exact form from `/help` |
+
+### Using a gateway instead of Anthropic
+
+A key that is not Anthropic's own — anything that does not start with
+`sk-ant-` — belongs to a reseller gateway, and Anthropic rejects it with
+`401 invalid x-api-key`. That reads like a bad key; it is a good key sent to
+the wrong host.
+
+Set `ANTHROPIC_BASE_URL` to the gateway's Anthropic-compatible endpoint (its
+dashboard shows it, e.g. `https://gateway.example.com/anthropic`) and
+redeploy. `/health` then shows an **AI endpoint** row — it only appears when
+requests go somewhere other than Anthropic, so its presence confirms the
+setting took effect, and its absence means the deployment is still calling
+Anthropic.
+
+Two things degrade gracefully rather than failing, because gateways vary:
+
+- `/v1/models` is the endpoint a gateway is least likely to implement. If it
+  404s, `/health` probes with a one-token message instead of reporting an
+  outage that only exists in the probe.
+- If the gateway rejects `output_config` (structured outputs), the parser
+  retries once asking for JSON in prose. That is weaker than a schema — expect
+  a few more `low_confidence` replies — but it works. The retry is logged;
+  a second failure is reported to the user.
+
+Model names can differ too. If the gateway 404s on `claude-opus-5`, set
+`ANTHROPIC_MODEL` to whatever id it publishes.
 
 Other notes:
 

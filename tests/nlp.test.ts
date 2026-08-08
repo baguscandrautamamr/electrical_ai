@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import { parseMessage } from '../src/parser/index.js';
-import { __setAnthropicClient, describeApiError } from '../src/parser/claude.js';
+import { __setAnthropicClient, checkNlp, describeApiError } from '../src/parser/claude.js';
 
 /** Minimal stand-in for the one SDK call the parser makes. */
 function stubClient(behaviour: () => unknown): void {
@@ -145,6 +145,161 @@ describe('natural language parsing', () => {
 
     const outcome = await parseMessage('/nope Office_A');
     expect(outcome).toEqual({ kind: 'unparsed', reason: 'unknown_command' });
+  });
+});
+
+describe('an Anthropic-compatible gateway', () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousBase = process.env.ANTHROPIC_BASE_URL;
+
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'rk_live_0962test';
+    process.env.ANTHROPIC_BASE_URL = 'https://gateway.example.test/anthropic';
+  });
+
+  afterEach(() => {
+    __setAnthropicClient(null);
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+    if (previousBase === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previousBase;
+  });
+
+  it('falls back to plain JSON when the schema is rejected', async () => {
+    // A gateway that forwards messages but not output_config: the first call
+    // 400s, the second must still produce a command rather than an error.
+    const seen: boolean[] = [];
+    __setAnthropicClient({
+      messages: {
+        create: async (params: { output_config?: unknown }) => {
+          const structured = params.output_config !== undefined;
+          seen.push(structured);
+          if (structured) {
+            throw new Anthropic.BadRequestError(
+              400,
+              { type: 'error', error: { type: 'invalid_request_error', message: 'unknown field output_config' } },
+              'unknown field output_config',
+              new Headers(),
+            );
+          }
+          // Prose models fence their JSON; the parser has to cope.
+          return {
+            stop_reason: 'end_turn',
+            stop_details: null,
+            content: [
+              {
+                type: 'text',
+                text:
+                  '```json\n' +
+                  JSON.stringify({
+                    command_type: 'query',
+                    subject: 'Office_A',
+                    params: { what: 'lighting' },
+                    confidence: 0.88,
+                  }) +
+                  '\n```',
+              },
+            ],
+          };
+        },
+      },
+    } as unknown as Anthropic);
+
+    const outcome = await parseMessage('ada berapa lampu di Office_A?');
+
+    expect(seen).toEqual([true, false]);
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.type).toBe('query');
+    expect(outcome.command.params.what).toBe('lighting');
+  });
+
+  it('does not retry a rejected key — dropping a field will not fix auth', async () => {
+    let calls = 0;
+    __setAnthropicClient({
+      messages: {
+        create: async () => {
+          calls += 1;
+          throw new Anthropic.AuthenticationError(
+            401,
+            { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } },
+            'invalid x-api-key',
+            new Headers(),
+          );
+        },
+      },
+    } as unknown as Anthropic);
+
+    const outcome = await parseMessage('pasang lampu di Office_A');
+
+    expect(calls).toBe(1);
+    expect(outcome.kind).toBe('unparsed');
+    if (outcome.kind !== 'unparsed') return;
+    expect(outcome.detail).toContain('401');
+  });
+
+  it('reports the endpoint so a misrouted key is visible', async () => {
+    __setAnthropicClient({
+      models: { retrieve: async () => ({ id: 'claude-opus-5' }) },
+    } as unknown as Anthropic);
+
+    const health = await checkNlp();
+
+    expect(health.ok).toBe(true);
+    expect(health.gateway).toBe(true);
+    expect(health.endpoint).toBe('gateway.example.test/anthropic');
+  });
+
+  it('probes with a message when the gateway has no /v1/models', async () => {
+    let probed = false;
+    __setAnthropicClient({
+      models: {
+        retrieve: async () => {
+          throw new Anthropic.NotFoundError(
+            404,
+            { type: 'error', error: { type: 'not_found_error', message: 'no such route' } },
+            'no such route',
+            new Headers(),
+          );
+        },
+      },
+      messages: {
+        create: async () => {
+          probed = true;
+          return { stop_reason: 'max_tokens', stop_details: null, content: [] };
+        },
+      },
+    } as unknown as Anthropic);
+
+    const health = await checkNlp();
+
+    expect(probed).toBe(true);
+    expect(health.ok).toBe(true);
+  });
+
+  it('still reports a real outage rather than probing around it', async () => {
+    __setAnthropicClient({
+      models: {
+        retrieve: async () => {
+          throw new Anthropic.AuthenticationError(
+            401,
+            { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } },
+            'invalid x-api-key',
+            new Headers(),
+          );
+        },
+      },
+      messages: {
+        create: async () => {
+          throw new Error('must not be probed after an auth failure');
+        },
+      },
+    } as unknown as Anthropic);
+
+    const health = await checkNlp();
+
+    expect(health.ok).toBe(false);
+    expect(health.detail).toContain('invalid x-api-key');
   });
 });
 
