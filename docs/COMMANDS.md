@@ -33,6 +33,7 @@ reads better:
 | `/delete_devices` | `/hapus`, `/buang`, `/delete` |
 | `/modify_devices` | `/modifikasi`, `/ubah`, `/ganti` |
 | `/list_sheets` | `/sheets`, `/daftar_sheet` |
+| `/undo` | `/batal`, `/batalkan` |
 | `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
 | `/dimension` | `/dimensi`, `/beri_dimensi`, `/ukur` |
 
@@ -144,6 +145,11 @@ from the edge of the door leaf** — the house standard, and where you would
 otherwise drag it after the command ran. So `/pasang_saklar pantry` on its own
 is a complete instruction. A room with no door in the model falls back to the
 walls, as does `placement=walls`.
+
+Doors and windows are read off the room's boundary, so a switch is measured from
+the real jamb and an outlet is never spaced onto an opening. Receptacles that
+would have landed in one move clear of it rather than being dropped — you asked
+for four outlets, you get four.
 
 **The type comes from the project, not from the parameter name.** Offices do not
 agree on what a two-gang switch is called: the same device is `2 Gang` here,
@@ -366,6 +372,33 @@ Scoped by the same point-in-room test `/query` counts with, so what goes is what
 `/query` said was there. The reply lists the marks it removed, and Revit's undo
 is one step. Removing nothing comes back as a warning rather than a tick — the
 usual cause is the right command against the wrong room name.
+
+**It asks first.** `/delete_devices` and `/modify_devices` reply with the room
+and category they resolved to and a Yes/Cancel pair of buttons. Nothing reaches
+Revit until Yes is tapped: the command sits in the queue in a state the add-in
+does not poll for. The button works once, only for the person who typed the
+command, and expires after 24 hours — a Yes tapped on yesterday's question would
+run against a drawing that has moved on.
+
+### `/undo`
+
+Removes what your last placement added. Aliases: `/batal`, `/batalkan`.
+
+```
+/undo
+```
+
+Aimed at **marks, not at a room**: it takes back the exact fixtures that command
+reported placing, so a colleague who added two more outlets to the same room in
+between keeps theirs. That also means it still works if someone has since
+dragged one of them into the corridor.
+
+It reverses one placement — `/place_*` or the placing half of a `/modify`. It
+will not reverse a `/delete`: this system never held the geometry that was
+removed, so there is nothing to put back. Revit's own undo does that, on the
+machine running Revit.
+
+Asks for confirmation first, and names the marks it is about to remove.
 
 ### `/modify_devices <room>`
 

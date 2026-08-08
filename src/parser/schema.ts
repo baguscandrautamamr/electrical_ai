@@ -524,10 +524,30 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         kind: 'enum',
         values: [...DEVICE_TARGETS, 'all'],
         default: 'all',
-        describe: 'Which category to remove; "all" clears every device category in the room',
+        describe: 'Which category to remove; "all" clears every category in the room',
         aliases: ['category', 'target', 'type', 'device'],
       },
+      /**
+       * Not for typing. /undo fills this in from the marks the placement it is
+       * reversing reported, so an undo removes exactly what that command made
+       * and nothing a colleague added to the same room afterwards.
+       */
+      marks: {
+        kind: 'string',
+        describe: 'Specific device marks to remove, comma-separated (used by /undo)',
+      },
     },
+  },
+
+  // ------------------------------------------------------------------- undo
+  undo: {
+    type: 'undo',
+    name: 'undo',
+    aliases: ['batal', 'batalkan', 'undo_last'],
+    role: 'editor',
+    describe: 'Remove what your last placement added.',
+    example: '/undo',
+    params: {},
   },
 
   // ----------------------------------------------------------------- modify

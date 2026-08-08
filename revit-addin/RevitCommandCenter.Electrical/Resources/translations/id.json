@@ -45,6 +45,7 @@
     "bad_telegram_id": "Itu bukan ID Telegram. Bentuknya angka — bot menyebutkan ID milik siapa pun yang mengirim pesan kepadanya.",
     "usage_user_add": "Cara pakai: /user add <id_telegram> <nama> [viewer|editor|admin]",
     "user_not_found": "Tidak ada pengguna dengan ID Telegram itu. Dia harus mengirim pesan ke bot dulu.",
+    "nothing_to_undo": "Tidak ada penempatan terakhir yang bisa dibatalkan di proyek ini.",
     "cannot_remove_self": "Anda tidak bisa menghapus diri sendiri — proyek ini akan kehilangan admin."
   },
   "validation": {
@@ -213,6 +214,21 @@
     "done": "TATA LETAK DIUBAH",
     "removed": "Dihapus",
     "placed": "Dipasang ulang"
+  },
+  "confirm": {
+    "delete_devices": "HAPUS PERANGKAT?",
+    "modify_devices": "UBAH TATA LETAK?",
+    "what": "Kategori",
+    "count": "Jumlah baru",
+    "marks": "Mark",
+    "prompt": "Perintah ini menghapus pekerjaan dari gambar. Periksa nama ruangannya, lalu pilih.",
+    "yes": "✅ Ya, lanjutkan",
+    "no": "✖️ Batal",
+    "confirmed": "Dijalankan",
+    "cancelled": "Dibatalkan",
+    "cancelled_title": "DIBATALKAN",
+    "cancelled_detail": "Tidak ada yang diubah di Revit.",
+    "expired": "Tombol ini sudah tidak berlaku"
   },
   "compliance": {
     "title": "Kepatuhan",

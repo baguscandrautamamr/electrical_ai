@@ -45,6 +45,7 @@
     "bad_telegram_id": "That is not a Telegram id. It is a number — the bot tells anyone their own when they message it.",
     "usage_user_add": "Usage: /user add <telegram_id> <name> [viewer|editor|admin]",
     "user_not_found": "No user with that Telegram id. They must message the bot once first.",
+    "nothing_to_undo": "No recent placement of yours to undo in this project.",
     "cannot_remove_self": "You cannot remove yourself — that would leave the project without you as admin."
   },
   "validation": {
@@ -213,6 +214,21 @@
     "done": "LAYOUT CHANGED",
     "removed": "Removed",
     "placed": "Placed again"
+  },
+  "confirm": {
+    "delete_devices": "REMOVE DEVICES?",
+    "modify_devices": "CHANGE THE LAYOUT?",
+    "what": "Category",
+    "count": "New count",
+    "marks": "Marks",
+    "prompt": "This takes work out of the drawing. Check the room name, then choose.",
+    "yes": "✅ Yes, go ahead",
+    "no": "✖️ Cancel",
+    "confirmed": "Running it",
+    "cancelled": "Cancelled",
+    "cancelled_title": "CANCELLED",
+    "cancelled_detail": "Nothing in Revit was changed.",
+    "expired": "This button is no longer live"
   },
   "compliance": {
     "title": "Compliance",

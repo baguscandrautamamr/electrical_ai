@@ -6,6 +6,8 @@ export type Role = 'viewer' | 'editor' | 'admin';
 
 export type CommandStatus =
   | 'pending'
+  /** Parked out of the add-in's reach until its author confirms it. */
+  | 'awaiting_confirmation'
   | 'processing'
   | 'completed'
   | 'failed'
@@ -29,6 +31,7 @@ export const DEVICE_COMMAND_TYPES = [
   'dimension',
   'delete_devices',
   'modify_devices',
+  'undo',
   'list_sheets',
   'query',
 ] as const;
