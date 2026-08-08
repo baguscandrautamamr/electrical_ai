@@ -153,7 +153,10 @@ describe('an Anthropic-compatible gateway', () => {
   const previousBase = process.env.ANTHROPIC_BASE_URL;
 
   beforeEach(() => {
-    process.env.ANTHROPIC_API_KEY = 'rk_live_0962test';
+    // Deliberately not shaped like any real key prefix — a fixture that shares
+    // leading characters with a live credential trips secret scanners and
+    // narrows the space for anyone guessing at the real one.
+    process.env.ANTHROPIC_API_KEY = 'gateway-key-for-tests-only';
     process.env.ANTHROPIC_BASE_URL = 'https://gateway.example.test/anthropic';
   });
 
