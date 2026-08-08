@@ -21,7 +21,11 @@ public sealed class AddinConfig
     [JsonProperty("supabase_key")]
     public string SupabaseKey { get; set; } = string.Empty;
 
-    /// <summary>Project whose queue this Revit instance drains.</summary>
+    /// <summary>
+    /// Optional. Blank — the normal case — means this instance drains commands
+    /// for every project, and which project a command belongs to is decided in
+    /// Telegram with /project. Set it only to pin one Revit instance to one site.
+    /// </summary>
     [JsonProperty("project_id")]
     public string ProjectId { get; set; } = string.Empty;
 
@@ -49,10 +53,13 @@ public sealed class AddinConfig
     [JsonProperty("start_polling_on_launch")]
     public bool StartPollingOnLaunch { get; set; } = false;
 
+    /// <summary>
+    /// ProjectId is deliberately not required: an instance with none serves
+    /// every project.
+    /// </summary>
     public bool IsUsable =>
         !string.IsNullOrWhiteSpace(SupabaseUrl)
-        && !string.IsNullOrWhiteSpace(SupabaseKey)
-        && !string.IsNullOrWhiteSpace(ProjectId);
+        && !string.IsNullOrWhiteSpace(SupabaseKey);
 
     public static string ConfigDirectory =>
         Path.Combine(
@@ -113,7 +120,6 @@ public sealed class AddinConfig
         {
             SupabaseUrl = "https://YOUR-PROJECT.supabase.co",
             SupabaseKey = "YOUR-SERVICE-ROLE-KEY",
-            ProjectId = "00000000-0000-0000-0000-000000000000",
             ExportDirectory = Path.Combine(ConfigDirectory, "exports"),
         };
         template.Save();

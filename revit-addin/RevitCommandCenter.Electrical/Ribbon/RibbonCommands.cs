@@ -35,8 +35,11 @@ public sealed class ConnectCommand : IExternalCommand
             TaskDialog.Show(
                 "Command Center",
                 reachable
-                    ? $"Connected.\n\nProject: {app.Config.ProjectId}\n" +
-                      $"Polling every {app.Config.PollingIntervalSeconds}s."
+                    ? "Connected.\n\nProject: " +
+                      (string.IsNullOrWhiteSpace(app.Config.ProjectId)
+                        ? "all — pick one in Telegram with /project"
+                        : app.Config.ProjectId) +
+                      $"\nPolling every {app.Config.PollingIntervalSeconds}s."
                     : "Polling started, but Supabase did not respond.\n\n" +
                       "Open Settings and use \"Test connection\" — it reports exactly " +
                       "what Supabase said.");
@@ -117,7 +120,7 @@ public sealed class StatusCommand : IExternalCommand
         var lines = new List<string>
         {
             $"Connected: {(app?.IsConnected == true ? "yes" : "no")}",
-            $"Project: {(string.IsNullOrWhiteSpace(app?.Config.ProjectId) ? "(not set)" : app!.Config.ProjectId)}",
+            $"Project: {(string.IsNullOrWhiteSpace(app?.Config.ProjectId) ? "all (chosen in Telegram)" : app!.Config.ProjectId)}",
             $"Poll interval: {app?.Config.PollingIntervalSeconds ?? 0}s",
             string.Empty,
             $"Processed: {poller?.CommandsProcessed ?? 0}",

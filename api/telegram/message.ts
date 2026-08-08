@@ -14,17 +14,19 @@
  */
 
 import { env } from '../../src/config/env.js';
-import { telegram, type TelegramUpdate } from '../../src/lib/telegram.js';
+import { telegram, type CallbackQuery, type TelegramUpdate } from '../../src/lib/telegram.js';
 import { parseMessage } from '../../src/parser/index.js';
 import { specFor } from '../../src/parser/schema.js';
 import { validateParams } from '../../src/parser/validate.js';
-import { handleAdminCommand } from '../../src/services/admin.js';
+import { handleAdminCommand, PROJECT_CALLBACK } from '../../src/services/admin.js';
 import { attachAckMessage, enqueueCommand } from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
 import {
+  accessForProject,
   findUserByTelegramId,
   resolveActiveProject,
   roleAtLeast,
+  setActiveProject,
   touchUser,
 } from '../../src/services/users.js';
 import {
@@ -34,6 +36,7 @@ import {
   type FormatContext,
 } from '../../src/format/index.js';
 import { translator } from '../../src/i18n/index.js';
+import { MessageBuilder } from '../../src/format/message.js';
 
 /** How long the webhook waits inline before handing off to the sweeper. */
 const INLINE_WAIT_MS = 40_000;
@@ -44,6 +47,73 @@ function ok(body: Record<string, unknown> = { ok: true }): Response {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+/**
+ * A tap on the project picker.
+ *
+ * Selecting the project here rather than in the add-in means one Revit instance
+ * can serve whichever project the user is working on, without anyone touching a
+ * config file on the machine running Revit.
+ */
+async function handleCallbackQuery(query: CallbackQuery): Promise<Response> {
+  const data = query.data ?? '';
+  const chatId = query.message?.chat.id;
+
+  // Telegram shows a spinner until this is answered, so do it whatever happens.
+  const done = (notice?: string) =>
+    telegram()
+      .answerCallbackQuery(query.id, notice)
+      .catch((error) => console.error('[webhook] answerCallbackQuery failed', error));
+
+  if (!data.startsWith(PROJECT_CALLBACK) || chatId === undefined) {
+    await done();
+    return ok({ ok: true, ignored: 'unrecognised callback' });
+  }
+
+  const user = await findUserByTelegramId(query.from.id);
+  if (!user) {
+    await done();
+    return ok({ ok: true, ignored: 'unregistered' });
+  }
+
+  const ctx: FormatContext = { language: user.language, theme: user.theme };
+  const projectId = data.slice(PROJECT_CALLBACK.length);
+
+  // A button from an old message can name a project whose access has since been
+  // revoked, so re-check it rather than trusting the payload.
+  const access = await accessForProject(user.id, projectId);
+  if (!access) {
+    await done();
+    await telegram().sendMessage(chatId, formatError(ctx, 'errors.no_project_access'));
+    return ok({ ok: true, ignored: 'no access' });
+  }
+
+  await setActiveProject(user.id, projectId);
+
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+  b.title(t('common.success'), `${t('admin.project_switched')} ${access.project.code}`);
+  b.tree([
+    { label: access.project.name, value: access.role },
+    ...(access.project.location ? [{ label: 'Location', value: access.project.location }] : []),
+  ]);
+
+  await done(access.project.code);
+
+  // Editing the original message replaces the picker with the outcome, so the
+  // buttons cannot be tapped again from scrollback.
+  if (query.message) {
+    await telegram()
+      .editMessageText(chatId, query.message.message_id, b.build())
+      .catch(async () => {
+        await telegram().sendMessage(chatId, b.build());
+      });
+  } else {
+    await telegram().sendMessage(chatId, b.build());
+  }
+
+  return ok({ ok: true, active_project: projectId });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -61,6 +131,10 @@ export async function POST(request: Request): Promise<Response> {
     update = (await request.json()) as TelegramUpdate;
   } catch {
     return ok({ ok: true, ignored: 'unparseable body' });
+  }
+
+  if (update.callback_query) {
+    return handleCallbackQuery(update.callback_query);
   }
 
   const message = update.message ?? update.edited_message;
@@ -124,7 +198,9 @@ export async function POST(request: Request): Promise<Response> {
       const reply = await handleAdminCommand({ ...ctx, user }, outcome.admin);
       if (reply.languageChangedTo) ctx = { ...ctx, language: reply.languageChangedTo };
       if (reply.themeChangedTo) ctx = { ...ctx, theme: reply.themeChangedTo };
-      await telegram().sendMessage(chatId, reply.text);
+      await telegram().sendMessage(chatId, reply.text, {
+        ...(reply.keyboard ? { replyMarkup: reply.keyboard } : {}),
+      });
     } catch (error) {
       console.error('[webhook] admin command failed', error);
       await telegram().sendMessage(

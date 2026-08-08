@@ -123,12 +123,24 @@ workflow.
 a URL you have registered, so `/api/health` can be perfectly green while the bot
 ignores every message.
 
+`npm run` only works **inside a clone of this repository** — it reads the
+scripts out of `package.json`, so running it from your home directory fails with
+`Could not read package.json`. If you have no clone, skip to
+[By hand](#by-hand) below; it needs nothing but PowerShell.
+
 With `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env.local`:
 
 ```bash
+git clone https://github.com/<you>/electrical_ai
+cd electrical_ai
+npm install
+
 npm run webhook:set -- https://<your-deployment>.vercel.app
 npm run webhook:info
 ```
+
+Environment variables set in the shell win over `.env.local`, so you can also
+export the two secrets instead of writing a file.
 
 Use the **production** URL. Preview URLs change on every deploy, so a webhook
 pointed at one breaks as soon as you push again.
@@ -137,7 +149,11 @@ pointed at one breaks as soon as you push again.
 `last_error_message` — where a mismatched secret (403) or a crashing function
 (500) actually shows up. `npm run webhook:delete` unregisters it.
 
-The equivalent by hand, if you prefer:
+### By hand
+
+Two calls, no clone required. The first points Telegram at the deployment; the
+second publishes the command menu — the button beside the chat input, without
+which a new user sees no hint that the bot understands anything.
 
 ```bash
 curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
@@ -147,7 +163,16 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
     "secret_token": "<TELEGRAM_WEBHOOK_SECRET>",
     "allowed_updates": ["message", "edited_message", "callback_query"]
   }'
+
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" \
+  -H 'content-type: application/json' \
+  -d "{\"commands\": $(cat src/services/bot-menu.json)}"
 ```
+
+Without a clone, paste the contents of
+[`src/services/bot-menu.json`](../src/services/bot-menu.json) in place of the
+`cat`. That file is the source of truth for the menu; `npm run webhook:menu`
+sends exactly it.
 
 Then check the deployment itself:
 

@@ -91,14 +91,30 @@ internal sealed class SettingsWindow : Window
         _status.Margin = new Thickness(0, 8, 0, 0);
         root.Children.Add(_status);
 
-        root.Children.Add(Heading("Project this Revit instance serves"));
+        root.Children.Add(Heading("Project — optional"));
+        root.Children.Add(Hint(
+            "Leave this empty. Which project a command belongs to is chosen in Telegram "
+            + "with /project, and this instance serves whichever one you pick there. "
+            + "Set it only when two Revit machines each serve a different site, so each "
+            + "ignores the other's commands."));
         _project.DisplayMemberPath = nameof(ProjectRow.Display);
         _project.IsEnabled = false;
-        root.Children.Add(Field("Project", _project));
-        root.Children.Add(Hint(
-            "Populated by the test above. Commands sent from Telegram for any other "
-            + "project are left for whoever is serving it."));
+        root.Children.Add(Field("Pin to one project", _project));
         root.Children.Add(Field("…or paste a project id", _projectIdFallback));
+
+        var clear = new Button
+        {
+            Content = "Serve every project",
+            Padding = new Thickness(12, 4, 12, 4),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        clear.Click += (_, _) =>
+        {
+            _project.SelectedItem = null;
+            _projectIdFallback.Text = string.Empty;
+        };
+        root.Children.Add(clear);
 
         root.Children.Add(Heading("Behaviour"));
         root.Children.Add(Field("Poll interval (seconds)", _pollInterval, "4 — lower feels faster and costs more API calls"));
@@ -252,7 +268,10 @@ internal sealed class SettingsWindow : Window
                 projects.FirstOrDefault(p => p.Id.Equals(current, StringComparison.OrdinalIgnoreCase))
                 ?? projects[0];
 
-            Say($"Connected. {projects.Count} project(s) found — pick one, then Save.", Ok);
+            Say(
+                $"Connected. {projects.Count} project(s) found. Leave the picker empty to "
+                + "serve all of them, then Save.",
+                Ok);
         }
         catch (SupabaseException ex)
         {
@@ -282,9 +301,10 @@ internal sealed class SettingsWindow : Window
             ? row.Id
             : _projectIdFallback.Text.Trim();
 
-        if (url.Length == 0 || key.Length == 0 || projectId.Length == 0)
+        if (url.Length == 0 || key.Length == 0)
         {
-            Say("URL, key and project are all required before this can connect.", Bad);
+            // projectId stays optional: empty means serve every project.
+            Say("The URL and key are both required before this can connect.", Bad);
             return;
         }
 
