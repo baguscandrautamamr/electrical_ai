@@ -33,6 +33,7 @@
     "parse_failed": "Could not understand that command. Type /help for examples.",
     "validation_failed": "Invalid parameters",
     "execution_failed": "Command execution failed",
+    "addin_not_polling": "No Revit add-in picked this command up after {seconds} seconds (it polls every {poll}). Open the model in Revit, start polling in the Command Center, and send the command again.",
     "timeout": "Command timed out. Check that the Revit add-in is running.",
     "credential_expired": "Your API credential has expired. Run /api connect again.",
     "your_telegram_id": "Your Telegram ID is {id} — give it to an admin so they can register you.",

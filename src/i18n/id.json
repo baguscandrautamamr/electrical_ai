@@ -33,6 +33,7 @@
     "parse_failed": "Tidak bisa memahami perintah tersebut. Ketik /help untuk contoh.",
     "validation_failed": "Parameter tidak valid",
     "execution_failed": "Perintah gagal dijalankan",
+    "addin_not_polling": "Belum ada Revit add-in yang mengambil perintah ini setelah {seconds} detik (polling tiap {poll} detik). Buka model di Revit, lalu nyalakan polling di panel Command Center, dan kirim ulang perintahnya.",
     "timeout": "Perintah melebihi batas waktu. Pastikan Revit add-in berjalan.",
     "credential_expired": "Kredensial API sudah kedaluwarsa. Jalankan /api connect lagi.",
     "your_telegram_id": "ID Telegram Anda {id} — berikan ke admin agar bisa didaftarkan.",

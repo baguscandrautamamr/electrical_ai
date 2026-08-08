@@ -4,7 +4,7 @@
 
 import type { ParsedCommand } from '../types/index.js';
 import { hasAnthropicKey } from '../config/env.js';
-import { parseGrammar, parseAdmin, type AdminParse } from './grammar.js';
+import { parseGrammar, parseAdmin, hasProseArguments, type AdminParse } from './grammar.js';
 import { parseWithClaude, MIN_CONFIDENCE, NlpError } from './claude.js';
 
 export * from './schema.js';
@@ -39,13 +39,18 @@ export async function parseMessage(text: string): Promise<ParseOutcome> {
   const admin = parseAdmin(trimmed);
   if (admin) return { kind: 'admin', admin };
 
-  // 2. Deterministic device grammar.
-  const grammar = parseGrammar(trimmed);
-  if (grammar) return { kind: 'device', command: grammar };
+  // 2. Deterministic device grammar — unless the arguments are a sentence, in
+  //    which case reading them as grammar would invent a subject out of the
+  //    first word.
+  const prose = hasProseArguments(trimmed);
+  if (!prose) {
+    const grammar = parseGrammar(trimmed);
+    if (grammar) return { kind: 'device', command: grammar };
 
-  // An unrecognised slash command is a typo, not natural language — sending it
-  // to Claude would just burn a request to be told the same thing.
-  if (trimmed.startsWith('/')) return { kind: 'unparsed', reason: 'unknown_command' };
+    // An unrecognised slash command is a typo, not natural language — sending
+    // it to Claude would just burn a request to be told the same thing.
+    if (trimmed.startsWith('/')) return { kind: 'unparsed', reason: 'unknown_command' };
+  }
 
   // 3. Natural language via Claude.
   if (!hasAnthropicKey()) return { kind: 'unparsed', reason: 'nlp_unavailable' };

@@ -138,6 +138,44 @@ describe('natural language parsing', () => {
     expect(outcome).toEqual({ kind: 'unparsed', reason: 'nlp_unavailable' });
   });
 
+  it('sends a question typed after the command to Claude, not to the grammar', async () => {
+    // Telegram's menu inserts "/query " and leaves the cursor there, so this
+    // is how people actually type. Read as grammar, "ada" becomes the room.
+    let sawText: string | null = null;
+    __setAnthropicClient({
+      messages: {
+        create: async (params: { messages: Array<{ content: string }> }) => {
+          sawText = params.messages[0]!.content;
+          return reply({
+            command_type: 'query',
+            subject: null,
+            params: { what: 'room' },
+            confidence: 0.9,
+          });
+        },
+      },
+    } as unknown as Anthropic);
+
+    const outcome = await parseMessage('/query ada berapa ruangan di revit?');
+
+    expect(sawText).toBe('/query ada berapa ruangan di revit?');
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.params.what).toBe('room');
+    expect(outcome.command.subject).toBeNull();
+  });
+
+  it('still parses a proper slash command without calling Claude', async () => {
+    stubClient(() => {
+      throw new Error('Claude must not be called for key=value arguments');
+    });
+
+    for (const form of ['/query Office_A', '/query Office_A what=lighting', '/query what=room']) {
+      const outcome = await parseMessage(form);
+      expect(outcome.kind, form).toBe('device');
+    }
+  });
+
   it('never sends an unrecognised slash command to Claude', async () => {
     stubClient(() => {
       throw new Error('Claude must not be called for a slash command');

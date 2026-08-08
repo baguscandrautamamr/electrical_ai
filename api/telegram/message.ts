@@ -19,7 +19,7 @@ import { parseMessage } from '../../src/parser/index.js';
 import { specFor } from '../../src/parser/schema.js';
 import { validateParams } from '../../src/parser/validate.js';
 import { handleAdminCommand, PROJECT_CALLBACK } from '../../src/services/admin.js';
-import { attachAckMessage, enqueueCommand } from '../../src/services/queue.js';
+import { attachAckMessage, enqueueCommand, getCommand } from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
 import {
   accessForProjectOrAdmin,
@@ -294,10 +294,25 @@ export async function POST(request: Request): Promise<Response> {
     // Re-read is unnecessary; waitForCommand already returned the fresh row,
     // but ack_message_id was written after enqueue so patch it in.
     await deliverCommandResult({ ...finished, ack_message_id: ack.message_id });
+    return ok({ ok: true, command_id: enqueued.command.id, delivered: true });
   }
-  // Still running: /api/telegram/callback will deliver it.
 
-  return ok({ ok: true, command_id: enqueued.command.id, delivered: Boolean(finished) });
+  // Still 'pending' after the inline wait means no add-in claimed it in ten
+  // poll intervals — Revit is closed or not polling. Saying so now beats
+  // leaving the user on "waiting for the add-in" until the next sweep.
+  const current = await getCommand(enqueued.command.id);
+  if (current?.status === 'pending') {
+    await telegram().sendMessage(
+      chatId,
+      formatError(ctx, 'errors.addin_not_polling', {
+        seconds: Math.round(INLINE_WAIT_MS / 1000),
+        poll: env.pollingIntervalSeconds,
+      }),
+    );
+  }
+  // Processing, or finished late: /api/telegram/callback delivers it.
+
+  return ok({ ok: true, command_id: enqueued.command.id, delivered: false });
 }
 
 /** Health probe for the webhook URL itself. */
