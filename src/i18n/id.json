@@ -90,9 +90,7 @@
     "switch_type": "Tipe saklar",
     "height": "Tinggi dari lantai",
     "controls": "Mengontrol",
-    "placement": "Penempatan",
-    "beside_door": "di samping pintu",
-    "along_walls": "sepanjang dinding"
+    "placement": "Penempatan"
   },
   "receptacle": {
     "title": "Stop Kontak",

@@ -90,9 +90,7 @@
     "switch_type": "Switch type",
     "height": "Height from floor",
     "controls": "Controls",
-    "placement": "Placement",
-    "beside_door": "beside the door",
-    "along_walls": "along the walls"
+    "placement": "Placement"
   },
   "receptacle": {
     "title": "Receptacles",

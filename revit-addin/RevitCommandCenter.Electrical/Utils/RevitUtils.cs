@@ -447,15 +447,15 @@ public static class RevitUtils
             var doors = new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_Doors)
                 .WhereElementIsNotElementType()
-                .OfType<FamilyInstance>()
-                .Where(door => door.Host is not null && walls.ContainsKey(door.Host.Id));
+                .OfType<FamilyInstance>();
 
             foreach (var door in doors)
             {
                 if (placements.Count >= count) break;
+                if (door.Host is not Wall wall) continue;
+                if (!walls.TryGetValue(wall.Id, out var curve)) continue;
 
-                var wall = (Wall)doc.GetElement(door.Host.Id);
-                var placement = BesideDoor(doc, wall, walls[wall.Id], door, baseZ, room);
+                var placement = BesideDoor(doc, wall, curve, door, baseZ, room);
                 if (placement is not null) placements.Add(placement);
             }
         }

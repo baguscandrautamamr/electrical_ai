@@ -104,15 +104,16 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
         Room room,
         List<FamilyInstance> placed)
     {
-        var placement = command.GetString("placement", "door");
-
+        // Detail keys are i18n keys, resolved in the reader's language on the
+        // webhook side; detail values are data, passed through as they are.
+        // Translating a value here would freeze it to whatever language this
+        // add-in happens to be set to, which is not the language the person
+        // reading the reply chose.
         var details = new Dictionary<string, object?>
         {
             ["lighting_device.switch_type"] = command.GetString("type", "single_gang"),
             ["lighting_device.height"] = $"{command.GetDouble("height", 1.2):F2} m",
-            ["lighting_device.placement"] = placement is "walls" or "perimeter"
-                ? Localization.T("lighting_device.along_walls")
-                : Localization.T("lighting_device.beside_door"),
+            ["lighting_device.placement"] = command.GetString("placement", "door"),
         };
 
         var controls = command.GetString("controls");
