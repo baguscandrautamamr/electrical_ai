@@ -47,17 +47,66 @@ behaviour inside Revit — that still needs a real install and a real model.
 
 Copy the build output and the manifest to Revit's add-ins folder:
 
+Revit discovers add-ins by scanning `Addins\2025` for `.addin` manifests. It
+scans that folder **only** — a manifest one level down is never found. The
+assembly it names, on the other hand, may live in a subfolder, and should:
+the build output is around a hundred files, and that folder is shared with
+every other add-in you have installed.
+
+So the layout is two items, side by side:
+
+```
+%APPDATA%\Autodesk\Revit\Addins\2025\
+  RevitCommandCenter.Electrical.addin      <- manifest, must be at this level
+  RevitCommandCenter.Electrical\           <- the DLLs, Resources, runtimes
+```
+
+### From the CI artifact
+
+The artifact already has exactly that shape. Unzip it and copy **both items
+inside it** into `Addins\2025` — not the unzipped folder itself:
+
 ```powershell
 $addins = "$env:APPDATA\Autodesk\Revit\Addins\2025"
 New-Item -ItemType Directory -Force $addins | Out-Null
+Copy-Item .\RevitCommandCenter.Electrical-2025\* $addins -Recurse -Force
+```
 
-Copy-Item .\bin\Release\*.dll $addins
-Copy-Item .\bin\Release\RevitCommandCenter.Electrical.addin $addins
-Copy-Item .\bin\Release\Resources $addins -Recurse -Force
+### From a local build
+
+`bin\Release` is flat, so the manifest's `Assembly` path already matches a
+flat install. Move the payload into a subfolder and point the manifest at it:
+
+```powershell
+$addins = "$env:APPDATA\Autodesk\Revit\Addins\2025"
+$lib    = "$addins\RevitCommandCenter.Electrical"
+New-Item -ItemType Directory -Force $lib | Out-Null
+
+Copy-Item .\bin\Release\* $lib -Recurse -Force -Exclude '*.addin'
+(Get-Content .\bin\Release\RevitCommandCenter.Electrical.addin -Raw).Replace(
+  '<Assembly>RevitCommandCenter.Electrical.dll</Assembly>',
+  '<Assembly>RevitCommandCenter.Electrical\RevitCommandCenter.Electrical.dll</Assembly>'
+) | Set-Content "$addins\RevitCommandCenter.Electrical.addin"
 ```
 
 Restart Revit. A **Command Center** tab appears with Connect, Disconnect,
 Status and Log.
+
+If no tab appears, the manifest is the first thing to check: it must be
+directly in `Addins\2025`, and its `<Assembly>` path must resolve relative to
+it.
+
+### Why there are so many files
+
+`EnableDynamicLoading` in the `.csproj` makes the build emit the add-in's
+entire dependency closure — EPPlus and iText each pull in a stack of
+`Microsoft.Extensions.*` assemblies, plus a `runtimes\` folder. That is
+deliberate: it is what lets Revit load the add-in in its own context instead
+of fighting over shared assembly versions. Do not prune it by hand.
+
+The Revit API assemblies are the exception and are excluded on purpose — Revit
+supplies those itself, and a second copy in the load path causes type-identity
+errors. CI fails the build if any slip through.
 
 ## Configure
 
