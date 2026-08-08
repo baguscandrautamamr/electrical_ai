@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 using RevitCommandCenter.Electrical.Models;
 using RevitCommandCenter.Electrical.Utils;
 
@@ -7,10 +8,15 @@ namespace RevitCommandCenter.Electrical.Handlers;
 /// <summary>
 /// Dimensions a plan view automatically.
 ///
-/// Two strings per axis, outside the drawing: one picking up everything the
-/// view has running north-south, one everything running east-west. That is the
-/// tedious half of getting a plan ready to issue, and the half that is purely
-/// mechanical — which grid is where is not a judgement call.
+/// Two strings per axis: one running across, one running up. What they measure
+/// to depends on what was asked for — the fixtures in a room, or the grids and
+/// walls of the whole view.
+///
+/// The room is the usual case, and it was the case this did not handle:
+/// "kasih dimensi lampu di pantry" was read as a *view* named "pantry", found
+/// none, and failed. What an engineer wants there is the drawing they would set
+/// out by hand — the spacing between the downlights, dimensioned off the room's
+/// own devices.
 ///
 /// It adds dimensions and never removes any. Running it twice draws the strings
 /// twice rather than replacing them, because deciding that an existing
@@ -40,18 +46,35 @@ public sealed class DimensionHandler : ICommandHandler
     {
         var doc = context.Doc;
 
-        var view = ResolveView(context, command.GetString("view"));
+        // "di pantry" names a room, not a view. The subject is tried as a room
+        // first because that is what an engineer says, and a room is the thing
+        // this add-in has been placing devices into all along.
+        var subject = command.GetString("room");
+        var room = string.IsNullOrWhiteSpace(subject)
+            ? null
+            : RevitUtils.ResolveRoom(doc, subject).Room;
+
+        var view = ResolveView(context, room is null ? subject : command.GetString("view"), room);
         if (view is null)
         {
-            var wanted = command.GetString("view");
+            // Three different problems used to share one message. They need
+            // three different things done about them.
+            if (room is not null)
+            {
+                return CommandResult.Fail(
+                    $"Found room '{room.Name}', but no plan view showing it. "
+                    + "Open its floor plan in Revit and run this again.",
+                    retryable: false);
+            }
+
             return CommandResult.Fail(
-                string.IsNullOrWhiteSpace(wanted)
+                string.IsNullOrWhiteSpace(subject)
                     ? "Open a plan view in Revit and run this again — the active view cannot be dimensioned."
-                    : $"No plan view named '{wanted}'.",
+                    : $"'{subject}' is neither a room nor a plan view in this model.",
                 retryable: false);
         }
 
-        var target = command.GetString("target", "all").ToLowerInvariant();
+        var target = command.GetString("what", "all").ToLowerInvariant();
         var offsetFeet = RevitUnits.MmToFeet(command.GetDouble("offset", 1000));
 
         var notes = new List<string>();
@@ -62,17 +85,34 @@ public sealed class DimensionHandler : ICommandHandler
         var alongX = new List<Anchor>();
         var alongY = new List<Anchor>();
 
-        if (target is "grids" or "all")
+        // What `all` means depends on the scope. Inside a room, the devices are
+        // the drawing — dimensioning the building grid there tells the engineer
+        // nothing they asked for. Over a whole view, the grids and walls are.
+        var deviceKeys = room is null ? new List<string>() : DeviceTargets(target);
+        var wantsGrids = target == "grids" || (target == "all" && room is null);
+        var wantsWalls = target == "walls" || (target == "all" && room is null);
+
+        foreach (var key in deviceKeys)
         {
-            var found = CollectGrids(doc, view, alongX, alongY);
-            if (found > 0) targets.Add("dimension.grids");
+            // `<category>.title` is the label the rest of the system already
+            // uses for a category, in both languages.
+            if (CollectDevices(doc, view, room!, key, alongX, alongY) > 0)
+            {
+                targets.Add($"{key}.title");
+            }
+        }
+
+        if (deviceKeys.Count > 0 && targets.Count == 0) notes.Add("dimension.no_devices");
+
+        if (wantsGrids)
+        {
+            if (CollectGrids(doc, view, alongX, alongY) > 0) targets.Add("dimension.grids");
             else notes.Add("dimension.no_grids");
         }
 
-        if (target is "walls" or "all")
+        if (wantsWalls)
         {
-            var found = CollectWallFaces(doc, view, alongX, alongY);
-            if (found > 0) targets.Add("dimension.walls");
+            if (CollectWallFaces(doc, view, alongX, alongY) > 0) targets.Add("dimension.walls");
             else notes.Add("dimension.no_walls");
         }
 
@@ -143,37 +183,159 @@ public sealed class DimensionHandler : ICommandHandler
     // ----------------------------------------------------------------- view
 
     /// <summary>
-    /// The named plan view, or the one open in Revit.
+    /// The named plan view, the one open in Revit, or the one showing the room.
     ///
     /// Only plan views: a dimension string laid out in plan coordinates makes
     /// no sense in a section or a 3D view, and Revit would place it somewhere
     /// arbitrary rather than refuse.
+    ///
+    /// The room fallback matters because a request naming a room usually names
+    /// no view, and whatever happens to be open in Revit may well be a 3D view
+    /// or a sheet. Falling back to that room's own floor plan is what the
+    /// engineer meant.
     /// </summary>
-    private static ViewPlan? ResolveView(HandlerContext context, string name)
+    private static ViewPlan? ResolveView(HandlerContext context, string name, Room? room)
     {
         var doc = context.Doc;
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return doc.ActiveView is ViewPlan active && !active.IsTemplate ? active : null;
-        }
 
         var plans = new FilteredElementCollector(doc)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
-            .Where(plan => !plan.IsTemplate)
+            .Where(plan => !plan.IsTemplate && plan.GenLevel is not null)
             .ToList();
 
-        return plans.FirstOrDefault(plan =>
-                   string.Equals(plan.Name, name, StringComparison.OrdinalIgnoreCase))
-               ?? plans.FirstOrDefault(plan =>
-                   plan.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var named = plans.FirstOrDefault(plan =>
+                            string.Equals(plan.Name, name, StringComparison.OrdinalIgnoreCase))
+                        ?? plans.FirstOrDefault(plan =>
+                            plan.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (named is not null) return named;
+        }
+
+        if (doc.ActiveView is ViewPlan active && !active.IsTemplate && active.GenLevel is not null)
+        {
+            // The open view is right unless it is on another storey from the
+            // room that was asked for.
+            if (room is null || room.LevelId == ElementId.InvalidElementId
+                || active.GenLevel.Id == room.LevelId)
+            {
+                return active;
+            }
+        }
+
+        return room is null
+            ? null
+            : plans.FirstOrDefault(plan => plan.GenLevel!.Id == room.LevelId);
     }
 
     // ----------------------------------------------------------- collection
 
     /// <summary>One thing a dimension string can measure to, and where it is.</summary>
     private readonly record struct Anchor(Reference Ref, double Position, XYZ Point);
+
+    /// <summary>
+    /// Device categories a room can be dimensioned against, by the same key
+    /// /query and /delete use.
+    /// </summary>
+    private static readonly Dictionary<string, BuiltInCategory> DeviceCategories =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["lighting"] = BuiltInCategory.OST_LightingFixtures,
+            ["lighting_device"] = BuiltInCategory.OST_LightingDevices,
+            ["receptacle"] = BuiltInCategory.OST_ElectricalFixtures,
+            ["fire_alarm"] = BuiltInCategory.OST_FireAlarmDevices,
+            ["telephone"] = BuiltInCategory.OST_TelephoneDevices,
+            ["lan"] = BuiltInCategory.OST_DataDevices,
+            ["security"] = BuiltInCategory.OST_SecurityDevices,
+            ["communication"] = BuiltInCategory.OST_CommunicationDevices,
+        };
+
+    /// <summary>
+    /// Which device categories to dimension.
+    ///
+    /// `all` inside a room means the lighting: dimensioning eight categories at
+    /// once buries the ceiling layout under seven strings nobody was looking
+    /// for, and the lighting grid is what gets dimensioned on a real drawing.
+    /// </summary>
+    private static List<string> DeviceTargets(string target)
+    {
+        if (target == "all") return new List<string> { "lighting" };
+        return DeviceCategories.ContainsKey(target) ? new List<string> { target } : new List<string>();
+    }
+
+    /// <summary>
+    /// Devices of one category standing in the room, as dimension references.
+    ///
+    /// A dimension cannot attach to a family instance as such; it attaches to a
+    /// reference the family publishes. Point-based families publish their centre
+    /// planes, which is exactly what a fixture layout is dimensioned to — centre
+    /// to centre — so those are asked for by name rather than derived from
+    /// geometry.
+    /// </summary>
+    private static int CollectDevices(
+        Document doc,
+        View view,
+        Room room,
+        string key,
+        List<Anchor> alongX,
+        List<Anchor> alongY)
+    {
+        if (!DeviceCategories.TryGetValue(key, out var category)) return 0;
+
+        var devices = new FilteredElementCollector(doc, view.Id)
+            .OfCategory(category)
+            .WhereElementIsNotElementType()
+            .OfType<FamilyInstance>()
+            .Where(instance => DeleteDevicesHandler.InRoom(instance, room))
+            .ToList();
+
+        var found = 0;
+
+        foreach (var device in devices)
+        {
+            if (device.Location is not LocationPoint location) continue;
+            var point = location.Point;
+
+            var across = CentreReference(device, FamilyInstanceReferenceType.CenterLeftRight);
+            var up = CentreReference(device, FamilyInstanceReferenceType.CenterFrontBack);
+
+            // Both or neither: a string that measures to a fixture's centre in
+            // one direction and its edge in the other reads as a mistake.
+            if (across is not null)
+            {
+                alongX.Add(new Anchor(across, point.X, point));
+                found++;
+            }
+
+            if (up is not null)
+            {
+                alongY.Add(new Anchor(up, point.Y, point));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// One of a family's centre planes, when it publishes one.
+    ///
+    /// Families authored without reference planes marked as references publish
+    /// nothing, and there is no way to dimension to them — reported as "no
+    /// devices" rather than by placing a string against something arbitrary.
+    /// </summary>
+    private static Reference? CentreReference(FamilyInstance instance, FamilyInstanceReferenceType type)
+    {
+        try
+        {
+            return instance.GetReferences(type).FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"No {type} reference on {instance.Id}: {ex.Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// Grids visible in the view.

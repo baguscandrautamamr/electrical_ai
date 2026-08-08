@@ -30,6 +30,9 @@ reads better:
 | `/place_security` | `/pasang_cctv`, `/pasang_kamera` |
 | `/place_communication` | `/pasang_speaker`, `/pasang_komunikasi` |
 | `/equip_room` | `/lengkapi_ruangan`, `/pasang_semua` |
+| `/delete_devices` | `/hapus`, `/buang`, `/delete` |
+| `/modify_devices` | `/modifikasi`, `/ubah`, `/ganti` |
+| `/list_sheets` | `/sheets`, `/daftar_sheet` |
 | `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
 | `/dimension` | `/dimensi`, `/beri_dimensi`, `/ukur` |
 
@@ -51,7 +54,7 @@ first.
 
 | Role | Can |
 |---|---|
-| `viewer` | `/query`, `/export`, `/print_pdf`, and all read-only admin commands |
+| `viewer` | `/query`, `/export`, `/print_pdf`, `/list_sheets`, and all read-only admin commands |
 | `editor` | everything above, plus every device command and `/api connect` |
 | `admin` | everything above, plus `/user list` |
 
@@ -136,10 +139,23 @@ the lamps; these are what turn them on.
 /pasang_saklar meeting 1
 ```
 
-By default each switch goes beside a door in the room, on the wall, 250 mm from
-the jamb — where a switch belongs, and where you would otherwise drag it after
-the command ran. A room with no door in the model falls back to the walls, as
-does `placement=walls`.
+By default each switch goes beside a door in the room, on the wall, **300 mm
+from the edge of the door leaf** — the house standard, and where you would
+otherwise drag it after the command ran. So `/pasang_saklar pantry` on its own
+is a complete instruction. A room with no door in the model falls back to the
+walls, as does `placement=walls`.
+
+**The type comes from the project, not from the parameter name.** Offices do not
+agree on what a two-gang switch is called: the same device is `2 Gang` here,
+`S2` on the drawing, `Double Pole` in a catalogue family. The types actually
+loaded in the model are read and scored against all of those conventions, and
+the reply's **Family type** row names the Revit type that was placed. Ask for a
+`three_gang` in a project that has no three-gang family loaded and you get a
+failed compliance line listing what *is* loaded, rather than a silent
+substitution you find out about later.
+
+`family` still wins outright when you name one — you have looked at the project
+browser and this has not.
 
 ### `/place_receptacle <room>`
 
@@ -326,6 +342,78 @@ Set any count to `0`, or `fire_alarm=none`, to skip that category.
 /export type=hanger_schedule format=excel
 ```
 
+### `/delete_devices <room>`
+
+Removes devices of one category from one room. Aliases: `/delete`, `/hapus`,
+`/buang`. Plain language works: *"hapus lampu di ruangan A"*.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `room` | string | **required** | Room to clear |
+| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication, all | all | Category to remove |
+
+```
+/delete_devices Pantry what=lighting
+/hapus Meeting_1 what=receptacle
+```
+
+Deliberately narrow: **both the room and a category are required.** "Delete the
+lighting" with no room names the whole model, and no amount of confirming makes
+that safe to accept from a chat message. Cable trays and hangers are out of
+reach here — a tray is routed rather than placed in a room.
+
+Scoped by the same point-in-room test `/query` counts with, so what goes is what
+`/query` said was there. The reply lists the marks it removed, and Revit's undo
+is one step. Removing nothing comes back as a warning rather than a tick — the
+usual cause is the right command against the wrong room name.
+
+### `/modify_devices <room>`
+
+Re-lays out a room: same category, new count or grid. Aliases: `/modify`,
+`/modifikasi`, `/ubah`, `/ganti`.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `room` | string | **required** | Room to change |
+| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication | lighting | Category to re-lay out |
+| `count` | integer | — | New number of devices |
+| `grid` | size | — | New layout, columns × rows |
+| `height`, `fixture_type`, `type` | | unchanged | Forwarded to the placement |
+
+```
+/modify_devices Meeting_1 what=lighting grid=2x3
+/modifikasi Office_B what=lighting count=9
+```
+
+*"modifikasi lampu di ruangan B menjadi 2x3"* and *"…menjadi 9 lampu"* both work.
+
+**It replaces rather than edits.** Revit cannot turn a 2×2 grid into a 2×3 one
+by moving fixtures — you would get four on the old spacing with two squeezed
+between them — so the old set comes out and a new one goes in, which is what you
+would do by hand. The reply says how many it removed, so a wrong room shows up in
+the chat.
+
+One of `count` or `grid` is required. Without either, "modify" would mean
+"delete what is there and put back a default layout", which is nobody's
+intention. Anything you do state — height, family, type — is carried into the new
+layout; anything you leave out keeps the placement command's own defaults.
+
+### `/list_sheets`
+
+Lists the sheets in the model with their numbers. Aliases: `/sheets`,
+`/daftar_sheet`, `/sheet`. A viewer may run it.
+
+```
+/list_sheets
+```
+
+The numbers it returns are exactly what `/print_pdf` takes, so this is the step
+before printing when you cannot remember how the set is numbered. Sheets are
+always listed rather than counted — a count of sheets answers nothing.
+Placeholder sheets are left out; they carry a number but no drawing.
+
+Same data as `/query what=sheet`, under the name people ask it by.
+
 ### `/print_pdf <sheets>`
 
 Prints sheets to PDF, chosen by the number in their title block. Aliases:
@@ -359,30 +447,45 @@ Files land in the add-in's export directory, and come back as links when
 `export_base_url` is configured. A viewer may run this — it reads the model and
 writes a file, and changes neither.
 
-### `/dimension [view]`
+### `/dimension [room]`
 
-Dimensions a plan view automatically. Aliases: `/dimensi`, `/beri_dimensi`,
-`/auto_dimension`, `/ukur`.
+Dimensions the devices in a room, or a whole plan view's grids and walls.
+Aliases: `/dimensi`, `/beri_dimensi`, `/auto_dimension`, `/ukur`.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `view` | string | the open view | Plan view to dimension |
-| `target` | grids\|walls\|all | all | What to measure to |
+| `room` | string | the open view | Room to dimension; a plan view name also works |
+| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication, grids, walls, all | all | What to measure to |
+| `view` | string | the room's floor plan | Plan view to draw in |
 | `offset` | number | 1000 | Distance from the outermost element to the dimension line (mm) |
 
 ```
-/dimension
-/dimension "Level 1" target=grids
-/dimension "Level 1 - Power" target=all offset=1500
+/dimension Pantry
+/dimension Pantry what=lighting
+/dimension "Level 1" what=grids
 ```
 
-Two strings per run: one below the plan picking up everything running
-north-south, one to its left picking up everything running east-west. Grids are
-measured to the grid line; walls to the vertical faces the view actually shows,
-so a wall hidden by the view's crop or a filter is not measured.
+Plain language works: *"kasih dimensi lampu di pantry"*.
 
-Omit the view to dimension the one open in Revit. Only plan views: a string laid
-out in plan coordinates means nothing in a section or a 3D view.
+**With a room**, the devices are what gets measured — centre to centre, the way
+a ceiling layout is dimensioned on a real drawing. `all` means the lighting
+there; dimensioning eight categories at once buries the layout under seven
+strings nobody asked for.
+
+**Without one**, the whole view's grids and walls are measured instead. Grids
+are measured to the grid line, walls to the vertical faces the view actually
+shows, so a wall hidden by the crop or a filter is not measured.
+
+Two strings per run either way: one below the drawing picking up everything
+running north-south, one to its left picking up everything running east-west.
+
+The view is worked out for you: the room's own floor plan, or whatever is open
+in Revit when it is on the right storey. Only plan views — a string laid out in
+plan coordinates means nothing in a section or a 3D view.
+
+Dimensions attach to the reference planes a family publishes. A family authored
+without them cannot be dimensioned to, and comes back as "no dimensionable
+devices" rather than with a string measured to something arbitrary.
 
 **It adds and never removes.** Running it twice draws the strings twice rather
 than replacing them — deciding that an existing dimension was this command's
@@ -402,7 +505,7 @@ Omit the room to search the whole model.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `what` | all, lighting, lighting_device, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room | all | `all` covers every device category; rooms are counted only when asked for by name |
+| `what` | all, lighting, lighting_device, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room, sheet | all | `all` covers every device category; rooms and sheets are reported only when asked for by name |
 | `level` | string | | Restrict to one level, e.g. `"Level 1"` |
 | `detail` | summary\|list | summary | `list` also names each element |
 | `limit` | integer | 30 | Most items to name when `detail=list`; the cap is per query, not per category |

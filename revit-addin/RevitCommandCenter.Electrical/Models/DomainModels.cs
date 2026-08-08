@@ -157,6 +157,30 @@ public sealed class PrintResultDto
     public List<string>? NotFound { get; set; }
 }
 
+/// <summary>Matches the TypeScript <c>DeleteResult</c>.</summary>
+public sealed class DeleteResultDto
+{
+    [JsonProperty("kind")] public string Kind => "delete";
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("what")] public string What { get; set; } = "all";
+    [JsonProperty("devices_removed")] public int DevicesRemoved { get; set; }
+    [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
+    [JsonProperty("groups")] public List<QueryGroupDto> Groups { get; set; } = new();
+}
+
+/// <summary>Matches the TypeScript <c>ModifyResult</c>.</summary>
+public sealed class ModifyResultDto
+{
+    [JsonProperty("kind")] public string Kind => "modify";
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("what")] public string What { get; set; } = "lighting";
+    [JsonProperty("devices_removed")] public int DevicesRemoved { get; set; }
+
+    /// <summary>The placement that replaced them, as its own handler reported it.</summary>
+    [JsonProperty("placement", NullValueHandling = NullValueHandling.Ignore)]
+    public object? Placement { get; set; }
+}
+
 /// <summary>Matches the TypeScript <c>DimensionResult</c>.</summary>
 public sealed class DimensionResultDto
 {

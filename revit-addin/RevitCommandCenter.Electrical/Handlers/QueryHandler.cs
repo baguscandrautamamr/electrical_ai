@@ -19,6 +19,16 @@ public sealed class QueryHandler : ICommandHandler
     public string CommandType => "query";
 
     /// <summary>
+    /// The second name this handler answers to.
+    ///
+    /// "Which sheets are there?" is a query with one answer pinned, and asking
+    /// someone to remember `what=sheet` for the question they ask most before
+    /// printing is a tax on the wrong person. Registered in CommandProcessor
+    /// against this same instance.
+    /// </summary>
+    public const string SheetListCommandType = "list_sheets";
+
+    /// <summary>
     /// Elements a query can count, and the label each reports under. A null
     /// category means the target is matched some other way — see Collect.
     /// </summary>
@@ -42,20 +52,39 @@ public sealed class QueryHandler : ICommandHandler
         new("communication", "communication.title", BuiltInCategory.OST_CommunicationDevices),
         new("panel", "query.panels", BuiltInCategory.OST_ElectricalEquipment),
         new("room", "query.rooms", BuiltInCategory.OST_Rooms),
+        // Sheets are not in the model the way a device is, but "which sheets do
+        // we have?" is the question standing between an engineer and
+        // /print_pdf — and the only way to answer it was to open Revit.
+        new("sheet", "query.sheets", BuiltInCategory.OST_Sheets),
     };
+
+    /// <summary>
+    /// Targets `what=all` leaves out.
+    ///
+    /// Both answer a different question from "what is installed here": rooms
+    /// are the container, sheets are the drawing set. Counting them alongside
+    /// the devices makes a total that means nothing.
+    /// </summary>
+    private static readonly string[] NotInAll = { "room", "sheet" };
 
     public CommandResult Execute(HandlerContext context, CommandModel command)
     {
         var doc = context.Doc;
-        var what = command.GetString("what", "all").ToLowerInvariant();
-        var roomName = command.GetString("room");
+        var asSheetList = command.CommandType.Equals(
+            SheetListCommandType, StringComparison.OrdinalIgnoreCase);
+
+        var what = asSheetList ? "sheet" : command.GetString("what", "all").ToLowerInvariant();
+        var roomName = asSheetList ? string.Empty : command.GetString("room");
         var levelName = command.GetString("level");
-        var wantsList = string.Equals(command.GetString("detail", "summary"), "list",
-            StringComparison.OrdinalIgnoreCase);
-        var limit = Math.Clamp(command.GetInt("limit", 30), 1, 200);
+        // A count of sheets answers nothing — the numbers are the answer, and
+        // they are what /print_pdf takes. So sheets are always listed.
+        var wantsList = what == "sheet"
+                        || string.Equals(command.GetString("detail", "summary"), "list",
+                            StringComparison.OrdinalIgnoreCase);
+        var limit = Math.Clamp(command.GetInt("limit", what == "sheet" ? 100 : 30), 1, 200);
 
         var selected = what == "all"
-            ? Targets.Where(target => target.Key != "room").ToArray()
+            ? Targets.Where(target => !NotInAll.Contains(target.Key)).ToArray()
             : Targets.Where(target => target.Key == what).ToArray();
 
         if (selected.Length == 0)
@@ -163,6 +192,17 @@ public sealed class QueryHandler : ICommandHandler
         if (target.Key == "room")
         {
             return collector.Cast<Room>().Where(room => room.Area > 0);
+        }
+
+        // Placeholder sheets carry a number but no drawing. They belong in an
+        // issue register, not in a list of what can be printed.
+        if (target.Key == "sheet")
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewSheet))
+                .Cast<ViewSheet>()
+                .Where(sheet => !sheet.IsPlaceholder)
+                .OrderBy(sheet => sheet.SheetNumber, StringComparer.OrdinalIgnoreCase);
         }
 
         return collector.ToElements();
@@ -282,6 +322,18 @@ public sealed class QueryHandler : ICommandHandler
 
     private static QueryItemDto DescribeItem(Document doc, Element element)
     {
+        // A sheet identifies itself by its number, which is also what
+        // /print_pdf takes — so the list doubles as the argument for it.
+        if (element is ViewSheet sheet)
+        {
+            return new QueryItemDto
+            {
+                Id = sheet.SheetNumber,
+                Label = sheet.Name,
+                Detail = null,
+            };
+        }
+
         var mark = ParameterMapper.GetStringParameter(element, "Mark");
         var levelName = doc.GetElement(element.LevelId)?.Name;
 

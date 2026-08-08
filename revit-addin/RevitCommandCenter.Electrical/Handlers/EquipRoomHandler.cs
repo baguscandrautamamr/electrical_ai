@@ -151,7 +151,10 @@ public sealed class EquipRoomHandler : ICommandHandler
                 ["count"] = outlets,
                 ["type"] = "double_grounded",
                 ["height"] = 0.4,
-                ["load_per_outlet"] = 1500,
+                // No load_per_outlet: stating one here would look to the
+                // receptacle handler exactly like the engineer stating one, and
+                // would overrule the family's own electrical data on every
+                // equipped room.
                 ["breaker_size"] = 20,
                 ["voltage"] = 230,
             });

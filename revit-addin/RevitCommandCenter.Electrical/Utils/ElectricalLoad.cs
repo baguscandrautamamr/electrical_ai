@@ -20,15 +20,21 @@ public static class ElectricalLoad
     /// <summary>
     /// Parameters that carry a load, most specific first.
     ///
-    /// "Apparent Load" is what an electrical connector publishes and what the
-    /// Properties palette shows as the family's Electrical Data. The rest cover
-    /// families that state their load as a shared or project parameter instead,
-    /// including the Indonesian names used in local templates.
+    /// "Apparent Load" is what an electrical connector publishes as a number.
+    /// Most families do not expose it: the connector's rating reaches the
+    /// Properties palette only through **Electrical Data**, the read-only string
+    /// under Electrical - Circuiting that reads "230 V/1-200 VA". That string is
+    /// the whole reason a 200 VA outlet was still being reported at the 1500 W
+    /// design default — the number was there, in the one place nothing looked.
+    ///
+    /// The rest cover families that state their load as a shared or project
+    /// parameter instead, including the Indonesian names used in local templates.
     /// </summary>
     private static readonly string[] LoadParameterNames =
     {
         "Apparent Load",
         "Apparent Load Phase 1",
+        "Electrical Data",
         "Beban Semu",
         "Total Load",
         "Wattage",
@@ -129,13 +135,34 @@ public static class ElectricalLoad
         return null;
     }
 
+    /// <summary>
+    /// Watts out of one parameter, whatever shape it stores them in.
+    ///
+    /// A string is read as text because that is what "Electrical Data" is —
+    /// Revit composes it for display and there is no number behind it to ask
+    /// for. AsValueString is the fallback for a parameter that renders a value
+    /// it will not hand over as a raw string.
+    /// </summary>
     private static double? AsWatts(Parameter parameter) => parameter.StorageType switch
     {
         StorageType.Double => ToWatts(parameter.AsDouble()),
         StorageType.Integer => parameter.AsInteger(),
-        StorageType.String => ParseWatts(parameter.AsString()),
-        _ => null,
+        StorageType.String => ParseWatts(parameter.AsString()) ?? ParseWatts(SafeValueString(parameter)),
+        _ => ParseWatts(SafeValueString(parameter)),
     };
+
+    private static string? SafeValueString(Parameter parameter)
+    {
+        try
+        {
+            return parameter.AsValueString();
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"Could not render '{parameter.Definition?.Name}' as text: {ex.Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// Converts Revit's internal power units to watts.

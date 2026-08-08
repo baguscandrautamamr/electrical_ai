@@ -84,6 +84,25 @@ export const QUERY_TARGETS = [
   'communication',
   'panel',
   'room',
+  'sheet',
+] as const;
+
+/**
+ * Device categories a command can act on after they are placed.
+ *
+ * Narrower than QUERY_TARGETS on purpose: a cable tray is routed rather than
+ * placed in a room, and a hanger belongs to its tray — neither is something
+ * "delete the lighting in Pantry" should be able to reach.
+ */
+export const DEVICE_TARGETS = [
+  'lighting',
+  'lighting_device',
+  'receptacle',
+  'fire_alarm',
+  'telephone',
+  'lan',
+  'security',
+  'communication',
 ] as const;
 
 export const COMMAND_SPECS: Record<string, CommandSpec> = {
@@ -491,26 +510,100 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
 
+  // ----------------------------------------------------------------- delete
+  delete_devices: {
+    type: 'delete_devices',
+    name: 'delete_devices',
+    aliases: ['delete', 'hapus', 'hapus_device', 'buang'],
+    role: 'editor',
+    describe: 'Remove devices of one category from one room.',
+    example: '/delete_devices Pantry what=lighting',
+    subject: { name: 'room', required: true, describe: 'Room to clear' },
+    params: {
+      what: {
+        kind: 'enum',
+        values: [...DEVICE_TARGETS, 'all'],
+        default: 'all',
+        describe: 'Which category to remove; "all" clears every device category in the room',
+        aliases: ['category', 'target', 'type', 'device'],
+      },
+    },
+  },
+
+  // ----------------------------------------------------------------- modify
+  modify_devices: {
+    type: 'modify_devices',
+    name: 'modify_devices',
+    aliases: ['modify', 'modifikasi', 'ubah', 'ganti'],
+    role: 'editor',
+    describe: 'Re-lay out a room: same category, new count or grid.',
+    example: '/modify_devices Meeting_1 what=lighting grid=2x3',
+    subject: { name: 'room', required: true, describe: 'Room to change' },
+    params: {
+      what: {
+        kind: 'enum',
+        values: DEVICE_TARGETS,
+        default: 'lighting',
+        describe: 'Which category to re-lay out',
+        aliases: ['category', 'target', 'device'],
+      },
+      count: {
+        kind: 'integer',
+        min: 1,
+        max: 500,
+        describe: 'New number of devices, e.g. "menjadi 9 lampu"',
+        aliases: ['jumlah', 'quantity', 'qty'],
+      },
+      grid: {
+        kind: 'size',
+        describe: 'New layout, columns x rows, e.g. 2x3',
+        aliases: ['layout', 'pola', 'grid_size'],
+      },
+      height: { kind: 'number', min: 0, max: 30, describe: 'Mounting height in m; unchanged when omitted' },
+      /** Forwarded to the placement command, which applies its own defaults. */
+      fixture_type: { kind: 'string', describe: 'Revit family name', aliases: ['family', 'fixture'] },
+      type: { kind: 'string', describe: 'Device type, as the placement command defines it' },
+    },
+  },
+
+  // ------------------------------------------------------------- list sheets
+  list_sheets: {
+    type: 'list_sheets',
+    name: 'list_sheets',
+    aliases: ['sheets', 'daftar_sheet', 'sheet'],
+    role: 'viewer',
+    describe: 'List the sheets in the model, with their numbers — the argument /print_pdf takes.',
+    example: '/list_sheets',
+    params: {
+      limit: { kind: 'integer', default: 100, min: 1, max: 200, describe: 'Most sheets to name' },
+    },
+  },
+
   // -------------------------------------------------------------- dimension
   dimension: {
     type: 'dimension',
     name: 'dimension',
     aliases: ['dimensi', 'beri_dimensi', 'auto_dimension', 'ukur'],
     role: 'editor',
-    describe: 'Dimension a plan view automatically, along the grids and the walls.',
-    example: '/dimension "Level 1" target=all offset=1000',
+    describe: 'Dimension a room\'s devices, or a whole plan view\'s grids and walls.',
+    example: '/dimension Pantry what=lighting offset=1000',
     subject: {
-      name: 'view',
+      name: 'room',
       required: false,
-      describe: 'Plan view to dimension; omit to use the view open in Revit',
+      describe: 'Room to dimension the devices in; a plan view name also works, and omitting it uses the view open in Revit',
     },
     params: {
-      target: {
+      what: {
         kind: 'enum',
-        values: ['grids', 'walls', 'all'],
+        values: [...DEVICE_TARGETS, 'grids', 'walls', 'all'],
         default: 'all',
-        describe: 'What to dimension',
-        aliases: ['what', 'objek'],
+        describe:
+          'What to measure to. In a room this is a device category ("all" means the lighting); with no room it is the grids and walls',
+        aliases: ['target', 'objek', 'category', 'device'],
+      },
+      view: {
+        kind: 'string',
+        describe: 'Plan view to draw in; defaults to the room\'s floor plan or the view open in Revit',
       },
       /**
        * How far outside the drawing the dimension line sits. 1 m at 1:100 is

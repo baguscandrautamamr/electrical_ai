@@ -8,7 +8,9 @@ import type {
   CableTrayResult,
   CommandResult,
   ComplianceCheck,
+  DeleteResult,
   DimensionResult,
+  ModifyResult,
   EquipRoomResult,
   ExportLinks,
   ExportResult,
@@ -302,6 +304,93 @@ export function formatPrint(result: PrintResult, ctx: FormatContext): string {
 }
 
 // ---------------------------------------------------------------------------
+// Removing and re-laying out
+// ---------------------------------------------------------------------------
+
+export function formatDelete(result: DeleteResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  // Removing nothing is not a failure, but it must not read like a success
+  // either — the usual cause is the right command against the wrong room.
+  const removedNothing = result.devices_removed === 0;
+
+  b.title(removedNothing ? t('common.warning') : t('common.success'), t('delete.done'));
+
+  const rows: Row[] = [];
+  if (result.room) rows.push({ label: t('common.room'), value: result.room });
+  rows.push({
+    label: t('delete.removed'),
+    value: `${result.devices_removed} ${t('common.units')}`,
+  });
+  b.tree(rows);
+
+  if (removedNothing) {
+    b.blank().text(t('delete.nothing_there'));
+    return b.build();
+  }
+
+  if (result.groups.length > 0) {
+    b.section(t('query.breakdown'));
+    b.tree(
+      result.groups.map((group) => ({
+        label: group.label.includes('.') ? t(group.label) : group.label,
+        value: String(group.count),
+      })),
+    );
+  }
+
+  // The marks are the receipt. Anyone who deleted the wrong room can see
+  // exactly what went, and Revit's undo is one step away.
+  const ids = result.device_ids ?? [];
+  if (ids.length > 0) {
+    b.section(t('delete.removed_ids'));
+    b.text(ids.slice(0, 40).join(', ') + (ids.length > 40 ? ` (+${ids.length - 40})` : ''));
+  }
+
+  return b.build();
+}
+
+export function formatModify(result: ModifyResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title(t('common.success'), t('modify.done'));
+
+  const placement = result.placement ?? null;
+  const rows: Row[] = [];
+  if (result.room) rows.push({ label: t('common.room'), value: result.room });
+  rows.push({ label: t('modify.removed'), value: `${result.devices_removed} ${t('common.units')}` });
+  if (placement) {
+    rows.push({
+      label: t('modify.placed'),
+      value: `${placement.devices_placed} ${t('common.units')}`,
+    });
+    if (placement.total_load_w !== null && placement.total_load_w !== undefined) {
+      rows.push({ label: t('lighting.load'), value: `${num(placement.total_load_w, 0)} W` });
+    }
+    if (placement.circuits_created) {
+      rows.push({ label: t('lighting.circuits'), value: String(placement.circuits_created) });
+    }
+  }
+  b.tree(rows);
+
+  for (const [label, value] of Object.entries(placement?.details ?? {})) {
+    if (value === null || value === undefined || value === '') continue;
+    b.tree([
+      {
+        label: label.includes('.') ? t(label) : label,
+        value: maybeTranslate(t, String(value)),
+      },
+    ]);
+  }
+
+  appendCompliance(b, t, placement?.compliance);
+
+  return b.build();
+}
+
+// ---------------------------------------------------------------------------
 // Automatic dimensioning
 // ---------------------------------------------------------------------------
 
@@ -405,6 +494,10 @@ export function formatResult(result: CommandResult, ctx: FormatContext): string 
       return formatExport(result, ctx);
     case 'print':
       return formatPrint(result, ctx);
+    case 'delete':
+      return formatDelete(result, ctx);
+    case 'modify':
+      return formatModify(result, ctx);
     case 'dimension':
       return formatDimension(result, ctx);
     case 'query':

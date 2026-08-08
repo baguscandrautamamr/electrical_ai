@@ -27,6 +27,9 @@ export const DEVICE_COMMAND_TYPES = [
   'export',
   'print_pdf',
   'dimension',
+  'delete_devices',
+  'modify_devices',
+  'list_sheets',
   'query',
 ] as const;
 
@@ -231,6 +234,27 @@ export interface PrintResult {
   not_found?: string[];
 }
 
+export interface DeleteResult {
+  kind: 'delete';
+  room: string | null;
+  /** The category that was cleared, or 'all'. */
+  what: string;
+  devices_removed: number;
+  /** Marks of what was removed, so the reply names it rather than counting it. */
+  device_ids: string[];
+  /** Per-category counts, using the same shape as a query breakdown. */
+  groups: QueryGroup[];
+}
+
+export interface ModifyResult {
+  kind: 'modify';
+  room: string | null;
+  what: string;
+  devices_removed: number;
+  /** The placement that replaced them, as its own handler reported it. */
+  placement?: PlacementResult | null;
+}
+
 export interface DimensionResult {
   kind: 'dimension';
   /** View that was dimensioned. */
@@ -299,6 +323,8 @@ export type CommandResult =
   | EquipRoomResult
   | ExportResult
   | PrintResult
+  | DeleteResult
+  | ModifyResult
   | DimensionResult
   | QueryResult;
 
