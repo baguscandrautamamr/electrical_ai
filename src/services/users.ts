@@ -133,11 +133,17 @@ export async function findProjectByCode(code: string): Promise<Project | null> {
 /**
  * Resolves the project a command should run against: the user's active project,
  * checked against their access grants.
+ *
+ * Deliberately the same check the project picker uses to *set* the active
+ * project. When this required a grant row and the picker did not, an admin
+ * could select an auto-registered project, be told it worked, and then have
+ * every command answer "no active project" — with the remedy the error
+ * suggested, `/project use`, refusing on the same missing row.
  */
 export async function resolveActiveProject(user: User): Promise<ProjectAccess | null> {
   if (!user.active_project) {
     // Convenience: a user with exactly one project doesn't need to pick it.
-    const projects = await listProjectsForUser(user.id);
+    const projects = await listProjectsVisibleTo(user);
     if (projects.length === 1) {
       const only = projects[0]!;
       await setActiveProject(user.id, only.project.id);
@@ -145,5 +151,5 @@ export async function resolveActiveProject(user: User): Promise<ProjectAccess | 
     }
     return null;
   }
-  return accessForProject(user.id, user.active_project);
+  return accessForProjectOrAdmin(user, user.active_project);
 }

@@ -29,7 +29,7 @@ import {
 } from './membership.js';
 import {
   findProjectByCode,
-  accessForProject,
+  accessForProjectOrAdmin,
   listProjectsForUser,
   listProjectsVisibleTo,
   listUsersOnProject,
@@ -137,7 +137,9 @@ export async function handleAdminCommand(
         return { text: formatError(ctx, 'admin.project_not_found', { code }) };
       }
 
-      const access = await accessForProject(ctx.user.id, project.id);
+      // Same rule as the picker and as resolveActiveProject: an account-level
+      // admin reaches an auto-registered project that has no grant row yet.
+      const access = await accessForProjectOrAdmin(ctx.user, project.id);
       if (!access) return { text: formatError(ctx, 'errors.no_project_access') };
 
       await setActiveProject(ctx.user.id, project.id);
