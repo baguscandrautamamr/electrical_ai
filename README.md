@@ -68,9 +68,11 @@ theme (Apple-glass light or dark), stored per user. `/lang en`, `/theme dark`.
 api/                      Vercel serverless functions
   telegram/message.ts       webhook: parse, validate, enqueue, reply
   telegram/callback.ts      result sweeper for late-finishing commands
-  cron/cleanup.ts           archive + timeout sweep (every 6h)
+  cron/cleanup.ts           archive + timeout sweep (daily)
   cron/check-api-expiry.ts  credential expiry notices (daily)
   health.ts                 liveness + queue depth
+.github/workflows/
+  sweep.yml                 15-minute sweeper, stands in for a sub-daily cron
 src/
   parser/                 grammar, Claude NLP fallback, validation, schema
   format/                 bilingual, theme-aware message rendering

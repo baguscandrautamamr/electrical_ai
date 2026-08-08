@@ -1,0 +1,40 @@
+## Frequent queue sweep — the free stand-in for a sub-daily Vercel cron.
+##
+## Vercel's Hobby plan fires each cron once a day, which is fine for archiving
+## but too slow for timeout notices and late results. This hits the sweeper
+## endpoint every 15 minutes instead. Delete this file if the project moves to a
+## Vercel plan that allows frequent crons.
+##
+## Setup: repository Settings -> Secrets and variables -> Actions -> Variables,
+## add DEPLOYMENT_URL = https://<your-deployment>.vercel.app
+##
+## GitHub schedules are best-effort and can lag under load; the daily Vercel
+## cron stays in place as the backstop.
+
+name: Queue sweep
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: queue-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Flush finished results and reclaim stuck commands
+        env:
+          DEPLOYMENT_URL: ${{ vars.DEPLOYMENT_URL }}
+        run: |
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "DEPLOYMENT_URL is not set; skipping." >&2
+            exit 0
+          fi
+          # --fail so a 5xx from the sweeper shows up as a failed run.
+          curl --fail --silent --show-error --max-time 60 \
+            "${DEPLOYMENT_URL%/}/api/telegram/callback?limit=50"
