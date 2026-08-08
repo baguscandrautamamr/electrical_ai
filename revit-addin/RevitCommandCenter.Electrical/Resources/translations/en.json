@@ -34,7 +34,8 @@
     "validation_failed": "Invalid parameters",
     "execution_failed": "Command execution failed",
     "timeout": "Command timed out. Check that the Revit add-in is running.",
-    "credential_expired": "Your API credential has expired. Run /api connect again."
+    "credential_expired": "Your API credential has expired. Run /api connect again.",
+    "your_telegram_id": "Your Telegram ID is {id} — give it to an admin so they can register you."
   },
   "validation": {
     "required": "is required",

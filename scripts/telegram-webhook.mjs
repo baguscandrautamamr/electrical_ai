@@ -9,6 +9,7 @@
  *
  *   npm run webhook:set  -- https://your-deployment.vercel.app
  *   npm run webhook:info
+ *   npm run webhook:menu     (re-publish the command menu on its own)
  *   npm run webhook:delete
  *
  * Reads TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET from the environment or
@@ -58,6 +59,16 @@ async function callTelegram(token, method, body) {
   return payload.result;
 }
 
+/**
+ * Publishes the command menu — the button beside the chat input. Shares
+ * bot-menu.json with the server so the two cannot disagree.
+ */
+async function publishMenu(token) {
+  const commands = JSON.parse(readFileSync(join(ROOT, 'src/services/bot-menu.json'), 'utf8'));
+  await callTelegram(token, 'setMyCommands', { commands });
+  return commands.length;
+}
+
 function describe(info) {
   const lines = [
     ['url', info.url || '(none registered)'],
@@ -96,6 +107,13 @@ async function main() {
     return;
   }
 
+  if (command === 'menu') {
+    const count = await publishMenu(token);
+    console.log(`\n  Command menu published: ${count} entries.`);
+    console.log('  Telegram clients refresh it within a minute or two.\n');
+    return;
+  }
+
   if (command === 'delete') {
     await callTelegram(token, 'deleteWebhook');
     console.log('\n  Webhook removed. The bot will not receive updates until you set it again.\n');
@@ -103,7 +121,7 @@ async function main() {
   }
 
   if (command !== 'set') {
-    fail(`Unknown command "${command}". Use: set <url> | info | delete`);
+    fail(`Unknown command "${command}". Use: set <url> | info | menu | delete`);
   }
 
   const base = (urlArgument ?? process.env.DEPLOYMENT_URL ?? '').trim().replace(/\/+$/, '');
@@ -122,6 +140,8 @@ async function main() {
     ...(secret ? { secret_token: secret } : {}),
   });
 
+  const menu = await publishMenu(token);
+
   const [info, me] = await Promise.all([
     callTelegram(token, 'getWebhookInfo'),
     callTelegram(token, 'getMe'),
@@ -129,6 +149,7 @@ async function main() {
 
   console.log(`\n  Webhook set for @${me.username}\n`);
   console.log(describe(info));
+  console.log(`\n  Command menu: ${menu} entries published.`);
   console.log('\n  The same secret must be set as TELEGRAM_WEBHOOK_SECRET in Vercel,');
   console.log('  and Vercel needs a redeploy after any variable change.');
   console.log(`\n  Now message the bot. If nothing comes back, run: npm run webhook:info\n`);

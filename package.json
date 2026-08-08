@@ -17,6 +17,7 @@
     "sync:i18n": "node scripts/sync-i18n.mjs",
     "webhook:set": "node scripts/telegram-webhook.mjs set",
     "webhook:info": "node scripts/telegram-webhook.mjs info",
+    "webhook:menu": "node scripts/telegram-webhook.mjs menu",
     "webhook:delete": "node scripts/telegram-webhook.mjs delete",
     "check": "npm run typecheck && npm run test"
   },

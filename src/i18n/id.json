@@ -34,7 +34,8 @@
     "validation_failed": "Parameter tidak valid",
     "execution_failed": "Perintah gagal dijalankan",
     "timeout": "Perintah melebihi batas waktu. Pastikan Revit add-in berjalan.",
-    "credential_expired": "Kredensial API sudah kedaluwarsa. Jalankan /api connect lagi."
+    "credential_expired": "Kredensial API sudah kedaluwarsa. Jalankan /api connect lagi.",
+    "your_telegram_id": "ID Telegram Anda {id} — berikan ke admin agar bisa didaftarkan."
   },
   "validation": {
     "required": "wajib diisi",

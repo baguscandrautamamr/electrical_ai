@@ -49,6 +49,13 @@ export interface SendMessageOptions {
   replyToMessageId?: number;
 }
 
+/** One entry in the bot's command menu. Telegram caps description at 256. */
+export interface BotCommand {
+  /** Without the leading slash: lowercase letters, digits and underscores. */
+  command: string;
+  description: string;
+}
+
 export class TelegramClient {
   private readonly base: string;
 
@@ -113,6 +120,21 @@ export class TelegramClient {
       url,
       ...(secretToken ? { secret_token: secretToken } : {}),
       allowed_updates: ['message', 'edited_message'],
+    });
+  }
+
+  /**
+   * Populates the command menu — the button beside the chat input that lists
+   * what the bot understands. Without it a new user faces an empty text box
+   * with no indication that /help exists.
+   *
+   * Telegram scopes menus by language; passing none makes this the default for
+   * every user.
+   */
+  async setMyCommands(commands: BotCommand[], languageCode?: string): Promise<void> {
+    await this.call('setMyCommands', {
+      commands,
+      ...(languageCode ? { language_code: languageCode } : {}),
     });
   }
 }
