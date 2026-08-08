@@ -27,7 +27,9 @@ import {
   roleAtLeast,
   setActiveProject,
   setPreference,
+  type ProjectAccess,
 } from './users.js';
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from '../lib/telegram.js';
 
 export interface AdminContext extends FormatContext {
   user: User;
@@ -38,6 +40,30 @@ export interface AdminReply {
   text: string;
   languageChangedTo?: 'id' | 'en';
   themeChangedTo?: 'light' | 'dark';
+  /** Tappable buttons under the reply. */
+  keyboard?: InlineKeyboardMarkup;
+}
+
+/** Prefix on a project button's callback_data. See handleProjectChoice. */
+export const PROJECT_CALLBACK = 'proj:';
+
+/**
+ * One button per project, two per row.
+ *
+ * The id rather than the code, because callback_data is matched exactly and a
+ * code can be renamed between the message being sent and the button tapped.
+ */
+export function projectKeyboard(projects: ProjectAccess[]): InlineKeyboardMarkup {
+  const buttons = projects.map((entry) => ({
+    text: `${entry.project.code} · ${entry.project.name}`.slice(0, 60),
+    callback_data: `${PROJECT_CALLBACK}${entry.project.id}`,
+  }));
+
+  const rows: InlineKeyboardButton[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) {
+    rows.push(buttons.slice(i, i + 2));
+  }
+  return { inline_keyboard: rows };
 }
 
 function requireProject(
@@ -85,7 +111,11 @@ export async function handleAdminCommand(
           value: `${entry.project.name} · ${entry.role}`,
         })),
       );
-      return { text: b.build() };
+      b.blank().text(t('admin.pick_project'));
+
+      // Buttons rather than "now type /project use <code>": the list is already
+      // on screen, and re-typing a code from it is a step with no purpose.
+      return { text: b.build(), keyboard: projectKeyboard(projects) };
     }
 
     case 'project_use': {

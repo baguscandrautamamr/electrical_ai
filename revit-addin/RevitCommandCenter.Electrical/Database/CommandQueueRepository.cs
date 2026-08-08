@@ -15,17 +15,26 @@ namespace RevitCommandCenter.Electrical.Database;
 public sealed class CommandQueueRepository
 {
     private readonly SupabaseClient _client;
-    private readonly string _projectId;
+
+    /// <summary>
+    /// Project to serve, or null for every project.
+    ///
+    /// Null is the normal case: which project a command belongs to is decided in
+    /// Telegram with /project, so pinning the add-in to one id configured the
+    /// same fact twice. Set it only when two Revit instances each serve a
+    /// different site.
+    /// </summary>
+    private readonly string? _projectId;
     private readonly string _workerId;
     private readonly int _timeoutSeconds;
 
     public CommandQueueRepository(
         SupabaseClient client,
-        string projectId,
+        string? projectId,
         int timeoutSeconds)
     {
         _client = client;
-        _projectId = projectId;
+        _projectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId;
         _timeoutSeconds = timeoutSeconds;
         // Identifies this Revit instance in claimed_by, so a stuck command can
         // be traced back to the machine that took it.
@@ -34,7 +43,10 @@ public sealed class CommandQueueRepository
 
     public string WorkerId => _workerId;
 
-    /// <summary>Claims the oldest pending command, or null when idle.</summary>
+    /// <summary>
+    /// Claims the oldest pending command, across every project unless this
+    /// repository was scoped to one. Null when there is nothing to do.
+    /// </summary>
     public async Task<CommandModel?> ClaimNextAsync(CancellationToken ct = default)
     {
         var rows = await _client.RpcAsync<List<CommandModel>>(
@@ -134,12 +146,17 @@ public sealed class CommandQueueRepository
         await _client.UpsertAsync("cable_trays", new[] { row }, "project_id,tray_id", ct)
             .ConfigureAwait(false);
 
-        var trayId = JsonConvert.DeserializeObject<Dictionary<string, object>>(
-            JsonConvert.SerializeObject(row))?["tray_id"]?.ToString() ?? string.Empty;
+        // Read the identity back off the row we just wrote. Using the configured
+        // project id would find nothing once this instance serves every project.
+        var fields = JsonConvert.DeserializeObject<Dictionary<string, object>>(
+            JsonConvert.SerializeObject(row)) ?? new Dictionary<string, object>();
+        var trayId = fields.TryGetValue("tray_id", out var t) ? t?.ToString() ?? string.Empty : string.Empty;
+        var projectId = fields.TryGetValue("project_id", out var p) ? p?.ToString() ?? string.Empty : string.Empty;
 
         var found = await _client.SelectAsync<Dictionary<string, object>>(
             "cable_trays",
-            $"select=id&project_id=eq.{_projectId}&tray_id=eq.{Uri.EscapeDataString(trayId)}&limit=1",
+            $"select=id&project_id=eq.{Uri.EscapeDataString(projectId)}"
+            + $"&tray_id=eq.{Uri.EscapeDataString(trayId)}&limit=1",
             ct).ConfigureAwait(false);
 
         return found.Count > 0 ? found[0]["id"]?.ToString() ?? string.Empty : string.Empty;

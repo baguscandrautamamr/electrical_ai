@@ -26,10 +26,29 @@ export interface TelegramMessage {
   text?: string;
 }
 
+/** A tappable button under a message. `callback_data` is capped at 64 bytes. */
+export interface InlineKeyboardButton {
+  text: string;
+  callback_data: string;
+}
+
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
+/** Delivered when a user taps an inline button. */
+export interface CallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: CallbackQuery;
 }
 
 export class TelegramError extends Error {
@@ -47,6 +66,7 @@ export interface SendMessageOptions {
   parseMode?: 'MarkdownV2' | 'HTML';
   disableWebPagePreview?: boolean;
   replyToMessageId?: number;
+  replyMarkup?: InlineKeyboardMarkup;
 }
 
 /** One entry in the bot's command menu. Telegram caps description at 256. */
@@ -97,6 +117,7 @@ export class TelegramClient {
       parse_mode: options.parseMode ?? 'HTML',
       disable_web_page_preview: options.disableWebPagePreview ?? true,
       ...(options.replyToMessageId ? { reply_to_message_id: options.replyToMessageId } : {}),
+      ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
     });
   }
 
@@ -112,6 +133,20 @@ export class TelegramClient {
       text,
       parse_mode: options.parseMode ?? 'HTML',
       disable_web_page_preview: options.disableWebPagePreview ?? true,
+      // Always sent: omitting it leaves a stale keyboard under an edited
+      // message, so a tapped picker would stay tappable.
+      reply_markup: options.replyMarkup ?? { inline_keyboard: [] },
+    });
+  }
+
+  /**
+   * Clears the spinner Telegram shows on a tapped button. Required within a few
+   * seconds or the client reports the tap as failed, however well it worked.
+   */
+  async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+    await this.call('answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      ...(text ? { text } : {}),
     });
   }
 
@@ -119,7 +154,9 @@ export class TelegramClient {
     await this.call('setWebhook', {
       url,
       ...(secretToken ? { secret_token: secretToken } : {}),
-      allowed_updates: ['message', 'edited_message'],
+      // callback_query included: the project picker is inline buttons, and a
+      // tap that Telegram is not told to deliver simply never arrives.
+      allowed_updates: ['message', 'edited_message', 'callback_query'],
     });
   }
 

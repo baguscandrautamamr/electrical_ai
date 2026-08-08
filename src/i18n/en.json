@@ -170,7 +170,8 @@
     "theme_set": "Theme changed to",
     "language_set": "Language changed to",
     "no_users": "No users yet.",
-    "no_projects": "No projects yet."
+    "no_projects": "No projects yet.",
+    "pick_project": "Tap a project to make it active for every command you send."
   },
   "help": {
     "title": "AVAILABLE COMMANDS",

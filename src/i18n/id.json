@@ -170,7 +170,8 @@
     "theme_set": "Tema diubah ke",
     "language_set": "Bahasa diubah ke",
     "no_users": "Belum ada pengguna.",
-    "no_projects": "Belum ada proyek."
+    "no_projects": "Belum ada proyek.",
+    "pick_project": "Ketuk sebuah proyek untuk mengaktifkannya bagi semua perintah Anda."
   },
   "help": {
     "title": "PERINTAH TERSEDIA",
