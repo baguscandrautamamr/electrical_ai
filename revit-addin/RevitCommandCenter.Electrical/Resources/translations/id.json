@@ -170,7 +170,8 @@
     "pdf": "PDF",
     "hanger_schedule": "Jadwal Hanger",
     "dwg": "DWG",
-    "ifc": "IFC"
+    "ifc": "IFC",
+    "more_files": "{count} berkas lagi tidak dikirim sebagai file — pakai tautan di atas."
   },
   "load_source": {
     "family": "Electrical data pada family (Revit)",

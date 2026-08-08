@@ -15,7 +15,7 @@ import { telegram } from '../lib/telegram.js';
 import { supabase } from '../lib/supabase.js';
 import { formatExecutionFailure, formatResult, type FormatContext } from '../format/index.js';
 import { findUndeliveredResults, getCommand, markDelivered } from './queue.js';
-import { DEFAULT_LANGUAGE } from '../i18n/index.js';
+import { DEFAULT_LANGUAGE, translator } from '../i18n/index.js';
 import { DEFAULT_THEME } from '../theme/tokens.js';
 import type { CommandResult, QueuedCommand, User } from '../types/index.js';
 
@@ -75,8 +75,65 @@ export async function deliverCommandResult(command: QueuedCommand): Promise<bool
     await telegram().sendMessage(command.chat_id, text);
   }
 
+  await sendGeneratedFiles(command, ctx);
   await archiveCommand(command);
   return true;
+}
+
+/**
+ * How many files one command may put in the chat.
+ *
+ * `/print_pdf all combine=false` on a full drawing set would otherwise post a
+ * hundred documents into a phone. The links are all in the reply above, so the
+ * ones past this are reachable, just not pushed.
+ */
+const MAX_FILES_PER_COMMAND = 10;
+
+/** URLs Telegram can fetch. A Windows path is a link to nowhere from a phone. */
+export function fetchableFiles(result: CommandResult | null): string[] {
+  if (!result) return [];
+
+  const urls =
+    result.kind === 'print'
+      ? (result.files ?? [])
+      : result.kind === 'export'
+        ? Object.values(result.exports ?? {})
+        : [];
+
+  return [...new Set(urls.filter((url): url is string => /^https?:\/\//i.test(url ?? '')))];
+}
+
+/**
+ * Pushes the files a command produced into the chat.
+ *
+ * The reply already links them, but a link is something to tap on a phone and
+ * then find in a browser's downloads; the file itself is what someone asked for
+ * when they said "print E-101". Best effort — a failure here must not cost the
+ * user the result message, which has already been delivered.
+ */
+async function sendGeneratedFiles(command: QueuedCommand, ctx: FormatContext): Promise<void> {
+  if (command.status !== 'completed' || !command.chat_id) return;
+
+  const files = fetchableFiles(command.result_json);
+  if (files.length === 0) return;
+
+  for (const url of files.slice(0, MAX_FILES_PER_COMMAND)) {
+    try {
+      await telegram().sendDocument(command.chat_id, url);
+    } catch (error) {
+      // Telegram refuses a document over 20 MB and one it cannot fetch in
+      // time. Neither is worth failing the command over, and the link in the
+      // reply above still works.
+      console.error('[delivery] sendDocument failed for', url, error);
+    }
+  }
+
+  if (files.length > MAX_FILES_PER_COMMAND) {
+    const remaining = files.length - MAX_FILES_PER_COMMAND;
+    await telegram()
+      .sendMessage(command.chat_id, translator(ctx.language)('export.more_files', { count: remaining }))
+      .catch(() => undefined);
+  }
 }
 
 /** Mirrors a finished command into the audit log. */

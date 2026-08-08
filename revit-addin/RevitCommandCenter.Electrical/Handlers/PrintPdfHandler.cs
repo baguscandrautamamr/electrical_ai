@@ -80,7 +80,7 @@ public sealed class PrintPdfHandler : ICommandHandler
             var result = new PrintResultDto
             {
                 Sheets = matched.Select(sheet => Describe(context, sheet, files, stamp, combine)).ToList(),
-                Files = files.Select(file => ToUrl(context, file)).ToList(),
+                Files = files.Select(context.Share).ToList(),
                 NotFound = unmatched.Count > 0 ? unmatched : null,
             };
 
@@ -111,7 +111,7 @@ public sealed class PrintPdfHandler : ICommandHandler
         if (!combine)
         {
             var own = FileFor(files, sheet, stamp);
-            if (own is not null) file = ToUrl(context, own);
+            if (own is not null) file = context.Share(own);
         }
 
         return new PrintedSheetDto
@@ -269,12 +269,4 @@ public sealed class PrintPdfHandler : ICommandHandler
         string.Join("_", value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))
             .Trim();
 
-    /// <summary>Maps a written file onto a public URL when one is configured.</summary>
-    private static string ToUrl(HandlerContext context, string path)
-    {
-        var baseUrl = context.Config.ExportBaseUrl;
-        if (string.IsNullOrWhiteSpace(baseUrl)) return path;
-
-        return $"{baseUrl.TrimEnd('/')}/{Uri.EscapeDataString(Path.GetFileName(path))}";
-    }
 }

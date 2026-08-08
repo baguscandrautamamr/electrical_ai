@@ -170,7 +170,8 @@
     "pdf": "PDF",
     "hanger_schedule": "Hanger Schedule",
     "dwg": "DWG",
-    "ifc": "IFC"
+    "ifc": "IFC",
+    "more_files": "{count} more file(s) not pushed to the chat — use the links above."
   },
   "load_source": {
     "family": "The family's electrical data in Revit",

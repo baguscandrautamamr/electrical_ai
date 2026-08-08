@@ -39,6 +39,47 @@ public sealed class SupabaseClient : IDisposable
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
+    /// <summary>
+    /// Puts a file into Supabase Storage, replacing whatever was there.
+    ///
+    /// Storage is how a file written on the machine running Revit reaches a
+    /// phone. Telegram will fetch a document from a URL but cannot see a path
+    /// on someone's C: drive, and the export folder is not on the internet.
+    /// </summary>
+    public async Task UploadAsync(
+        string bucket,
+        string key,
+        byte[] bytes,
+        string contentType,
+        CancellationToken ct = default)
+    {
+        var path = $"{_baseUrl}/storage/v1/object/{Uri.EscapeDataString(bucket)}/{EscapeKey(key)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Content = new ByteArrayContent(bytes);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        // Without this an export run twice in one day fails on the second file
+        // rather than replacing the first.
+        request.Headers.Add("x-upsert", "true");
+
+        await SendAsync(request, $"Upload {bucket}/{key}", ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Where a stored object can be read from, for a public bucket.
+    ///
+    /// Composed rather than asked for, so a handler can put the link in its
+    /// reply before the upload has actually happened — the poller performs the
+    /// upload before it reports the result, so the link works by the time
+    /// anyone sees it.
+    /// </summary>
+    public string PublicUrl(string bucket, string key) =>
+        $"{_baseUrl}/storage/v1/object/public/{Uri.EscapeDataString(bucket)}/{EscapeKey(key)}";
+
+    /// <summary>Escapes each path segment, leaving the slashes between them.</summary>
+    private static string EscapeKey(string key) =>
+        string.Join("/", key.Split('/').Select(Uri.EscapeDataString));
+
     private static StringContent JsonBody(object payload) =>
         new(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
