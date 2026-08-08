@@ -1,22 +1,78 @@
 [
-  { "command": "help", "description": "Daftar semua perintah / list every command" },
-  { "command": "status", "description": "Status antrean perintah Anda / your command queue" },
-  { "command": "health", "description": "Kesehatan sistem / system health" },
-  { "command": "project", "description": "list | use <kode> — pilih proyek aktif / active project" },
-  { "command": "user", "description": "list — pengguna proyek / project users" },
-  { "command": "api", "description": "connect | status | disconnect — kredensial API" },
-  { "command": "lang", "description": "id | en — ganti bahasa / switch language" },
-  { "command": "theme", "description": "light | dark — ganti tema / switch theme" },
-
-  { "command": "place_lighting", "description": "Pasang lampu, hitung beban dan sirkuit / auto-place light fixtures" },
-  { "command": "place_receptacle", "description": "Pasang stopkontak sepanjang dinding / auto-place outlets" },
-  { "command": "create_cable_tray", "description": "Buat cable tray + hanger gap-fill / route a cable tray" },
-  { "command": "add_hangers", "description": "Tambah hanger pada tray yang ada / fill hanger gaps" },
-  { "command": "place_fire_alarm", "description": "Detektor sesuai NFPA 72 / NFPA 72 compliant detectors" },
-  { "command": "place_telephone", "description": "Jack telepon + rute ke riser / telephone jacks" },
-  { "command": "place_lan", "description": "Jack jaringan, port switch, budget PoE / network jacks" },
-  { "command": "place_security", "description": "Kamera/sensor + cakupan / cameras and coverage" },
-  { "command": "place_communication", "description": "Speaker/antena + radius cakupan / speakers and antennas" },
-  { "command": "equip_room", "description": "Sekali jalan: 8 kategori perangkat / all device categories" },
-  { "command": "export", "description": "Buat jadwal dan laporan / generate schedules and reports" }
+  {
+    "command": "help",
+    "description": "Daftar semua perintah / list every command"
+  },
+  {
+    "command": "status",
+    "description": "Status antrean perintah Anda / your command queue"
+  },
+  {
+    "command": "health",
+    "description": "Kesehatan sistem / system health"
+  },
+  {
+    "command": "project",
+    "description": "list | use <kode> — pilih proyek aktif / active project"
+  },
+  {
+    "command": "user",
+    "description": "list | add <id> <nama> [peran] | role | remove — kelola pengguna"
+  },
+  {
+    "command": "api",
+    "description": "connect | status | disconnect — kredensial API"
+  },
+  {
+    "command": "lang",
+    "description": "id | en — ganti bahasa / switch language"
+  },
+  {
+    "command": "theme",
+    "description": "light | dark — ganti tema / switch theme"
+  },
+  {
+    "command": "place_lighting",
+    "description": "Pasang lampu, hitung beban dan sirkuit / auto-place light fixtures"
+  },
+  {
+    "command": "place_receptacle",
+    "description": "Pasang stopkontak sepanjang dinding / auto-place outlets"
+  },
+  {
+    "command": "create_cable_tray",
+    "description": "Buat cable tray + hanger gap-fill / route a cable tray"
+  },
+  {
+    "command": "add_hangers",
+    "description": "Tambah hanger pada tray yang ada / fill hanger gaps"
+  },
+  {
+    "command": "place_fire_alarm",
+    "description": "Detektor sesuai NFPA 72 / NFPA 72 compliant detectors"
+  },
+  {
+    "command": "place_telephone",
+    "description": "Jack telepon + rute ke riser / telephone jacks"
+  },
+  {
+    "command": "place_lan",
+    "description": "Jack jaringan, port switch, budget PoE / network jacks"
+  },
+  {
+    "command": "place_security",
+    "description": "Kamera/sensor + cakupan / cameras and coverage"
+  },
+  {
+    "command": "place_communication",
+    "description": "Speaker/antena + radius cakupan / speakers and antennas"
+  },
+  {
+    "command": "equip_room",
+    "description": "Sekali jalan: 8 kategori perangkat / all device categories"
+  },
+  {
+    "command": "export",
+    "description": "Buat jadwal dan laporan / generate schedules and reports"
+  }
 ]

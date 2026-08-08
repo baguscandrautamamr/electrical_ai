@@ -57,6 +57,42 @@ export async function accessForProject(
   return { project: grant.projects, role: grant.role };
 }
 
+/**
+ * Projects the user may work on.
+ *
+ * An account-level admin sees every project, including ones the Revit add-in
+ * registered on its own when a model was opened. Those arrive with no access
+ * rows — requiring a grant first would mean the model you just opened does not
+ * appear in /project, which is exactly the thing auto-registration is for.
+ */
+export async function listProjectsVisibleTo(user: User): Promise<ProjectAccess[]> {
+  if (user.role !== 'admin') return listProjectsForUser(user.id);
+
+  const [granted, all] = await Promise.all([
+    listProjectsForUser(user.id),
+    supabase().select<Project>('projects', { order: { column: 'name', ascending: true }, limit: 200 }),
+  ]);
+
+  const roles = new Map(granted.map((entry) => [entry.project.id, entry.role]));
+  return all.map((project) => ({ project, role: roles.get(project.id) ?? 'admin' }));
+}
+
+/**
+ * Like accessForProject, but an account-level admin implicitly has access to
+ * every project — otherwise a tap on an auto-registered project is refused.
+ */
+export async function accessForProjectOrAdmin(
+  user: User,
+  projectId: string,
+): Promise<ProjectAccess | null> {
+  const granted = await accessForProject(user.id, projectId);
+  if (granted) return granted;
+  if (user.role !== 'admin') return null;
+
+  const project = await supabase().selectOne<Project>('projects', { eq: { id: projectId } });
+  return project ? { project, role: 'admin' } : null;
+}
+
 export async function listProjectsForUser(userId: string): Promise<ProjectAccess[]> {
   const rows = await supabase().select<{ role: Role; projects: Project | null }>(
     'user_project_access',

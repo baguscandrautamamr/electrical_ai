@@ -22,7 +22,7 @@ import { handleAdminCommand, PROJECT_CALLBACK } from '../../src/services/admin.j
 import { attachAckMessage, enqueueCommand } from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
 import {
-  accessForProject,
+  accessForProjectOrAdmin,
   findUserByTelegramId,
   resolveActiveProject,
   roleAtLeast,
@@ -82,7 +82,7 @@ async function handleCallbackQuery(query: CallbackQuery): Promise<Response> {
 
   // A button from an old message can name a project whose access has since been
   // revoked, so re-check it rather than trusting the payload.
-  const access = await accessForProject(user.id, projectId);
+  const access = await accessForProjectOrAdmin(user, projectId);
   if (!access) {
     await done();
     await telegram().sendMessage(chatId, formatError(ctx, 'errors.no_project_access'));
@@ -183,8 +183,14 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (outcome.kind === 'unparsed') {
-    const key =
-      outcome.reason === 'unknown_command' ? 'errors.unknown_command' : 'errors.parse_failed';
+    // One message for three causes used to make an unset API key look identical
+    // to a phrasing Claude was unsure about — and only one of those is fixable
+    // by the person reading it.
+    const key = {
+      unknown_command: 'errors.unknown_command',
+      nlp_unavailable: 'errors.nlp_unavailable',
+      low_confidence: 'errors.low_confidence',
+    }[outcome.reason];
     await telegram().sendMessage(
       chatId,
       formatError(ctx, key, { command: text.split(/\s+/)[0] ?? text }),

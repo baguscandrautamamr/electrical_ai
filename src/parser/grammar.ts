@@ -102,6 +102,9 @@ export function parseAdmin(text: string): AdminParse | null {
       if (sub === 'disconnect') return { type: 'api_disconnect', args: [] };
       return { type: 'api_status', args: [] };
     case 'user':
+      if (sub === 'add') return { type: 'user_add', args: rest.slice(1) };
+      if (sub === 'remove' || sub === 'delete') return { type: 'user_remove', args: rest.slice(1) };
+      if (sub === 'role') return { type: 'user_role', args: rest.slice(1) };
       if (sub === 'list') return { type: 'user_list', args: rest.slice(1) };
       return { type: 'user_list', args: [] };
     case 'project':

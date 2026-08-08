@@ -19,9 +19,18 @@ import {
 } from './credentials.js';
 import { queueStats } from './queue.js';
 import {
+  addMember,
+  findMemberByTelegramId,
+  isAssignableRole,
+  parseTelegramId,
+  removeMember,
+  setMemberRole,
+} from './membership.js';
+import {
   findProjectByCode,
   accessForProject,
   listProjectsForUser,
+  listProjectsVisibleTo,
   listUsersOnProject,
   resolveActiveProject,
   roleAtLeast,
@@ -96,7 +105,7 @@ export async function handleAdminCommand(
 
     // ------------------------------------------------------------- projects
     case 'project_list': {
-      const projects = await listProjectsForUser(ctx.user.id);
+      const projects = await listProjectsVisibleTo(ctx.user);
       const b = new MessageBuilder(ctx.theme);
       b.title('📁', t('admin.project_list'));
 
@@ -246,6 +255,101 @@ export async function handleAdminCommand(
     }
 
     // ----------------------------------------------------------------- users
+    // --------------------------------------------------------- user management
+    case 'user_add':
+    case 'user_role': {
+      const access = await resolveActiveProject(ctx.user);
+      const missing = requireProject(ctx, access);
+      if (missing) return missing;
+
+      if (!roleAtLeast(access!.role, 'admin')) {
+        return {
+          text: formatError(ctx, 'errors.insufficient_role', {
+            required: 'admin',
+            actual: access!.role,
+          }),
+        };
+      }
+
+      const [rawId, ...rest] = admin.args;
+      const telegramId = rawId ? parseTelegramId(rawId) : null;
+      if (telegramId === null) {
+        return { text: formatError(ctx, 'errors.bad_telegram_id') };
+      }
+
+      // Trailing role if it is one, otherwise everything is the name.
+      const last = rest[rest.length - 1]?.toLowerCase();
+      const role: Role = last && isAssignableRole(last) ? last : 'editor';
+      const nameParts = last && isAssignableRole(last) ? rest.slice(0, -1) : rest;
+      const fullName = nameParts.join(' ').trim();
+
+      if (admin.type === 'user_role') {
+        const target = await findMemberByTelegramId(telegramId);
+        if (!target) return { text: formatError(ctx, 'errors.user_not_found') };
+        await setMemberRole(target.id, access!.project.id, role);
+
+        const b = new MessageBuilder(ctx.theme);
+        b.title(t('common.success'), t('admin.user_role_set'));
+        b.tree([
+          { label: target.full_name, value: String(telegramId) },
+          { label: t('admin.role'), value: role },
+          { label: t('admin.project'), value: access!.project.code },
+        ]);
+        return { text: b.build() };
+      }
+
+      if (fullName.length === 0) {
+        return { text: formatError(ctx, 'errors.usage_user_add') };
+      }
+
+      const change = await addMember(telegramId, fullName, access!.project.id, role);
+      const b = new MessageBuilder(ctx.theme);
+      b.title(t('common.success'), change.created ? t('admin.user_added') : t('admin.user_granted'));
+      b.tree([
+        { label: change.user.full_name, value: String(telegramId) },
+        { label: t('admin.role'), value: role },
+        { label: t('admin.project'), value: access!.project.code },
+      ]);
+      b.blank().text(t('admin.user_added_hint'));
+      return { text: b.build() };
+    }
+
+    case 'user_remove': {
+      const access = await resolveActiveProject(ctx.user);
+      const missing = requireProject(ctx, access);
+      if (missing) return missing;
+
+      if (!roleAtLeast(access!.role, 'admin')) {
+        return {
+          text: formatError(ctx, 'errors.insufficient_role', {
+            required: 'admin',
+            actual: access!.role,
+          }),
+        };
+      }
+
+      const telegramId = admin.args[0] ? parseTelegramId(admin.args[0]) : null;
+      if (telegramId === null) return { text: formatError(ctx, 'errors.bad_telegram_id') };
+
+      // Removing yourself would leave a project with no admin and no way back.
+      if (telegramId === ctx.user.telegram_user_id) {
+        return { text: formatError(ctx, 'errors.cannot_remove_self') };
+      }
+
+      const target = await findMemberByTelegramId(telegramId);
+      if (!target) return { text: formatError(ctx, 'errors.user_not_found') };
+
+      await removeMember(target.id, access!.project.id);
+
+      const b = new MessageBuilder(ctx.theme);
+      b.title(t('common.success'), t('admin.user_removed'));
+      b.tree([
+        { label: target.full_name, value: String(telegramId) },
+        { label: t('admin.project'), value: access!.project.code },
+      ]);
+      return { text: b.build() };
+    }
+
     case 'user_list': {
       const access = await resolveActiveProject(ctx.user);
       const missing = requireProject(ctx, access);

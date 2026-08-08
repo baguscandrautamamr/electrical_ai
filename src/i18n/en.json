@@ -35,7 +35,13 @@
     "execution_failed": "Command execution failed",
     "timeout": "Command timed out. Check that the Revit add-in is running.",
     "credential_expired": "Your API credential has expired. Run /api connect again.",
-    "your_telegram_id": "Your Telegram ID is {id} — give it to an admin so they can register you."
+    "your_telegram_id": "Your Telegram ID is {id} — give it to an admin so they can register you.",
+    "nlp_unavailable": "Plain-language messages are off: ANTHROPIC_API_KEY is not set on the server. Slash commands still work — see /help.",
+    "low_confidence": "I understood that as a device command but was not sure enough to run it. Rephrase it, or use the exact form from /help.",
+    "bad_telegram_id": "That is not a Telegram id. It is a number — the bot tells anyone their own when they message it.",
+    "usage_user_add": "Usage: /user add <telegram_id> <name> [viewer|editor|admin]",
+    "user_not_found": "No user with that Telegram id. They must message the bot once first.",
+    "cannot_remove_self": "You cannot remove yourself — that would leave the project without you as admin."
   },
   "validation": {
     "required": "is required",
@@ -171,7 +177,14 @@
     "language_set": "Language changed to",
     "no_users": "No users yet.",
     "no_projects": "No projects yet.",
-    "pick_project": "Tap a project to make it active for every command you send."
+    "pick_project": "Tap a project to make it active for every command you send.",
+    "user_added": "User registered",
+    "user_granted": "Access granted",
+    "user_removed": "Access revoked",
+    "user_role_set": "Role updated",
+    "user_added_hint": "They can use the bot now. Ask them to send /start.",
+    "role": "Role",
+    "project": "Project"
   },
   "help": {
     "title": "AVAILABLE COMMANDS",
