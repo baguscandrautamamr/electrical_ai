@@ -110,8 +110,20 @@ errors. CI fails the build if any slip through.
 
 ## Configure
 
-On first run the add-in writes a template to
-`%APPDATA%\RevitCommandCenter\config.json`. Fill it in:
+Press **Settings** on the Command Center ribbon. Enter the Supabase project URL
+and `service_role` key — both from the Supabase dashboard under Project Settings
+→ API — then press **Test connection and load projects**. It reports what
+Supabase actually said if something is wrong, and on success fills the project
+dropdown from your `projects` table so you pick one by code and name rather than
+pasting a UUID. Save, then press **Connect**.
+
+If the project list comes back empty, the database has no projects yet: run
+[`supabase/seed_first_user.sql`](../supabase/seed_first_user.sql) first.
+
+### The file behind the dialog
+
+Settings are stored in `%APPDATA%\RevitCommandCenter\config.json`, which you can
+still edit by hand. On first run the add-in writes this template:
 
 ```json
 {
