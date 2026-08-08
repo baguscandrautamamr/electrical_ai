@@ -7,6 +7,10 @@ using iText.Layout.Borders;
 using iText.Layout.Element;
 using iText.Layout.Properties;
 
+// iText.Kernel.Geom also defines a Path, so the unqualified name is ambiguous
+// in this file alone. The geometry one is never used here.
+using Path = System.IO.Path;
+
 namespace RevitCommandCenter.Electrical.Utils;
 
 /// <summary>
