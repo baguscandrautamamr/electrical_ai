@@ -169,7 +169,7 @@ The reply tells you which of these you have:
 | --- | --- | --- |
 | "Bahasa bebas sedang mati / Plain-language messages are off" | `ANTHROPIC_API_KEY` is not set on the deployment | Add it in Vercel → Settings → Environment Variables, then **redeploy** — env changes do not reach the running deployment on their own |
 | "Panggilan ke Claude API gagal / The Claude API call failed" + a code block | The key exists but the call was rejected. The code block is the API's own message | `401 authentication_error` → wrong or revoked key (check for a pasted newline). `400 invalid_request_error … credit balance` → top up at console.anthropic.com. `404 not_found_error` → the account cannot use `ANTHROPIC_MODEL`; unset it to fall back to `claude-opus-5`, or set one it can use. `429` → rate limited, retry |
-| "Kalimatnya saya mengerti, tapi bukan perintah Revit / not a Revit command" | The key works. The sentence asked for something the bot does not do — every command **places or modifies** elements; there is no read/query command | See `/help` |
+| "Kalimatnya saya mengerti, tapi bukan perintah Revit / not a Revit command" | The key works. The sentence asked for something outside what the bot does — placing or modifying elements, or reading them back with `/query` | See `/help` |
 | "belum cukup yakin / not sure enough to run it" | Parsed below the 0.55 confidence floor and rejected rather than guessed at | Rephrase, or use the exact form from `/help` |
 
 Other notes:

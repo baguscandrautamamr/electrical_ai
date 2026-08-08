@@ -294,6 +294,41 @@ describe('command specs', () => {
     }
   });
 
+  it('lets a viewer read the model but not change it', () => {
+    // The read-only command is the only one a viewer may run; everything else
+    // writes to the drawing.
+    expect(COMMAND_SPECS.query!.role).toBe('viewer');
+
+    const writers = Object.values(COMMAND_SPECS)
+      .filter((spec) => spec.name !== 'query' && spec.name !== 'export')
+      .filter((spec) => spec.role === 'viewer');
+
+    expect(writers.map((spec) => spec.name)).toEqual([]);
+  });
+
+  it('accepts the shorthands people actually type for a query', () => {
+    // "type" and "category" are what a natural-language parse tends to emit
+    // for the thing being counted.
+    for (const form of [
+      '/query Office_A what=lighting',
+      '/query Office_A type=lighting',
+      '/query Office_A category=lighting',
+    ]) {
+      const parsed = parseGrammar(form)!;
+      expect(parsed.type).toBe('query');
+      expect(parsed.subject).toBe('Office_A');
+      expect(parsed.params.what).toBe('lighting');
+    }
+  });
+
+  it('lets a query omit the room and search the whole model', () => {
+    const outcome = validateParams(COMMAND_SPECS.query!, null, { what: 'hanger' });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.room).toBeUndefined();
+    expect(outcome.normalized.detail).toBe('summary');
+  });
+
   it('keys every spec by its own name', () => {
     for (const [key, spec] of Object.entries(COMMAND_SPECS)) {
       expect(spec.name).toBe(key);

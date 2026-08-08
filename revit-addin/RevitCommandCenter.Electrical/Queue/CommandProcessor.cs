@@ -28,6 +28,7 @@ public sealed class CommandProcessor
             new SecurityHandler(),
             new CommunicationHandler(),
             new ExportHandler(),
+            new QueryHandler(),
         };
 
         _handlers = handlers.ToDictionary(

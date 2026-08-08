@@ -136,6 +136,47 @@ public sealed class ExportResultDto
     [JsonProperty("exports")] public ExportLinksDto Exports { get; set; } = new();
 }
 
+/// <summary>One counted category in a query result.</summary>
+public sealed class QueryGroupDto
+{
+    [JsonProperty("label")] public string Label { get; set; } = string.Empty;
+    [JsonProperty("count")] public int Count { get; set; }
+
+    [JsonProperty("detail", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Detail { get; set; }
+}
+
+/// <summary>One named element, when the user asked to see them listed.</summary>
+public sealed class QueryItemDto
+{
+    [JsonProperty("id")] public string Id { get; set; } = string.Empty;
+    [JsonProperty("label")] public string Label { get; set; } = string.Empty;
+
+    [JsonProperty("detail", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Detail { get; set; }
+}
+
+/// <summary>Matches the TypeScript <c>QueryResult</c>.</summary>
+public sealed class QueryResultDto
+{
+    [JsonProperty("kind")] public string Kind => "query";
+    [JsonProperty("what")] public string What { get; set; } = "all";
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("room_matched")] public bool RoomMatched { get; set; } = true;
+    [JsonProperty("level")] public string? Level { get; set; }
+    [JsonProperty("total")] public int Total { get; set; }
+    [JsonProperty("groups")] public List<QueryGroupDto> Groups { get; set; } = new();
+
+    [JsonProperty("items", NullValueHandling = NullValueHandling.Ignore)]
+    public List<QueryItemDto>? Items { get; set; }
+
+    [JsonProperty("items_omitted", NullValueHandling = NullValueHandling.Ignore)]
+    public int? ItemsOmitted { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}
+
 /// <summary>Geometry of one straight run of tray, in millimetres.</summary>
 public sealed class TraySegment
 {

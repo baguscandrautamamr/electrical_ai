@@ -14,6 +14,7 @@ import type {
   CableTrayResult,
   EquipRoomResult,
   PlacementResult,
+  QueryResult,
   ValidationIssue,
 } from '../src/types/index.js';
 
@@ -184,6 +185,99 @@ describe('equip_room formatting', () => {
     expect(text).toContain('ROOM EQUIPPED');
     expect(text).toContain('Lighting: 12 units');
     expect(text).toContain('CT-A1');
+  });
+});
+
+describe('query formatting', () => {
+  const base: QueryResult = {
+    kind: 'query',
+    what: 'all',
+    room: 'Office_A',
+    level: null,
+    total: 16,
+    groups: [
+      { label: 'lighting.title', count: 12, detail: '180 W' },
+      { label: 'receptacle.title', count: 4 },
+    ],
+  };
+
+  it('states the scope before the counts', () => {
+    const text = formatResult(base, EN);
+
+    expect(text).toContain('MODEL QUERY');
+    expect(text).toContain('Scope: Office_A');
+    expect(text).toContain('Total: 16 units');
+    expect(text).toContain('Lighting: 12 · 180 W');
+    expect(text).toContain('Receptacles: 4');
+  });
+
+  it('translates group labels and renders in Indonesian', () => {
+    const text = formatResult(base, ID);
+
+    expect(text).toContain('HASIL BACA MODEL');
+    expect(text).toContain('Lampu: 12 · 180 W');
+    expect(text).toContain('Stop Kontak: 4');
+  });
+
+  it('says the whole model was searched when no room was given', () => {
+    const text = formatResult({ ...base, room: null }, EN);
+    expect(text).toContain('Scope: whole model');
+  });
+
+  it('does not report an unknown room as an empty one', () => {
+    // "0 lights in Office_Z" reads as "that room is empty", which is a
+    // different — and wrong — answer from "there is no such room".
+    const text = formatResult(
+      { ...base, room: 'Office_Z', room_matched: false, total: 0, groups: [] },
+      EN,
+    );
+
+    expect(text).toContain('Scope: whole model');
+    expect(text).toContain('Room "Office_Z" not found');
+  });
+
+  it('lists items and admits how many it left out', () => {
+    const text = formatResult(
+      {
+        ...base,
+        what: 'lighting',
+        total: 12,
+        groups: [{ label: 'lighting.title', count: 12 }],
+        items: [
+          { id: 'LF-001', label: 'LED_15W', detail: 'Level 1' },
+          { id: 'LF-002', label: 'LED_15W', detail: 'Level 1' },
+        ],
+        items_omitted: 10,
+      },
+      EN,
+    );
+
+    expect(text).toContain('LF-001 — LED_15W (Level 1)');
+    expect(text).toContain('+10 more not shown.');
+  });
+
+  it('says so plainly when nothing matched', () => {
+    const text = formatResult({ ...base, total: 0, groups: [] }, EN);
+    expect(text).toContain('Nothing in the model matches that.');
+  });
+
+  it('escapes element names that came from the model', () => {
+    const text = formatResult(
+      {
+        ...base,
+        items: [{ id: '<b>1</b>', label: '<script>x</script>' }],
+      },
+      EN,
+    );
+
+    expect(text).not.toContain('<script>');
+    expect(text).toContain('&lt;script&gt;');
+  });
+
+  it('leaves no translation key unresolved', () => {
+    for (const ctx of [ID, EN]) {
+      expect(formatResult(base, ctx)).not.toMatch(/query\.[a-z_]+/);
+    }
   });
 });
 

@@ -56,6 +56,24 @@ describe('natural language parsing', () => {
     expect(outcome.command.params.lux_target).toBe('300');
   });
 
+  it('routes a question about the model to the query command', async () => {
+    stubClient(() =>
+      reply({
+        command_type: 'query',
+        subject: 'Office_A',
+        params: { what: 'lighting' },
+        confidence: 0.9,
+      }),
+    );
+
+    const outcome = await parseMessage('ada berapa lampu di Office_A?');
+    expect(outcome.kind).toBe('device');
+    if (outcome.kind !== 'device') return;
+    expect(outcome.command.type).toBe('query');
+    expect(outcome.command.subject).toBe('Office_A');
+    expect(outcome.command.params.what).toBe('lighting');
+  });
+
   it('reports a sentence Claude understood but that is not a device command', async () => {
     stubClient(() => reply({ command_type: 'unknown', subject: null, params: {}, confidence: 0.9 }));
 

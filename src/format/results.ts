@@ -13,6 +13,7 @@ import type {
   ExportResult,
   Language,
   PlacementResult,
+  QueryResult,
   Theme,
 } from '../types/index.js';
 
@@ -241,6 +242,67 @@ export function formatExport(result: ExportResult, ctx: FormatContext): string {
   return b.build();
 }
 
+// ---------------------------------------------------------------------------
+// Read-only query
+// ---------------------------------------------------------------------------
+
+export function formatQuery(result: QueryResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title('🔎', t('query.title'));
+
+  // A room the model does not have would otherwise be answered with a
+  // confident "0", which reads as "the room is empty" rather than "no such room".
+  const roomMissing = result.room !== null && result.room_matched === false;
+
+  // Say what was searched before saying what was found: a count means nothing
+  // without knowing whether it covered one room or the whole model.
+  const scope: Row[] = [
+    {
+      label: t('query.scope'),
+      value: roomMissing || !result.room ? t('query.whole_model') : result.room,
+    },
+  ];
+  if (result.level) scope.push({ label: t('query.level'), value: result.level });
+  scope.push({ label: t('common.total'), value: `${result.total} ${t('common.units')}` });
+  b.tree(scope);
+
+  if (result.total === 0) {
+    b.blank().text(t('query.empty'));
+  } else if (result.groups.length > 0) {
+    b.section(t('query.breakdown'));
+    b.tree(
+      result.groups.map((group) => ({
+        // Group labels follow the same rule as compliance labels: an i18n key
+        // when it contains a dot, otherwise literal text from the model.
+        label: group.label.includes('.') ? t(group.label) : group.label,
+        value: group.detail ? `${group.count} · ${group.detail}` : String(group.count),
+      })),
+    );
+  }
+
+  const items = result.items ?? [];
+  if (items.length > 0) {
+    b.section(t('query.items'));
+    b.bullets(
+      items.map((item) => {
+        const head = item.id ? `${item.id} — ${item.label}` : item.label;
+        return item.detail ? `${head} (${item.detail})` : head;
+      }),
+    );
+    if (result.items_omitted && result.items_omitted > 0) {
+      b.text(t('query.more', { count: result.items_omitted }));
+    }
+  }
+
+  const notes = [...(result.notes ?? [])].map((note) => (note.includes('.') ? t(note) : note));
+  if (roomMissing) notes.unshift(t('query.room_not_found', { room: result.room! }));
+  if (notes.length > 0) b.blank().bullets(notes);
+
+  return b.build();
+}
+
 /** Dispatches on `result.kind`. */
 export function formatResult(result: CommandResult, ctx: FormatContext): string {
   switch (result.kind) {
@@ -250,6 +312,8 @@ export function formatResult(result: CommandResult, ctx: FormatContext): string 
       return formatEquipRoom(result, ctx);
     case 'export':
       return formatExport(result, ctx);
+    case 'query':
+      return formatQuery(result, ctx);
     default:
       return formatPlacement(result, ctx);
   }

@@ -56,6 +56,20 @@
     "bad_date": "bad date format, use YYYY-MM-DD",
     "date_in_past": "must be a future date"
   },
+  "query": {
+    "title": "MODEL QUERY",
+    "scope": "Scope",
+    "whole_model": "whole model",
+    "level": "Level",
+    "breakdown": "Breakdown",
+    "items": "Items",
+    "empty": "Nothing in the model matches that.",
+    "more": "+{count} more not shown.",
+    "hangers": "Hangers",
+    "panels": "Panels",
+    "rooms": "Rooms",
+    "room_not_found": "Room \"{room}\" not found; counted the whole model instead."
+  },
   "lighting": {
     "title": "Lighting",
     "created": "LIGHTING PLACED",
