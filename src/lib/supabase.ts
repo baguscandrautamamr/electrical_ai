@@ -17,7 +17,10 @@ export class SupabaseError extends Error {
     readonly status: number,
     readonly body: string,
   ) {
-    super(message);
+    // PostgREST puts the actual reason in the body ("invalid input syntax for
+    // type timestamp", "column does not exist"). Without it the message is
+    // just "HTTP 400", which says something broke but never what.
+    super(body ? `${message}: ${body.slice(0, 300)}` : message);
     this.name = 'SupabaseError';
   }
 }
@@ -29,7 +32,10 @@ export interface SelectOptions {
   columns?: string;
   /** Equality filters, ANDed together. */
   eq?: Record<string, Primitive>;
-  /** Raw PostgREST filter clauses, e.g. `['status=in.(a,b)']`. */
+  /**
+   * PostgREST filter clauses as `column=operator.value`, e.g.
+   * `['status=in.(a,b)']`. The value is URL-encoded for you — write it plain.
+   */
   filters?: string[];
   order?: { column: string; ascending?: boolean };
   limit?: number;
@@ -49,9 +55,20 @@ function buildQuery(options: SelectOptions): string {
   }
   if (options.limit !== undefined) params.set('limit', String(options.limit));
 
-  const extra = (options.filters ?? []).join('&');
-  const base = params.toString();
-  return extra ? `${base}&${extra}` : base;
+  // Filters go through URLSearchParams too rather than being concatenated raw.
+  // A timestamp straight out of Postgres ends "+00:00", and a raw '+' in a
+  // query string is decoded as a space — the server then sees
+  // "lte.2026-01-01T00:00:00 00:00" and rejects the whole request as a bad
+  // timestamp. `append`, not `set`: two clauses may bracket the same column.
+  for (const clause of options.filters ?? []) {
+    const separator = clause.indexOf('=');
+    if (separator <= 0) {
+      throw new Error(`Malformed PostgREST filter (expected column=op.value): ${clause}`);
+    }
+    params.append(clause.slice(0, separator), clause.slice(separator + 1));
+  }
+
+  return params.toString();
 }
 
 export class SupabaseClient {
