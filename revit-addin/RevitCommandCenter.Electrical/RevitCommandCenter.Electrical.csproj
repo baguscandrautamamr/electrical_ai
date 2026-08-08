@@ -57,6 +57,16 @@
     </Reference>
   </ItemGroup>
 
+  <!-- ImplicitUsings drops System.IO and System.Net.Http in WPF and WinForms
+       projects, because System.Windows.Shapes.Path would collide with
+       System.IO.Path. This code assumes both are available, and nothing here
+       imports System.Windows.Shapes — the few WPF types used are fully
+       qualified — so put them back rather than repeat the using in ten files. -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- Non-commercial licence; switch to a commercial licence before shipping. -->

@@ -137,9 +137,12 @@ Commands are drained one at a time. Concurrent transactions on one `Document`
 are not permitted anyway, so a second command arriving while one is in flight is
 left on the queue for the next poll.
 
-## First build
+## First run in Revit
 
-Likely places to need a fix, in rough order of probability:
+The project compiles against the Revit 2025 API in CI, so the signatures below
+resolve. What CI cannot check is behaviour: whether a call does the right thing
+to a real model. These are the places most likely to need attention the first
+time you actually run it, in rough order of probability:
 
 - **`CableTray.Create` signature.** Verify the overload against your Revit 2025
   API reference; the tray-creation call in `CableTrayHandler` is the most
