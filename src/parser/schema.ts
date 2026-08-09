@@ -308,11 +308,31 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     name: 'add_hangers',
     aliases: ['pasang_hanger', 'tambah_hanger'],
     role: 'editor',
-    describe: 'Add hangers to an existing tray, filling only the gaps.',
-    example: '/add_hangers CT-A1 spacing=1500 preserve_existing=true',
-    subject: { name: 'tray_id', required: true, describe: 'Existing tray identifier' },
+    describe: 'Hang cable tray — one run, one type, or every run in the model. Fills only the gaps.',
+    example: '/add_hangers spacing=1500',
+    subject: {
+      name: 'tray_id',
+      required: false,
+      /**
+       * Optional because "pasang hanger di cable tray" names nothing: the
+       * engineer means the tray in this model, all of it. A mark picks one run,
+       * a type name like "ladder" picks a kind of run.
+       */
+      describe: 'Tray mark or type name; omit to hang every cable tray in the model',
+    },
     params: {
       spacing: { kind: 'number', default: 1500, min: 100, max: 6000, describe: 'Hanger spacing (mm)', aliases: ['hanger_spacing'] },
+      /**
+       * "pasang" fills the gaps and leaves what is there; "modifikasi" sets them
+       * out again from nothing. Two different intentions that would otherwise
+       * need the same command run with a flag nobody would remember.
+       */
+      mode: {
+        kind: 'enum',
+        values: ['fill', 'replace'],
+        default: 'fill',
+        describe: 'fill keeps existing hangers and fills gaps; replace clears them and sets out again',
+      },
       preserve_existing: { kind: 'boolean', default: true, describe: 'Keep hangers already in the model' },
       hanger_family: { kind: 'string', default: 'Hanger', describe: 'Hanger family name in Revit' },
     },

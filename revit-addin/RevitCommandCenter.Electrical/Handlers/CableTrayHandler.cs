@@ -601,42 +601,142 @@ public sealed class CableTrayHandler : ICommandHandler
 /// Adds hangers to a tray that already exists, filling only the gaps.
 /// Same engine as <see cref="CableTrayHandler"/>, no routing.
 /// </summary>
+/// <summary>
+/// Hangs cable tray — a named run, a type of run, or everything.
+///
+/// "Pasang hanger di cable tray" names no run because there is nothing to name:
+/// the engineer means the tray in this model, all of it. Making them find and
+/// type an id for work that is the same on every run was asking them to do the
+/// looking up that this is here to save.
+/// </summary>
 public sealed class AddHangersHandler : ICommandHandler
 {
     public string CommandType => "add_hangers";
 
+    /// <summary>
+    /// Ways of saying "all of it" rather than naming one run.
+    ///
+    /// A tray id like CT-01 is a name; "cable tray" is the category the command
+    /// is already about, and reading it as a name finds nothing.
+    /// </summary>
+    private static readonly string[] EveryTray =
+    {
+        "", "all", "semua", "everything", "tray", "cabletray", "kabeltray",
+        "cabletrays", "tray kabel", "cable", "kabel",
+    };
+
     public CommandResult Execute(HandlerContext context, CommandModel command)
     {
-        var trayId = command.GetString("tray_id");
-        var segments = RevitUtils.FindTraySegmentsByName(context.Doc, trayId);
+        var requested = command.GetString("tray_id");
+        var wantsEverything = EveryTray.Contains(Normalize(requested));
+
+        // "cable ladder" is not "all trays" — it is the ladder types among them,
+        // which is a filter, so it falls through to the name match below.
+        var segments = wantsEverything
+            ? RevitUtils.AllTraySegments(context.Doc)
+            : RevitUtils.FindTraySegmentsByName(context.Doc, requested);
 
         if (segments.Count == 0)
         {
             return CommandResult.Fail(
-                $"No cable tray matching '{trayId}' found in the model.",
+                wantsEverything
+                    ? "This model has no cable tray to hang."
+                    : $"No cable tray matching '{requested}' found. Give a tray mark, a type name "
+                      + "like \"ladder\", or nothing at all to hang every run.",
                 retryable: false);
         }
 
-        var placement = new SmartHangerPlacement(context.Doc, command.GetString("hanger_family", "Hanger"));
+        var family = command.GetString("hanger_family", "Hanger");
+
+        // "modifikasi hanger" means set them out again, so what is there comes
+        // out first. "pasang hanger" leaves them alone and fills the gaps, which
+        // is why running it twice is safe.
+        var replacing = string.Equals(command.GetString("mode", "fill"), "replace",
+            StringComparison.OrdinalIgnoreCase);
+
+        var removed = 0;
+        if (replacing)
+        {
+            removed = RemoveHangers(context.Doc, segments, family);
+            if (removed < 0)
+            {
+                return CommandResult.Fail(
+                    "Could not clear the existing hangers; nothing was changed.",
+                    retryable: true);
+            }
+        }
+
+        var placement = new SmartHangerPlacement(context.Doc, family);
 
         var outcome = placement.PlaceHangers(
             segments,
             command.GetDouble("spacing", 1500),
-            command.GetBool("preserve_existing", true),
+            // Preserving is the whole point of the fill mode: a run already hung
+            // gets nothing new, and a half-hung one gets only its gaps.
+            preserveExisting: !replacing,
             fillPercentage: 50,
             material: "aluminum");
 
         var first = segments[0];
         var totalLength = segments.Sum(segment => segment.LengthMm);
+        var trays = segments.Select(segment => segment.Element.Id).Distinct().Count();
 
         var result = new CableTrayResultDto
         {
-            TrayId = trayId,
+            TrayId = wantsEverything ? $"{trays} tray run(s)" : requested,
             CableTraySize = $"{first.WidthMm:F0}x{first.HeightMm:F0}mm",
             RouteLengthM = Math.Round(totalLength / 1000.0, 2),
             Hangers = SmartHangerPlacement.Summarize(outcome),
         };
 
+        if (replacing) context.Warn($"Replaced: {removed} existing hanger(s) removed first");
+        result.Notes = context.Warnings.Count > 0 ? context.Warnings : null;
+
+        Logger.Info(
+            $"add_hangers: {trays} tray(s), mode={(replacing ? "replace" : "fill")}, "
+            + $"removed={removed}");
+
         return CommandResult.Ok(result);
+    }
+
+    private static string Normalize(string value) =>
+        value.Trim().Replace("_", string.Empty).Replace("-", string.Empty).ToLowerInvariant();
+
+    /// <summary>
+    /// Deletes the hangers already on these runs. Returns how many, or -1 when
+    /// the deletion failed and nothing was changed.
+    /// </summary>
+    private static int RemoveHangers(Document doc, List<TraySegment> segments, string family)
+    {
+        var hosts = segments.Select(segment => segment.Element.Id).ToHashSet();
+
+        var existing = new FilteredElementCollector(doc)
+            .OfClass(typeof(FamilyInstance))
+            .Cast<FamilyInstance>()
+            .Where(instance =>
+                instance.Host is not null
+                && hosts.Contains(instance.Host.Id)
+                && string.Equals(
+                    instance.Symbol?.Family?.Name, family, StringComparison.OrdinalIgnoreCase))
+            .Select(instance => instance.Id)
+            .ToList();
+
+        if (existing.Count == 0) return 0;
+
+        using var transaction = new Transaction(doc, "Clear cable tray hangers");
+        transaction.Start();
+
+        try
+        {
+            doc.Delete(existing);
+            transaction.Commit();
+            return existing.Count;
+        }
+        catch (Exception ex)
+        {
+            transaction.RollBack();
+            Logger.Error("Could not clear existing hangers", ex);
+            return -1;
+        }
     }
 }
