@@ -595,6 +595,14 @@ Dimensions attach to the reference planes a family publishes. A family authored
 without them cannot be dimensioned to, and comes back as "no dimensionable
 devices" rather than with a string measured to something arbitrary.
 
+**What comes back is what is in the model.** A dimension Revit accepts is not
+yet a dimension that is there: a reference it cannot resolve is dropped when the
+view regenerates, and a string left with fewer than two of them draws nothing.
+So the view is regenerated while the transaction is still open, strings that
+lost their references are deleted, and only what survived is counted. If none
+survived, the command fails and says so rather than reporting strings over an
+empty plan.
+
 Wall faces come from Revit's own host-object references rather than from the
 wall's geometry. A face picked out of geometry carries a reference Revit accepts
 when the dimension is made and rejects when it next regenerates — *"one or more
