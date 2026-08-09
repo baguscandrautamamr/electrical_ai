@@ -209,6 +209,13 @@ public sealed class DimensionHandler : ICommandHandler
 
         strings.AddRange(strands);
 
+        // Before anything is drawn, and in its own transaction: a view edit that
+        // Revit refuses must not be able to take the dimensions down with it,
+        // and in a workshared model a view somebody else owns cannot take
+        // view-specific elements at all — which is a refusal at commit time
+        // with nothing wrong with the dimensions themselves.
+        PrepareView(doc, view, notes);
+
         var attempt = Draw(doc, view, strings, notes, out var status);
 
         if (attempt.Count == 0 && (fallbackX.Count >= 2 || fallbackY.Count >= 2))
@@ -255,11 +262,18 @@ public sealed class DimensionHandler : ICommandHandler
 
         if (created == 0)
         {
+            // Revit's own reason, when it gave one, rather than a guess about
+            // references. The notes carry it; the error line names it too so it
+            // is the first thing read.
+            var refusal = notes.FirstOrDefault(note => note.StartsWith("Revit: ", StringComparison.Ordinal));
+
             return CommandResult.Fail(
                 $"Revit did not keep any of the {strings.Count} dimension string(s) in "
-                + $"{Describe(view)} — the transaction came back {status}. The references given to "
-                + "them did not survive it, which usually means the families or wall faces "
-                + "involved publish nothing a dimension can hold on to.",
+                + $"{Describe(view)} — the transaction came back {status}."
+                + (refusal is null
+                    ? " It gave no reason, which usually means the references given to the strings "
+                      + "did not survive the commit."
+                    : $" {refusal}"),
                 retryable: false);
         }
 
@@ -296,6 +310,69 @@ public sealed class DimensionHandler : ICommandHandler
         });
     }
 
+    /// <summary>
+    /// Gets the view ready to take dimensions, and says when it cannot.
+    ///
+    /// Two things belong here rather than in the drawing transaction. A view
+    /// edit — switching a hidden category back on — is a change to the view,
+    /// and if Revit refuses it inside the same transaction the dimensions go
+    /// down with it. And in a workshared model, view-specific elements can only
+    /// be added to a view this session owns: a view held by somebody else is a
+    /// refusal at commit time with nothing wrong with the dimensions at all.
+    /// </summary>
+    private static void PrepareView(Document doc, View view, List<string> notes)
+    {
+        if (doc.IsWorkshared)
+        {
+            try
+            {
+                var status = WorksharingUtils.GetCheckoutStatus(doc, view.Id, out var owner);
+
+                if (status == CheckoutStatus.OwnedByOtherUser)
+                {
+                    notes.Add(
+                        $"{view.Name} is checked out by {owner}. Dimensions cannot be added to a "
+                        + "view somebody else owns — they have to release it first.");
+                    Logger.Error($"View '{view.Name}' is owned by {owner}; dimensions will be refused.");
+                    return;
+                }
+
+                if (status == CheckoutStatus.NotOwned)
+                {
+                    // Borrowed now rather than at commit, where failing to
+                    // borrow rolls the whole transaction back.
+                    WorksharingUtils.CheckoutElements(doc, new List<ElementId> { view.Id });
+                    Logger.Info($"Borrowed view '{view.Name}' to dimension it.");
+                }
+            }
+            catch (Exception ex)
+            {
+                notes.Add(
+                    $"Could not take ownership of {view.Name} ({ex.Message}). Dimensions may be "
+                    + "refused when Revit commits them.");
+                Logger.Warn($"Could not check out view '{view.Name}': {ex.Message}");
+            }
+        }
+
+        using var transaction = new Transaction(doc, $"Show dimensions in {view.Name}");
+        transaction.Start();
+
+        try
+        {
+            Reveal(view, notes);
+
+            if (transaction.Commit() != TransactionStatus.Committed)
+            {
+                Logger.Warn($"Revit would not change the visibility settings of '{view.Name}'.");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (transaction.HasStarted()) transaction.RollBack();
+            Logger.Warn($"Could not prepare '{view.Name}': {ex.Message}");
+        }
+    }
+
     /// <summary>One dimension string that Revit kept.</summary>
     private readonly record struct Placed(ElementId Id, int References, XYZ Where);
 
@@ -324,6 +401,7 @@ public sealed class DimensionHandler : ICommandHandler
         if (strings.Count == 0) return kept;
 
         var made = new List<Dimension>();
+        var ids = new List<ElementId>();
 
         using var transaction = new Transaction(doc, $"Dimension {view.Name}");
         transaction.Start();
@@ -332,7 +410,7 @@ public sealed class DimensionHandler : ICommandHandler
         // waiting. Nobody is sitting at this machine — the command came from
         // Telegram — so the dialog would hold Revit, and the whole queue behind
         // it, until somebody walked over and clicked it.
-        var failures = new ResolveQuietly();
+        var failures = new ResolveQuietly(ids);
         var handling = transaction.GetFailureHandlingOptions();
         handling.SetFailuresPreprocessor(failures);
         handling.SetClearAfterRollback(true);
@@ -340,14 +418,13 @@ public sealed class DimensionHandler : ICommandHandler
 
         try
         {
-            // A view can be hiding the whole category, and then every string
-            // below is measuring something nobody will ever see.
-            Reveal(view, notes);
-
             foreach (var strand in strings)
             {
                 var placed = Place(doc, view, strand.Chain, strand.Line);
-                if (placed is not null) made.Add(placed);
+                if (placed is null) continue;
+
+                made.Add(placed);
+                ids.Add(placed.Id);
             }
 
             // Drop the ones that draw nothing before committing, so a string
@@ -382,16 +459,19 @@ public sealed class DimensionHandler : ICommandHandler
             return kept;
         }
 
+        // Revit's own words, whichever way the commit went. Without them a
+        // refusal reaches the chat as a status name, and a status name is not
+        // something anybody can act on.
+        foreach (var reason in failures.Reasons)
+        {
+            notes.Add($"Revit: {reason}");
+            Logger.Warn($"dimension: Revit refused — {reason}");
+        }
+
         if (status != TransactionStatus.Committed)
         {
             Logger.Error($"dimension: Revit returned {status} from the commit; nothing was kept.");
             return kept;
-        }
-
-        if (failures.Resolved > 0)
-        {
-            notes.Add("dimension.references_dropped");
-            Logger.Warn($"dimension: Revit resolved {failures.Resolved} failure(s) at commit.");
         }
 
         // The document has the last word. An id that no longer resolves is a
@@ -619,7 +699,21 @@ public sealed class DimensionHandler : ICommandHandler
     /// </summary>
     private sealed class ResolveQuietly : IFailuresPreprocessor
     {
+        private readonly List<ElementId> _ours;
+
+        public ResolveQuietly(List<ElementId> ours) => _ours = ours;
+
         public int Resolved { get; private set; }
+
+        /// <summary>
+        /// Revit's own words for what it objected to.
+        ///
+        /// This is the thing that should have been read first. The preprocessor
+        /// is handed the failure text and nothing was doing anything with it,
+        /// so a commit that Revit refused for a stated reason came back to the
+        /// chat as a number, and the reason went nowhere.
+        /// </summary>
+        public List<string> Reasons { get; } = new();
 
         public FailureProcessingResult PreprocessFailures(FailuresAccessor accessor)
         {
@@ -633,17 +727,44 @@ public sealed class DimensionHandler : ICommandHandler
 
                 Resolved++;
 
+                var text = Describe(failure);
+                if (!Reasons.Contains(text)) Reasons.Add(text);
+
+                var failing = failure.GetFailingElementIds();
+                if (failing.Count > 0)
+                {
+                    accessor.DeleteElements(failing.ToList());
+                    continue;
+                }
+
                 if (failure.HasResolutions())
                 {
                     accessor.ResolveFailure(failure);
                     continue;
                 }
 
-                var failing = failure.GetFailingElementIds();
-                if (failing.Count > 0) accessor.DeleteElements(failing.ToList());
+                // Nothing Revit offers will clear it, and an unresolved error
+                // takes the whole transaction down — including work that was
+                // fine. Our own strings come out instead, so the commit stands
+                // and the reply can say what happened.
+                if (_ours.Count > 0) accessor.DeleteElements(_ours);
             }
 
             return FailureProcessingResult.ProceedWithCommit;
+        }
+
+        private static string Describe(FailureMessageAccessor failure)
+        {
+            try
+            {
+                var text = failure.GetDescriptionText();
+                return string.IsNullOrWhiteSpace(text) ? failure.GetFailureDefinitionId().Guid.ToString() : text;
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Could not read a failure description: {ex.Message}");
+                return "an error Revit would not describe";
+            }
         }
     }
 
