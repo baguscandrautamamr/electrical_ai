@@ -265,14 +265,15 @@ public sealed class DimensionHandler : ICommandHandler
             // Revit's own reason, when it gave one, rather than a guess about
             // references. The notes carry it; the error line names it too so it
             // is the first thing read.
-            var refusal = notes.FirstOrDefault(note => note.StartsWith("Revit: ", StringComparison.Ordinal));
+            var refusal = notes.FirstOrDefault(note =>
+                note.StartsWith("Revit", StringComparison.Ordinal));
 
             return CommandResult.Fail(
                 $"Revit did not keep any of the {strings.Count} dimension string(s) in "
                 + $"{Describe(view)} — the transaction came back {status}."
                 + (refusal is null
-                    ? " It gave no reason, which usually means the references given to the strings "
-                      + "did not survive the commit."
+                    ? " It raised no error and threw nothing, which leaves the references given to "
+                      + "the strings as the only candidate."
                     : $" {refusal}"),
                 retryable: false);
         }
@@ -420,41 +421,39 @@ public sealed class DimensionHandler : ICommandHandler
         {
             foreach (var strand in strings)
             {
-                var placed = Place(doc, view, strand.Chain, strand.Line);
+                var placed = Place(doc, view, strand.Chain, strand.Line, notes);
                 if (placed is null) continue;
 
                 made.Add(placed);
                 ids.Add(placed.Id);
             }
 
-            // Drop the ones that draw nothing before committing, so a string
-            // that lost its references cannot take the commit down with it.
-            doc.Regenerate();
-
-            var drawing = new HashSet<ElementId>(
-                new FilteredElementCollector(doc, view.Id)
-                    .OfClass(typeof(Dimension))
-                    .ToElementIds());
-
-            var dead = made
-                .Where(dimension => !dimension.IsValidObject
-                                    || (dimension.References?.Size ?? 0) < 2
-                                    || !drawing.Contains(dimension.Id))
-                .Select(dimension => dimension.Id)
-                .ToList();
-
-            if (dead.Count > 0)
+            if (made.Count == 0)
             {
-                Logger.Warn($"dimension: {dead.Count} string(s) drew nothing; removing before commit.");
-                doc.Delete(dead);
+                // Revit refused every one of them at creation. The reasons are
+                // already on the notes; rolling back keeps the model clean.
+                transaction.RollBack();
+                status = TransactionStatus.RolledBack;
+                return kept;
             }
 
+            // Straight to the commit. Regenerating here, and weeding out the
+            // strings that drew nothing, is work this handler did not do on the
+            // day it worked — and it is work that forces a bad reference to
+            // surface early, where Revit's answer is to take the transaction
+            // down rather than to fix the string. Let the commit run, then ask
+            // the document what it kept.
             status = transaction.Commit();
         }
         catch (Exception ex)
         {
+            // The one that has been hiding all along. An exception here set the
+            // status to RolledBack and put its message in a log file on a
+            // machine nobody is sitting at, so the reply said "it gave no
+            // reason" — while Revit had given one.
+            Blame("Revit threw while the strings were being made", ex, notes);
+
             if (transaction.HasStarted()) transaction.RollBack();
-            Logger.Error("dimension rolled back", ex);
             status = TransactionStatus.RolledBack;
             return kept;
         }
@@ -480,13 +479,17 @@ public sealed class DimensionHandler : ICommandHandler
         {
             if (doc.GetElement(dimension.Id) is not Dimension alive || !alive.IsValidObject) continue;
 
+            // Its extent is used to say where it landed, not to decide whether
+            // it counts. A string in the model that this cannot measure is
+            // still a string in the model, and refusing to count it would put
+            // the handler back to reporting something other than the truth.
             var extent = alive.get_BoundingBox(view);
-            if (extent is null) continue;
-
-            var centre = new XYZ(
-                (extent.Min.X + extent.Max.X) / 2,
-                (extent.Min.Y + extent.Max.Y) / 2,
-                0);
+            var centre = extent is null
+                ? XYZ.Zero
+                : new XYZ(
+                    (extent.Min.X + extent.Max.X) / 2,
+                    (extent.Min.Y + extent.Max.Y) / 2,
+                    0);
 
             if (kept.Count == 0) Diagnose(doc, view, alive, notes);
 
@@ -730,27 +733,54 @@ public sealed class DimensionHandler : ICommandHandler
                 var text = Describe(failure);
                 if (!Reasons.Contains(text)) Reasons.Add(text);
 
-                var failing = failure.GetFailingElementIds();
-                if (failing.Count > 0)
-                {
-                    accessor.DeleteElements(failing.ToList());
-                    continue;
-                }
+                // The resolution a person would pick. When Revit put this
+                // failure on screen, the button an engineer pressed was "Remove
+                // Reference(s)" — the string stays, the reference Revit cannot
+                // resolve comes off it, and the drawing survives. Deleting the
+                // failing elements is also on offer and is the opposite of
+                // that: it takes the dimension away.
+                var offered = Applicable(failure);
+                var keepIt = offered.FirstOrDefault(type => type != FailureResolutionType.DeleteElements);
 
-                if (failure.HasResolutions())
+                if (offered.Count > 0)
                 {
-                    accessor.ResolveFailure(failure);
-                    continue;
+                    try
+                    {
+                        if (keepIt != default) failure.SetCurrentResolutionType(keepIt);
+
+                        accessor.ResolveFailure(failure);
+                        Logger.Info($"dimension: resolved '{text}' as {failure.GetCurrentResolutionType()}.");
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"Could not apply Revit's own resolution: {ex.Message}");
+                    }
                 }
 
                 // Nothing Revit offers will clear it, and an unresolved error
                 // takes the whole transaction down — including work that was
                 // fine. Our own strings come out instead, so the commit stands
                 // and the reply can say what happened.
-                if (_ours.Count > 0) accessor.DeleteElements(_ours);
+                var failing = failure.GetFailingElementIds();
+                if (failing.Count > 0) accessor.DeleteElements(failing.ToList());
+                else if (_ours.Count > 0) accessor.DeleteElements(_ours);
             }
 
             return FailureProcessingResult.ProceedWithCommit;
+        }
+
+        private static IList<FailureResolutionType> Applicable(FailureMessageAccessor failure)
+        {
+            try
+            {
+                return failure.GetApplicableResolutionTypes();
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Could not read the resolutions on offer: {ex.Message}");
+                return Array.Empty<FailureResolutionType>();
+            }
         }
 
         private static string Describe(FailureMessageAccessor failure)
@@ -1606,7 +1636,12 @@ public sealed class DimensionHandler : ICommandHandler
     /// failing should still leave the other one drawn, and an engineer with
     /// half the dimensions is better off than one with none and an error.
     /// </summary>
-    private static Dimension? Place(Document doc, View view, List<Anchor> chain, Line line)
+    private static Dimension? Place(
+        Document doc,
+        View view,
+        List<Anchor> chain,
+        Line line,
+        List<string> notes)
     {
         if (chain.Count < 2) return null;
 
@@ -1619,8 +1654,23 @@ public sealed class DimensionHandler : ICommandHandler
         }
         catch (Exception ex)
         {
-            Logger.Warn($"Revit refused a dimension string over {chain.Count} references: {ex.Message}");
+            Blame($"Revit refused a string over {chain.Count} references", ex, notes);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Puts what Revit said on the reply, once, and in the log.
+    ///
+    /// Every failure path in this handler used to log its reason and report a
+    /// number. That is how six rounds went by with "it gave no reason" while
+    /// Revit was giving one every time.
+    /// </summary>
+    private static void Blame(string what, Exception ex, List<string> notes)
+    {
+        var text = $"{what}: {ex.Message}";
+
+        if (!notes.Contains(text)) notes.Add(text);
+        Logger.Error(what, ex);
     }
 }
