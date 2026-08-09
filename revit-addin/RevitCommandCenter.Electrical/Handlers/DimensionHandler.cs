@@ -175,8 +175,13 @@ public sealed class DimensionHandler : ICommandHandler
 
         var extents = Extents(alongX.Concat(alongY).Concat(boundsX).Concat(boundsY));
 
+        // The dimensions this run makes, kept so what actually survived can be
+        // counted rather than assumed.
+        var made = new List<Dimension>();
+
         var created = 0;
         var used = 0;
+        var rejected = 0;
 
         using var transaction = new Transaction(doc, $"Dimension {view.Name}");
         transaction.Start();
@@ -202,32 +207,51 @@ public sealed class DimensionHandler : ICommandHandler
             {
                 var x = PlaceWithFallback(
                     doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
-                if (x > 0)
-                {
-                    created++;
-                    used += x;
-                }
+                if (x is not null) made.Add(x);
             }
 
             if (yChain.Count >= 2)
             {
                 var y = PlaceWithFallback(
                     doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
-                if (y > 0)
-                {
-                    created++;
-                    used += y;
-                }
+                if (y is not null) made.Add(y);
             }
 
             // One string per tray run, and one per wall-mounted device, each
             // on the line it belongs beside.
             foreach (var strand in strands)
             {
-                if (!Place(doc, view, strand.Chain, strand.Line)) continue;
+                var placed = Place(doc, view, strand.Chain, strand.Line);
+                if (placed is not null) made.Add(placed);
+            }
+
+            // Everything below this line exists because a dimension Revit
+            // accepted is not yet a dimension that is there. A reference it
+            // cannot resolve is dropped when the view regenerates, and a string
+            // left with fewer than two of them draws nothing at all — which is
+            // how this command came back reporting three strings over a plan
+            // with none on it. So: regenerate now, while the transaction is
+            // still open, and count what is left.
+            doc.Regenerate();
+
+            foreach (var dimension in made)
+            {
+                if (!dimension.IsValidObject)
+                {
+                    rejected++;
+                    continue;
+                }
+
+                var references = dimension.References?.Size ?? 0;
+                if (references < 2)
+                {
+                    doc.Delete(dimension.Id);
+                    rejected++;
+                    continue;
+                }
 
                 created++;
-                used += strand.Chain.Count;
+                used += references;
             }
 
             transaction.Commit();
@@ -239,12 +263,26 @@ public sealed class DimensionHandler : ICommandHandler
             return CommandResult.FromException(ex);
         }
 
-        if (failures.Resolved > 0)
+        if (rejected > 0 || failures.Resolved > 0)
         {
             // Said rather than swallowed: a string Revit dropped a reference
             // from measures something other than what was asked for.
             notes.Add("dimension.references_dropped");
-            Logger.Warn($"dimension: Revit rejected {failures.Resolved} reference set(s) in {view.Name}");
+            Logger.Warn(
+                $"dimension: {rejected} string(s) did not survive regeneration in '{view.Name}', "
+                + $"{failures.Resolved} failure(s) resolved by Revit");
+        }
+
+        // Nothing survived: the command did not do what a tick would say it
+        // did, and the count it would print is the count of things that are not
+        // there.
+        if (created == 0 && made.Count > 0)
+        {
+            return CommandResult.Fail(
+                $"Revit rejected all {made.Count} dimension string(s) in view '{view.Name}': the "
+                + "references did not survive a regeneration. The families involved may publish no "
+                + "reference planes to dimension to.",
+                retryable: false);
         }
 
         Logger.Info($"dimension: {created} string(s) over {used} reference(s) in {view.Name}");
@@ -705,6 +743,16 @@ public sealed class DimensionHandler : ICommandHandler
     /// alternates from hanger to hanger and the string measures a sawtooth
     /// instead of the spacing.
     /// </summary>
+    /// <remarks>
+    /// The faces are read out of <c>GetSymbolGeometry</c>, not
+    /// <c>GetInstanceGeometry</c>. Instance geometry is the one already moved
+    /// into model coordinates, and its faces carry references Revit does not
+    /// resolve — a dimension made from them is accepted, draws nothing, and
+    /// loses its references at the next regeneration. Symbol geometry carries
+    /// the references that work; it sits in the symbol's own coordinates, so the
+    /// instance transform is applied to the positions and never to the
+    /// reference.
+    /// </remarks>
     private static Reference? FaceAlong(
         FamilyInstance instance,
         Options options,
@@ -727,35 +775,42 @@ public sealed class DimensionHandler : ICommandHandler
         Reference? best = null;
         var bestOffset = double.MaxValue;
 
-        // A family instance's geometry arrives wrapped in its own transform, so
-        // the solids hang off a nested GeometryInstance rather than sitting in
-        // the element's own geometry.
         foreach (var item in geometry)
         {
-            var solids = item switch
+            switch (item)
             {
-                Solid direct => new[] { direct },
-                GeometryInstance nested => nested.GetInstanceGeometry().OfType<Solid>().ToArray(),
-                _ => Array.Empty<Solid>(),
-            };
+                case Solid direct:
+                    Scan(direct, Transform.Identity);
+                    break;
 
-            foreach (var solid in solids)
-            {
-                foreach (Face face in solid.Faces)
-                {
-                    if (face is not PlanarFace planar || planar.Reference is null) continue;
-                    if (Math.Abs(planar.FaceNormal.DotProduct(direction)) < AxisTolerance) continue;
+                case GeometryInstance nested:
+                    foreach (var solid in nested.GetSymbolGeometry().OfType<Solid>())
+                    {
+                        Scan(solid, nested.Transform);
+                    }
 
-                    var offset = (planar.Origin - point).DotProduct(direction);
-                    if (offset >= bestOffset) continue;
-
-                    bestOffset = offset;
-                    best = planar.Reference;
-                }
+                    break;
             }
         }
 
         return best;
+
+        void Scan(Solid solid, Transform transform)
+        {
+            foreach (Face face in solid.Faces)
+            {
+                if (face is not PlanarFace planar || planar.Reference is null) continue;
+
+                var normal = transform.OfVector(planar.FaceNormal);
+                if (Math.Abs(normal.DotProduct(direction)) < AxisTolerance) continue;
+
+                var offset = (transform.OfPoint(planar.Origin) - point).DotProduct(direction);
+                if (offset >= bestOffset) continue;
+
+                bestOffset = offset;
+                best = planar.Reference;
+            }
+        }
     }
 
     /// <summary>The faces of the walls a room is drawn inside.</summary>
@@ -1101,22 +1156,22 @@ public sealed class DimensionHandler : ICommandHandler
     /// would be a worse drawing than the device-to-device one this add-in drew
     /// before walls were ever in it.
     /// </remarks>
-    private static int PlaceWithFallback(
+    private static Dimension? PlaceWithFallback(
         Document doc,
         View view,
         List<Anchor> full,
         List<Anchor> fallback,
         Line line)
     {
-        if (Place(doc, view, full, line)) return full.Count;
+        var dimension = Place(doc, view, full, line);
+        if (dimension is not null) return dimension;
 
-        if (fallback.Count >= 2 && fallback.Count < full.Count && Place(doc, view, fallback, line))
-        {
-            Logger.Info("Dimension string placed without its wall references.");
-            return fallback.Count;
-        }
+        if (fallback.Count < 2 || fallback.Count >= full.Count) return null;
 
-        return 0;
+        dimension = Place(doc, view, fallback, line);
+        if (dimension is not null) Logger.Info("Dimension string placed without its wall references.");
+
+        return dimension;
     }
 
     /// <summary>
@@ -1126,22 +1181,21 @@ public sealed class DimensionHandler : ICommandHandler
     /// failing should still leave the other one drawn, and an engineer with
     /// half the dimensions is better off than one with none and an error.
     /// </summary>
-    private static bool Place(Document doc, View view, List<Anchor> chain, Line line)
+    private static Dimension? Place(Document doc, View view, List<Anchor> chain, Line line)
     {
-        if (chain.Count < 2) return false;
+        if (chain.Count < 2) return null;
 
         var references = new ReferenceArray();
         foreach (var anchor in chain) references.Append(anchor.Ref);
 
         try
         {
-            var dimension = doc.Create.NewDimension(view, line, references);
-            return dimension is not null;
+            return doc.Create.NewDimension(view, line, references);
         }
         catch (Exception ex)
         {
             Logger.Warn($"Revit refused a dimension string over {chain.Count} references: {ex.Message}");
-            return false;
+            return null;
         }
     }
 }
