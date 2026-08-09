@@ -259,6 +259,23 @@ and claimed by the nearest run only so a stacked tray does not steal the one
 below it. `mode=replace` clears using the same matching, so replace and gap-fill
 always agree on what "already there" means.
 
+## Dimensioning them
+
+`/dimension what=hanger` measures the run, one dimension string per tray run,
+laid alongside it and offset to the outside of the layout.
+
+Per run because that is the drawing. One chain over every hanger in the model
+puts a single row of numbers across the plan and measures between supports on
+trays that have nothing to do with each other.
+
+The string measures to each hanger's centre plane — the one perpendicular to the
+run, which is whichever of the family's two axes ended up facing that way once
+the hanger was turned. Asking for the wrong one measures to a different plane on
+every other hanger, and a 1500 spacing comes back as 823 and 677 alternating. A
+family that publishes no centre planes is measured to a face instead, always the
+one furthest back along the run, for the same reason: the *nearest* face is
+whichever side that hanger happens to be turned to.
+
 ## Failure handling
 
 The rule underneath all of these: **a reply never reports hangers it did not

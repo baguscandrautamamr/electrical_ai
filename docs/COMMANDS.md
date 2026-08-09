@@ -560,11 +560,17 @@ running device to device says where they are relative to each other but not
 where any of them is. `all` means the lighting there; dimensioning eight
 categories at once buries the layout under seven strings nobody asked for.
 
-**`what=hanger`** measures the cable-tray hangers along their run — the spacing
-between consecutive supports, which is the string an engineer sets out by hand.
+**`what=hanger`** measures the cable-tray hangers **one string per tray run**,
+laid alongside the run it measures and offset to the outside of the layout. That
+is the drawing: each line of tray dimensioned along itself, showing the spacing
+between consecutive supports. A single chain over every hanger in the model
+would put one row of numbers across the whole plan, measuring between supports
+on trays that have nothing to do with each other.
+
 It is the one target that works with or without a room, because a tray run
 crosses several. Hangers are found by the family named in the add-in settings,
-so they are dimensioned whatever category the office built them in.
+so they are dimensioned whatever category the office built them in, and matched
+to their run by the same rule that hung them.
 
 **Without one**, the whole view's grids and walls are measured instead. Grids
 are measured to the grid line, walls to the vertical faces the view actually
