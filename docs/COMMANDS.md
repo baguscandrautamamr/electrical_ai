@@ -553,12 +553,20 @@ Aliases: `/dimensi`, `/beri_dimensi`, `/auto_dimension`, `/ukur`.
 Plain language works: *"kasih dimensi lampu di pantry"*, *"kasih dimension
 receptacle di meeting 2"*, *"kasih dimension hanger cable tray"*.
 
-**With a room**, the devices are what gets measured — centre to centre, the way
-a ceiling layout is dimensioned on a real drawing, **and out to the room's own
-walls at each end**. An outlet is set out from the wall it is on; a chain
-running device to device says where they are relative to each other but not
-where any of them is. `all` means the lighting there; dimensioning eight
-categories at once buries the layout under seven strings nobody asked for.
+**With a room**, what gets measured depends on how the devices are mounted.
+
+*Ceiling devices* — downlights, detectors — are chained centre to centre across
+the room and out to the room's own walls at each end, the way a ceiling layout
+is dimensioned on a real drawing.
+
+*Wall-mounted devices* — receptacles, switches — get **one dimension each**, run
+along the wall the device sits on, back to the wall at the nearer end of it.
+That is how an outlet is set out on site: so many millimetres from the corner,
+along its own wall. A chain across the room says how far the sockets are from
+each other, which is not a dimension anybody builds from.
+
+`all` means the lighting there; dimensioning eight categories at once buries the
+layout under seven strings nobody asked for.
 
 **`what=hanger`** measures the cable-tray hangers **one string per tray run**,
 laid alongside the run it measures and offset to the outside of the layout. That
@@ -586,6 +594,14 @@ plan coordinates means nothing in a section or a 3D view.
 Dimensions attach to the reference planes a family publishes. A family authored
 without them cannot be dimensioned to, and comes back as "no dimensionable
 devices" rather than with a string measured to something arbitrary.
+
+Wall faces come from Revit's own host-object references rather than from the
+wall's geometry. A face picked out of geometry carries a reference Revit accepts
+when the dimension is made and rejects when it next regenerates — *"one or more
+dimension references are or have become invalid"*, a modal error over a drawing
+nobody is watching. If Revit rejects a reference anyway, the command takes
+Revit's own resolution instead of waiting for a click, and the reply says a
+string came back short.
 
 **It adds and never removes.** Running it twice draws the strings twice rather
 than replacing them — deciding that an existing dimension was this command's

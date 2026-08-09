@@ -210,7 +210,8 @@
     "nothing": "Nothing in this view could be dimensioned.",
     "no_devices": "No dimensionable devices in this room. Their family may publish no reference planes to dimension to.",
     "hangers": "Cable tray hangers",
-    "no_hangers": "No cable-tray hangers found to dimension in this view."
+    "no_hangers": "No cable-tray hangers found to dimension in this view.",
+    "references_dropped": "Revit rejected some references, so a string measures less than was asked for. Its usual cause is a wall face that changed after the dimension was made."
   },
   "delete": {
     "title": "Delete",
