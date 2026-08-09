@@ -616,6 +616,25 @@ grounded on the curated notes in `src/standards/references.ts`, and the model is
 instructed never to cite a clause number it is not certain of — a standard named
 without a clause is a good answer, a wrong pasal is not.
 
+### What the notes cover
+
+| | |
+|---|---|
+| **Indonesia** | PUIL 2011 (SNI 0225) — identity, socket outlets, RCD, conductor colours, capacity, earthing, minimum cross-section · SNI 03-6575 (lux) · SNI 6197 (energy) · SNI 03-3985 (fire alarm) · SNI 03-6574 (emergency lighting) · SNI 03-7015 (lightning) · SLO / UU 30/2009 |
+| **Fire & life safety** | NFPA 72 · EN 54 · NFPA 110 & NFPA 20 · IEC 60849 / EN 54-16 & -24 |
+| **Containment & cabling** | IEC 61537 (tray & ladder) · ISO/IEC 11801 + TIA-568 · IEEE 802.3af/at/bt (PoE) · IEC 62676 (CCTV) |
+| **Design & safety** | IEC 60364 (incl. -5-52, -6, -7-701) · IEC 60287 · IEC 60529 (IP) · IEC 61439 · IEC 60947 · IEC 60269 · IEC 60598 · IEC 61140 · IEC 62305 · IEC 60034 · NFPA 70 (NEC) |
+
+Every device the bot places has a standard behind it, and a test keeps it that
+way: `/place_fire_alarm` → NFPA 72, `/create_cable_tray` → IEC 61537,
+`/place_lan` → ISO/IEC 11801 and IEEE 802.3, `/place_security` → IEC 62676,
+`/place_communication` → IEC 60849, `/place_lighting` → SNI 03-6575 and
+SNI 03-6574, `/place_receptacle` → PUIL and IEC 60364-7-701.
+
+Only the four best-matching notes go into any one request, so the table can grow
+without the cost of a question growing with it. Nothing here changes how a
+command behaves — the notes are read in this channel and nowhere else.
+
 A session with no activity for **30 minutes** closes itself and says so, so a
 command typed hours later is never swallowed as a question.
 

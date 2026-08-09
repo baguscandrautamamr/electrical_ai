@@ -236,6 +236,76 @@ describe('reference lookup', () => {
     expect(findReferences('kabel penghantar instalasi listrik standar puil', 2)).toHaveLength(2);
   });
 
+  /**
+   * One row per thing the bot can place. A device command with no standard
+   * behind it is a question this channel cannot answer, and the table is the
+   * only place that mapping is written down.
+   */
+  it('has a standard behind every device the bot places', () => {
+    const expected: Array<[question: string, id: string]> = [
+      ['jarak detektor asap menurut NFPA 72', 'nfpa-72'],
+      ['standar cable tray dan jarak penggantung', 'iec-61537'],
+      ['berapa panjang maksimum kabel UTP cat 6', 'iso-11801'],
+      ['hitung anggaran PoE untuk switch', 'ieee-8023-poe'],
+      ['berapa kepadatan piksel CCTV untuk identifikasi', 'iec-62676'],
+      ['standar speaker evakuasi kebakaran', 'iec-60849'],
+      ['pencahayaan darurat jalur evakuasi', 'sni-6574'],
+      ['kotak kontak di zona kamar mandi', 'iec-60364-7-701'],
+      ['tinggi pemasangan stop kontak', 'puil-kotak-kontak'],
+      ['berapa lux untuk ruang rapat', 'sni-03-6575'],
+    ];
+
+    for (const [question, id] of expected) {
+      const ids = findReferences(question).map((entry) => entry.id);
+      expect(ids, `"${question}" did not reach ${id}`).toContain(id);
+    }
+  });
+
+  /**
+   * The regressions that made this rewrite necessary, kept as tests.
+   *
+   * Every one of these was a real answer the lookup gave: "pe" matched inside
+   * "petir" and "speaker", "standar" matched inside every question, and "cable"
+   * sent a tray question to the entry on conductor colours.
+   */
+  it('no longer answers a question with an unrelated entry', () => {
+    const forbidden: Array<[question: string, id: string]> = [
+      ['proteksi petir', 'puil-warna-penghantar'],
+      ['proteksi petir', 'puil-rcd-30ma'],
+      ['standar CCTV', 'puil-2011'],
+      ['cable tray support', 'puil-warna-penghantar'],
+      ['speaker evakuasi', 'puil-warna-penghantar'],
+    ];
+
+    for (const [question, id] of forbidden) {
+      const ids = findReferences(question).map((entry) => entry.id);
+      expect(ids, `"${question}" still reaches ${id}`).not.toContain(id);
+    }
+  });
+
+  it('answers an NFPA question with NFPA first, not with its Indonesian cousin', () => {
+    // Both are worth having — the NFPA entry cross-references SNI 03-3985, and
+    // a detector question touches each. What was wrong was the order: asking
+    // about NFPA 72 used to return only the SNI, a different document with
+    // different figures.
+    const ids = findReferences('NFPA 72 detector spacing').map((entry) => entry.id);
+    expect(ids[0]).toBe('nfpa-72');
+  });
+
+  it('matches keywords at word boundaries, not as substrings', () => {
+    // "pe" is a keyword no more, but the rule it broke is worth pinning: a
+    // short keyword must not match inside a longer word.
+    expect(findReferences('petir').map((e) => e.id)).not.toContain('puil-warna-penghantar');
+    expect(findReferences('warna kabel netral').map((e) => e.id)).toContain(
+      'puil-warna-penghantar',
+    );
+  });
+
+  it('drops a single coincidental short word', () => {
+    // One weak hit is not a topic; the model is better told there are no notes.
+    expect(findReferences('apa itu ip')).toEqual([]);
+  });
+
   it('cites no clause it is not sure of', () => {
     // The whole point of the curated table: an entry naming only the standard
     // is useful, one naming a wrong clause gets copied onto a drawing.
