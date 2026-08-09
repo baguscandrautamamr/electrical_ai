@@ -80,10 +80,39 @@ public sealed class CommandPoller : IDisposable
         // queueing up overlapping work.
         if (Interlocked.CompareExchange(ref _cycleActive, 1, 0) != 0) return;
 
-        _ = RunCycleAsync().ContinueWith(_ => Interlocked.Exchange(ref _cycleActive, 0));
+        _ = DrainAsync().ContinueWith(_ => Interlocked.Exchange(ref _cycleActive, 0));
     }
 
-    private async Task RunCycleAsync()
+    /// <summary>
+    /// Runs cycles back to back for as long as there is work.
+    /// </summary>
+    /// <remarks>
+    /// Someone working through a room sends several commands in a row — place,
+    /// then modify, then dimension — and each one used to wait out a fresh poll
+    /// interval before it was even claimed. Draining costs nothing when the
+    /// queue is empty, because an empty claim ends the loop immediately; the
+    /// interval still governs how often an idle add-in asks at all, which is
+    /// what the Supabase call budget is spent on.
+    ///
+    /// Bounded so a queue somebody has filled by accident cannot hold Revit for
+    /// an unbounded stretch without the timer getting a look in.
+    /// </remarks>
+    private async Task DrainAsync()
+    {
+        const int maxPerTick = 10;
+
+        for (var run = 0; run < maxPerTick; run++)
+        {
+            if (_cancellation.IsCancellationRequested) return;
+            if (!await RunCycleAsync().ConfigureAwait(false)) return;
+        }
+    }
+
+    /// <summary>
+    /// One claim-and-run cycle. True when work was found, so the caller knows
+    /// whether it is worth asking again straight away.
+    /// </summary>
+    private async Task<bool> RunCycleAsync()
     {
         var token = _cancellation.Token;
 
@@ -95,7 +124,7 @@ public sealed class CommandPoller : IDisposable
             if (command is null)
             {
                 _consecutiveFailures = 0;
-                return;
+                return false;
             }
 
             Logger.Info($"Claimed {command.CommandType} ({command.Id})");
@@ -110,7 +139,7 @@ public sealed class CommandPoller : IDisposable
                 await _repository
                     .FailAsync(command.Id, "Worker busy; requeued.", null, retryable: true, token)
                     .ConfigureAwait(false);
-                return;
+                return false;
             }
 
             _externalEvent.Raise();
@@ -131,7 +160,7 @@ public sealed class CommandPoller : IDisposable
                     null,
                     retryable: true,
                     token).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             var outcome = await pending.ConfigureAwait(false);
@@ -149,10 +178,12 @@ public sealed class CommandPoller : IDisposable
             else CommandsFailed++;
 
             _consecutiveFailures = 0;
+            return true;
         }
         catch (OperationCanceledException)
         {
             // Shutting down.
+            return false;
         }
         catch (Exception ex)
         {
@@ -169,6 +200,10 @@ public sealed class CommandPoller : IDisposable
                 Logger.Warn($"Backing off polling to {backoff.TotalSeconds:F0}s");
                 _timer.Change(backoff, TimeSpan.FromSeconds(_config.PollingIntervalSeconds));
             }
+
+            // Do not drain into a failing endpoint — the backoff above exists
+            // precisely so the next attempt waits.
+            return false;
         }
     }
 

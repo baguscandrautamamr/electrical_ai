@@ -31,6 +31,7 @@
     "no_project_access": "Anda tidak punya akses ke proyek ini.",
     "insufficient_role": "Perintah ini butuh peran {required}, peran Anda {actual}.",
     "unknown_command": "Perintah tidak dikenal: {command}. Ketik /help untuk daftar perintah.",
+    "migration_required": "Database belum di-update untuk versi ini. Jalankan file migration berikut di Supabase (SQL Editor), lalu ulangi perintahnya:",
     "parse_failed": "Tidak bisa memahami perintah tersebut. Ketik /help untuk contoh.",
     "validation_failed": "Parameter tidak valid",
     "execution_failed": "Perintah gagal dijalankan",

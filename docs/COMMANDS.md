@@ -373,9 +373,9 @@ Scoped by the same point-in-room test `/query` counts with, so what goes is what
 is one step. Removing nothing comes back as a warning rather than a tick — the
 usual cause is the right command against the wrong room name.
 
-**It asks first.** `/delete_devices` and `/modify_devices` reply with the room
-and category they resolved to and a Yes/Cancel pair of buttons. Nothing reaches
-Revit until Yes is tapped: the command sits in the queue in a state the add-in
+**It asks first.** `/delete_devices` replies with the room and category it
+resolved to and a Yes/Cancel pair of buttons. Nothing reaches Revit until Yes is
+tapped: the command sits in the queue in a state the add-in
 does not poll for. The button works once, only for the person who typed the
 command, and expires after 24 hours — a Yes tapped on yesterday's question would
 run against a drawing that has moved on.
@@ -425,6 +425,11 @@ by moving fixtures — you would get four on the old spacing with two squeezed
 between them — so the old set comes out and a new one goes in, which is what you
 would do by hand. The reply says how many it removed, so a wrong room shows up in
 the chat.
+
+It does **not** ask for confirmation. It puts a layout back where it took one
+from, its reply says how many it removed, and `/undo` reverses it — three
+reasons a second tap on a command you run every few minutes is not worth its
+cost. `/delete_devices`, which only removes, still asks.
 
 One of `count` or `grid` is required. Without either, "modify" would mean
 "delete what is there and put back a default layout", which is nobody's

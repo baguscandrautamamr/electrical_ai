@@ -3,7 +3,7 @@
  * Revit add-in.
  */
 
-import { supabase } from '../lib/supabase.js';
+import { supabase, SupabaseError } from '../lib/supabase.js';
 import { env } from '../config/env.js';
 import type { QueuedCommand } from '../types/index.js';
 
@@ -28,18 +28,49 @@ export interface EnqueueResult {
   queuePosition: number;
 }
 
+/**
+ * A schema change this deployment has not had applied yet.
+ *
+ * Postgres reports it as 23514, a check-constraint violation, and PostgREST
+ * relays the whole offending row. In Telegram that arrives as a wall of UUIDs
+ * with the actual cause — a status the constraint has never heard of — nowhere
+ * in sight. Recognising it here is what turns that into one sentence naming
+ * the migration to run.
+ */
+export class MigrationRequiredError extends Error {
+  constructor(readonly migration: string, cause: unknown) {
+    super(`Database is missing migration ${migration}`, { cause });
+    this.name = 'MigrationRequiredError';
+  }
+}
+
+function isCheckViolation(error: unknown): boolean {
+  return error instanceof SupabaseError && error.body.includes('23514');
+}
+
 export async function enqueueCommand(input: EnqueueInput): Promise<EnqueueResult> {
-  const rows = await supabase().insert<QueuedCommand>('commands_queue', {
-    user_id: input.userId,
-    project_id: input.projectId,
-    chat_id: input.chatId,
-    reply_to_message_id: input.replyToMessageId ?? null,
-    command_type: input.commandType,
-    command_text: input.commandText,
-    command_json: input.params,
-    status: input.status ?? 'pending',
-    max_retries: env.maxCommandRetry,
-  });
+  const status = input.status ?? 'pending';
+
+  let rows: QueuedCommand[];
+  try {
+    rows = await supabase().insert<QueuedCommand>('commands_queue', {
+      user_id: input.userId,
+      project_id: input.projectId,
+      chat_id: input.chatId,
+      reply_to_message_id: input.replyToMessageId ?? null,
+      command_type: input.commandType,
+      command_text: input.commandText,
+      command_json: input.params,
+      status,
+      max_retries: env.maxCommandRetry,
+    });
+  } catch (error) {
+    // The only status this build writes that an older schema rejects.
+    if (status === 'awaiting_confirmation' && isCheckViolation(error)) {
+      throw new MigrationRequiredError('0005_confirmation.sql', error);
+    }
+    throw error;
+  }
 
   const command = rows[0];
   if (!command) throw new Error('Failed to enqueue command: no row returned');
@@ -48,13 +79,27 @@ export async function enqueueCommand(input: EnqueueInput): Promise<EnqueueResult
   // position in it.
   if (command.status !== 'pending') return { command, queuePosition: 0 };
 
+  // No position query. It cost a round trip on every single command to render a
+  // row that is only shown when somebody is ahead — which, with one Revit
+  // instance draining the queue in seconds, is almost never. `queuePosition`
+  // stays in the shape for callers that ask for it explicitly.
+  return { command, queuePosition: 1 };
+}
+
+/**
+ * How many commands are queued ahead of this one.
+ *
+ * Split out of the enqueue path deliberately: it is a second round trip, and
+ * nothing on the fast path waits for it.
+ */
+export async function queuePositionOf(command: QueuedCommand): Promise<number> {
   const pending = await supabase().select<{ id: string }>('commands_queue', {
     columns: 'id',
-    eq: { project_id: input.projectId, status: 'pending' },
+    eq: { project_id: command.project_id, status: 'pending' },
     filters: [`queued_at=lte.${command.queued_at}`],
   });
 
-  return { command, queuePosition: pending.length };
+  return pending.length;
 }
 
 /**
