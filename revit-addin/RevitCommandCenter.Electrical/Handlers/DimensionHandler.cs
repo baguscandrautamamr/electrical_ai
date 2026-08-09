@@ -739,24 +739,7 @@ public sealed class DimensionHandler : ICommandHandler
                 // resolve comes off it, and the drawing survives. Deleting the
                 // failing elements is also on offer and is the opposite of
                 // that: it takes the dimension away.
-                var offered = Applicable(failure);
-                var keepIt = offered.FirstOrDefault(type => type != FailureResolutionType.DeleteElements);
-
-                if (offered.Count > 0)
-                {
-                    try
-                    {
-                        if (keepIt != default) failure.SetCurrentResolutionType(keepIt);
-
-                        accessor.ResolveFailure(failure);
-                        Logger.Info($"dimension: resolved '{text}' as {failure.GetCurrentResolutionType()}.");
-                        continue;
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn($"Could not apply Revit's own resolution: {ex.Message}");
-                    }
-                }
+                if (Resolve(accessor, failure, text)) continue;
 
                 // Nothing Revit offers will clear it, and an unresolved error
                 // takes the whole transaction down — including work that was
@@ -770,17 +753,42 @@ public sealed class DimensionHandler : ICommandHandler
             return FailureProcessingResult.ProceedWithCommit;
         }
 
-        private static IList<FailureResolutionType> Applicable(FailureMessageAccessor failure)
+        /// <summary>
+        /// Applies the resolution a person would have picked, and says whether
+        /// one was found.
+        ///
+        /// The resolutions on offer are asked for one at a time rather than as
+        /// a list, and deleting is left until last: it is the one that takes
+        /// the dimension away, and every other option keeps it.
+        /// </summary>
+        private static bool Resolve(
+            FailuresAccessor accessor,
+            FailureMessageAccessor failure,
+            string text)
         {
-            try
+            var offered = Enum.GetValues(typeof(FailureResolutionType))
+                .Cast<FailureResolutionType>()
+                .Where(type => type != FailureResolutionType.DeleteElements)
+                .Concat(new[] { FailureResolutionType.DeleteElements });
+
+            foreach (var type in offered)
             {
-                return failure.GetApplicableResolutionTypes();
+                try
+                {
+                    if (!failure.HasResolutionOfType(type)) continue;
+
+                    failure.SetCurrentResolutionType(type);
+                    accessor.ResolveFailure(failure);
+                    Logger.Info($"dimension: resolved '{text}' as {type}.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Debug($"Resolution {type} did not apply: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.Debug($"Could not read the resolutions on offer: {ex.Message}");
-                return Array.Empty<FailureResolutionType>();
-            }
+
+            return false;
         }
 
         private static string Describe(FailureMessageAccessor failure)
