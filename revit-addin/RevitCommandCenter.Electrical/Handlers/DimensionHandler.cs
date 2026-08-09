@@ -96,6 +96,11 @@ public sealed class DimensionHandler : ICommandHandler
         // Strings that carry their own line, drawn one per subject rather than
         // chained across the plan.
         var strands = new List<Strand>();
+
+        // The same subjects as a plan-wide chain, held back in case the strings
+        // above come to nothing.
+        var fallbackX = new List<Anchor>();
+        var fallbackY = new List<Anchor>();
         var elevation = view.GenLevel?.Elevation ?? 0;
 
         // What `all` means depends on the scope. Inside a room, the devices are
@@ -120,7 +125,7 @@ public sealed class DimensionHandler : ICommandHandler
             // uses for a category, in both languages.
             if (CollectDevices(
                     doc, view, room!, key, bounds, offsetFeet, elevation,
-                    alongX, alongY, strands) > 0)
+                    alongX, alongY, fallbackX, fallbackY, strands) > 0)
             {
                 targets.Add($"{key}.title");
             }
@@ -183,9 +188,8 @@ public sealed class DimensionHandler : ICommandHandler
 
         var extents = Extents(alongX.Concat(alongY).Concat(boundsX).Concat(boundsY));
 
-        // The dimensions this run makes, kept so what actually survived can be
-        // counted rather than assumed.
-        var made = new List<Dimension>();
+        // How many strings were made, against how many are on the drawing.
+        var attempted = 0;
 
         var created = 0;
         var used = 0;
@@ -212,6 +216,14 @@ public sealed class DimensionHandler : ICommandHandler
 
         try
         {
+            // A view can be hiding the whole category, and then every string
+            // below is measuring something nobody will ever see. Turned back on
+            // rather than reported, because a dimension command that leaves
+            // dimensions switched off has not done its job.
+            Reveal(view, notes);
+
+            var batch = new List<Dimension>();
+
             // The X string measures across, so it sits below the drawing; the Y
             // string measures up, so it sits to the left of it. Guarded on the
             // chain rather than inside Place, because the dimension line is
@@ -220,93 +232,130 @@ public sealed class DimensionHandler : ICommandHandler
             {
                 var x = PlaceWithFallback(
                     doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
-                if (x is not null) made.Add(x);
+                if (x is not null) batch.Add(x);
             }
 
             if (yChain.Count >= 2)
             {
                 var y = PlaceWithFallback(
                     doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
-                if (y is not null) made.Add(y);
+                if (y is not null) batch.Add(y);
             }
 
-            // One string per tray run, and one per wall-mounted device, each
-            // on the line it belongs beside.
+            // One string per tray run, and one per wall-mounted device, each on
+            // the line it belongs beside.
             foreach (var strand in strands)
             {
                 var placed = Place(doc, view, strand.Chain, strand.Line);
-                if (placed is not null) made.Add(placed);
+                if (placed is not null) batch.Add(placed);
             }
 
-            // Everything below this line exists because a dimension Revit
-            // accepted is not yet a dimension that is there. A reference it
-            // cannot resolve is dropped when the view regenerates, and a string
-            // left with fewer than two of them draws nothing at all — which is
-            // how this command came back reporting three strings over a plan
-            // with none on it. So: regenerate now, while the transaction is
-            // still open, and count what is left.
-            doc.Regenerate();
+            var landed = Tally(batch);
 
-            // A view can be hiding the whole category, and then everything below
-            // this is measuring something nobody will ever see. Turned back on
-            // rather than reported, because a dimension command that leaves
-            // dimensions switched off has not done its job.
-            Reveal(view, notes);
-
-            // What the view actually draws. A view-scoped collector answers the
-            // only question that matters here — is this string on the drawing —
-            // and it answers it for every reason a string might not be: a
-            // reference Revit dropped, a crop region it fell outside of, a view
-            // it was never really in. Counting what NewDimension returned
-            // answers none of them.
-            var drawn = new HashSet<ElementId>(
-                new FilteredElementCollector(doc, view.Id)
-                    .OfClass(typeof(Dimension))
-                    .ToElementIds());
-
-            foreach (var dimension in made)
+            // The per-device strings came to nothing and the devices are still
+            // undimensioned. A chain across the room is a worse drawing than one
+            // dimension per outlet, and a better one than an empty plan — and it
+            // is the shape this command is known to get onto paper.
+            if (landed == 0 && strands.Count > 0 && (fallbackX.Count >= 2 || fallbackY.Count >= 2))
             {
-                if (!dimension.IsValidObject)
+                notes.Add("The per-device strings did not land; measured across the room instead.");
+                Logger.Warn("dimension: per-subject strings drew nothing, falling back to chains.");
+
+                var second = new List<Dimension>();
+                var edges = bounds is null ? new List<Anchor>() : bounds.AlongX;
+                var edgesY = bounds is null ? new List<Anchor>() : bounds.AlongY;
+
+                var chainX = Chain(fallbackX.Concat(edges));
+                var chainY = Chain(fallbackY.Concat(edgesY));
+                var box = Extents(fallbackX.Concat(fallbackY).Concat(edges).Concat(edgesY));
+
+                if (chainX.Count >= 2)
                 {
-                    rejected++;
-                    continue;
+                    var x = PlaceWithFallback(
+                        doc, view, chainX, Chain(fallbackX), LineAlongX(box, elevation, offsetFeet));
+                    if (x is not null) second.Add(x);
                 }
 
-                var references = dimension.References?.Size ?? 0;
-
-                // Three questions, because each one has caught a different way
-                // of being reported and not being there: does it still hold its
-                // references, does the view list it, and does it occupy any
-                // space on the drawing. A string that draws nothing has no
-                // extent in the view, whatever the other two say.
-                var extent = dimension.get_BoundingBox(view);
-
-                if (references < 2 || !drawn.Contains(dimension.Id) || extent is null)
+                if (chainY.Count >= 2)
                 {
-                    Logger.Warn(
-                        $"Dimension {dimension.Id} is not on the drawing in '{view.Name}': "
-                        + $"{references} reference(s), listed={drawn.Contains(dimension.Id)}, "
-                        + $"extent={(extent is null ? "none" : "yes")}, owner {dimension.OwnerViewId}.");
-                    doc.Delete(dimension.Id);
-                    rejected++;
-                    continue;
+                    var y = PlaceWithFallback(
+                        doc, view, chainY, Chain(fallbackY), LineAlongY(box, elevation, offsetFeet));
+                    if (y is not null) second.Add(y);
                 }
 
-                created++;
-                used += references;
-                survivors.Add(dimension.Id);
-
-                if (where is null)
-                {
-                    where = new XYZ(
-                        (extent.Min.X + extent.Max.X) / 2,
-                        (extent.Min.Y + extent.Max.Y) / 2,
-                        0);
-                    Diagnose(doc, view, dimension, notes);
-                }
+                Tally(second);
             }
 
             transaction.Commit();
+
+            // A dimension Revit accepted is not yet a dimension that is there.
+            // A reference it cannot resolve is dropped when the view
+            // regenerates, and a string left with fewer than two of them draws
+            // nothing at all — which is how this command came back reporting
+            // three strings over a plan with none on it. So: regenerate while
+            // the transaction is still open, and count what is left.
+            int Tally(List<Dimension> batch)
+            {
+                if (batch.Count == 0) return 0;
+
+                attempted += batch.Count;
+                doc.Regenerate();
+
+                // What the view actually draws. A view-scoped collector answers
+                // the only question that matters — is this string on the drawing
+                // — for every reason it might not be: a reference Revit dropped,
+                // a crop region it fell outside of, a view it was never in.
+                var drawn = new HashSet<ElementId>(
+                    new FilteredElementCollector(doc, view.Id)
+                        .OfClass(typeof(Dimension))
+                        .ToElementIds());
+
+                var kept = 0;
+
+                foreach (var dimension in batch)
+                {
+                    if (!dimension.IsValidObject)
+                    {
+                        rejected++;
+                        continue;
+                    }
+
+                    var references = dimension.References?.Size ?? 0;
+
+                    // A string that draws nothing has no extent in the view,
+                    // whatever its references say and whatever the collector
+                    // lists.
+                    var extent = dimension.get_BoundingBox(view);
+
+                    if (references < 2 || !drawn.Contains(dimension.Id) || extent is null)
+                    {
+                        Logger.Warn(
+                            $"Dimension {dimension.Id} is not on the drawing in '{view.Name}': "
+                            + $"{references} reference(s), listed={drawn.Contains(dimension.Id)}, "
+                            + $"extent={(extent is null ? "none" : "yes")}, "
+                            + $"owner {dimension.OwnerViewId}.");
+                        doc.Delete(dimension.Id);
+                        rejected++;
+                        continue;
+                    }
+
+                    created++;
+                    kept++;
+                    used += references;
+                    survivors.Add(dimension.Id);
+
+                    if (where is null)
+                    {
+                        where = new XYZ(
+                            (extent.Min.X + extent.Max.X) / 2,
+                            (extent.Min.Y + extent.Max.Y) / 2,
+                            0);
+                        Diagnose(doc, view, dimension, notes);
+                    }
+                }
+
+                return kept;
+            }
         }
         catch (Exception ex)
         {
@@ -328,10 +377,10 @@ public sealed class DimensionHandler : ICommandHandler
         // Nothing survived: the command did not do what a tick would say it
         // did, and the count it would print is the count of things that are not
         // there.
-        if (created == 0 && made.Count > 0)
+        if (created == 0 && attempted > 0)
         {
             return CommandResult.Fail(
-                $"All {made.Count} dimension string(s) were made and none of them is drawn in "
+                $"All {attempted} dimension string(s) were made and none of them is drawn in "
                 + $"{Describe(view)}. Either the references did not survive a regeneration — the "
                 + "families involved may publish no reference planes to dimension to — or the "
                 + "strings fell outside the view's crop region.",
@@ -343,6 +392,18 @@ public sealed class DimensionHandler : ICommandHandler
             notes.Add(
                 $"Drawn in {Describe(view)}, not in the view open in Revit "
                 + $"({Describe(openView!)}). Open that view to see them.");
+        }
+
+        if (strands.Count > 0)
+        {
+            // What the first string was built to be, beside where it ended up.
+            // One of those two is wrong and they are not distinguishable apart.
+            notes.Add($"First string: {strands[0].Trace}");
+        }
+
+        if (room is not null && room.get_BoundingBox(null) is { } roomBox)
+        {
+            notes.Add($"{room.Name} spans {Mm(roomBox.Min)} to {Mm(roomBox.Max)} mm");
         }
 
         if (where is not null)
@@ -461,6 +522,10 @@ public sealed class DimensionHandler : ICommandHandler
             Logger.Debug($"Could not diagnose dimension visibility: {ex.Message}");
         }
     }
+
+    /// <summary>A point in project millimetres, for a reply a person has to read.</summary>
+    private static string Mm(XYZ point) =>
+        $"({RevitUnits.FeetToMm(point.X):F0}, {RevitUnits.FeetToMm(point.Y):F0})";
 
     /// <summary>A view named so it can be found: name, type and id.</summary>
     private static string Describe(View view) => $"{view.Name} · {view.ViewType} (id {view.Id})";
@@ -638,6 +703,8 @@ public sealed class DimensionHandler : ICommandHandler
         double elevation,
         List<Anchor> alongX,
         List<Anchor> alongY,
+        List<Anchor> fallbackX,
+        List<Anchor> fallbackY,
         List<Strand> strands)
     {
         if (!DeviceCategories.TryGetValue(key, out var category)) return 0;
@@ -656,16 +723,23 @@ public sealed class DimensionHandler : ICommandHandler
             if (device.Location is not LocationPoint location) continue;
             var point = location.Point;
 
+            var across = CentreReference(device, FamilyInstanceReferenceType.CenterLeftRight);
+            var up = CentreReference(device, FamilyInstanceReferenceType.CenterFrontBack);
+
             var strand = WallStrand(device, point, bounds, offsetFeet, elevation);
             if (strand is not null)
             {
                 strands.Add(strand.Value);
                 found++;
+
+                // Kept aside rather than dropped. One dimension per device is
+                // the drawing an engineer wants; a chain across the room is the
+                // drawing that is known to come out. If the first produces
+                // nothing, the second is better than an empty plan.
+                if (across is not null) fallbackX.Add(new Anchor(across, point.X, point));
+                if (up is not null) fallbackY.Add(new Anchor(up, point.Y, point));
                 continue;
             }
-
-            var across = CentreReference(device, FamilyInstanceReferenceType.CenterLeftRight);
-            var up = CentreReference(device, FamilyInstanceReferenceType.CenterFrontBack);
 
             // Both or neither: a string that measures to a fixture's centre in
             // one direction and its edge in the other reads as a mistake.
@@ -733,7 +807,16 @@ public sealed class DimensionHandler : ICommandHandler
             new Anchor(centre, alongTheXAxis ? point.X : point.Y, point),
         };
 
-        return new Strand(chain, Line.CreateBound(from + offset, to + offset));
+        var line = Line.CreateBound(from + offset, to + offset);
+
+        // Carried so the reply can show what the numbers were built from. Where
+        // a string landed says it is wrong; this says where it went wrong.
+        var trace =
+            $"device at {Mm(point)}, wall face {(alongTheXAxis ? "x" : "y")}="
+            + $"{RevitUnits.FeetToMm(end.Value.Position):F0}, "
+            + $"line {Mm(line.GetEndPoint(0))}-{Mm(line.GetEndPoint(1))}";
+
+        return new Strand(chain, line, trace);
     }
 
     /// <summary>
@@ -761,7 +844,7 @@ public sealed class DimensionHandler : ICommandHandler
     /// plan-wide chain: a tray run's hangers, or one wall-mounted device
     /// measured back along its wall.
     /// </summary>
-    private readonly record struct Strand(List<Anchor> Chain, Line Line);
+    private readonly record struct Strand(List<Anchor> Chain, Line Line, string Trace);
 
     /// <summary>
     /// The hangers on each cable tray run, one dimensionable string per run.
@@ -850,7 +933,12 @@ public sealed class DimensionHandler : ICommandHandler
             var end = new XYZ(chain[^1].Point.X, chain[^1].Point.Y, elevation) + offset;
             if (start.DistanceTo(end) < CoincidentToleranceFeet) continue;
 
-            runs.Add(new Strand(chain, Line.CreateBound(start, end)));
+            var line = Line.CreateBound(start, end);
+            runs.Add(new Strand(
+                chain,
+                line,
+                $"run {segment.Element.Id}: {chain.Count} hanger(s), "
+                + $"line {Mm(line.GetEndPoint(0))}-{Mm(line.GetEndPoint(1))}"));
         }
 
         Logger.Info($"dimension: {runs.Count} hanger run(s) to measure in '{view.Name}'.");
