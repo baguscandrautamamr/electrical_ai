@@ -210,7 +210,8 @@
     "nothing": "Tidak ada yang bisa diberi dimensi di view ini.",
     "no_devices": "Tidak ada perangkat yang bisa diukur di ruangan ini. Family-nya mungkin tidak punya reference plane untuk dimensi.",
     "hangers": "Hanger cable tray",
-    "no_hangers": "Tidak ada hanger cable tray yang bisa didimensi di view ini."
+    "no_hangers": "Tidak ada hanger cable tray yang bisa didimensi di view ini.",
+    "references_dropped": "Revit menolak sebagian titik acuan, jadi ada rangkaian dimensi yang lebih pendek dari yang diminta. Biasanya karena muka dinding berubah setelah dimensi dibuat."
   },
   "delete": {
     "title": "Hapus",

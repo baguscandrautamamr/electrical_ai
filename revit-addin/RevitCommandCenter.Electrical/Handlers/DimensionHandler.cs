@@ -85,6 +85,11 @@ public sealed class DimensionHandler : ICommandHandler
         var alongX = new List<Anchor>();
         var alongY = new List<Anchor>();
 
+        // Strings that carry their own line, drawn one per subject rather than
+        // chained across the plan.
+        var strands = new List<Strand>();
+        var elevation = view.GenLevel?.Elevation ?? 0;
+
         // What `all` means depends on the scope. Inside a room, the devices are
         // the drawing — dimensioning the building grid there tells the engineer
         // nothing they asked for. Over a whole view, the grids and walls are.
@@ -97,11 +102,17 @@ public sealed class DimensionHandler : ICommandHandler
         // names no room because a tray run crosses several.
         var wantsHangers = target == "hanger";
 
+        // The walls a room is drawn inside, read before the devices because a
+        // wall-mounted device is dimensioned back to one of them.
+        var bounds = room is not null && deviceKeys.Count > 0 ? CollectRoomBounds(doc, room) : null;
+
         foreach (var key in deviceKeys)
         {
             // `<category>.title` is the label the rest of the system already
             // uses for a category, in both languages.
-            if (CollectDevices(doc, view, room!, key, alongX, alongY) > 0)
+            if (CollectDevices(
+                    doc, view, room!, key, bounds, offsetFeet, elevation,
+                    alongX, alongY, strands) > 0)
             {
                 targets.Add($"{key}.title");
             }
@@ -113,27 +124,20 @@ public sealed class DimensionHandler : ICommandHandler
         // chains. One chain across the whole model reads every run's supports as
         // one row of numbers, which is not a dimension of anything: the drawing
         // an engineer wants is each line of tray measured along itself.
-        var hangerRuns = wantsHangers
-            ? CollectHangerRuns(context, view, room, offsetFeet)
-            : new List<HangerRun>();
-
         if (wantsHangers)
         {
-            if (hangerRuns.Count > 0) targets.Add("dimension.hangers");
+            var runs = CollectHangerRuns(context, view, room, offsetFeet);
+            if (runs.Count > 0) targets.Add("dimension.hangers");
             else notes.Add("dimension.no_hangers");
+            strands.AddRange(runs);
         }
 
-        // The walls a room is drawn inside are part of the same string as the
-        // devices in it: an outlet is set out from the wall it is on, and a
-        // chain that runs device to device says where they are relative to each
-        // other but not where any of them is. They are kept apart so a wall
-        // reference Revit will not take cannot cost the whole string.
-        var bounds = new List<Anchor>();
-        var boundsY = new List<Anchor>();
-        if (room is not null && deviceKeys.Count > 0)
-        {
-            CollectRoomBounds(doc, view, room, bounds, boundsY);
-        }
+        // A ceiling layout is still a chain — centre to centre across the room,
+        // and out to the room's own walls at each end so the string says where
+        // the fixtures are and not only how far apart they sit. Left out when
+        // there is no fixture to anchor them to.
+        var boundsX = alongX.Count > 0 && bounds is not null ? bounds.AlongX : new List<Anchor>();
+        var boundsY = alongY.Count > 0 && bounds is not null ? bounds.AlongY : new List<Anchor>();
 
         if (wantsGrids)
         {
@@ -149,12 +153,12 @@ public sealed class DimensionHandler : ICommandHandler
 
         // Two chains per axis: the one an engineer wants, and the one to fall
         // back to if Revit refuses a wall face in it.
-        var xChain = Chain(alongX.Concat(bounds));
+        var xChain = Chain(alongX.Concat(boundsX));
         var yChain = Chain(alongY.Concat(boundsY));
         var xWithoutBounds = Chain(alongX);
         var yWithoutBounds = Chain(alongY);
 
-        if (xChain.Count < 2 && yChain.Count < 2 && hangerRuns.Count == 0)
+        if (xChain.Count < 2 && yChain.Count < 2 && strands.Count == 0)
         {
             // Not a failure: the command ran, the view simply had nothing in it
             // worth a dimension. Saying so beats a red cross over an empty plan.
@@ -169,14 +173,24 @@ public sealed class DimensionHandler : ICommandHandler
             });
         }
 
-        var extents = Extents(alongX.Concat(alongY).Concat(bounds).Concat(boundsY));
-        var elevation = view.GenLevel?.Elevation ?? 0;
+        var extents = Extents(alongX.Concat(alongY).Concat(boundsX).Concat(boundsY));
 
         var created = 0;
         var used = 0;
 
         using var transaction = new Transaction(doc, $"Dimension {view.Name}");
         transaction.Start();
+
+        // Revit resolves a bad reference by putting a modal error on screen and
+        // waiting. Nobody is sitting at this machine — the command came from
+        // Telegram — so the dialog would hold Revit, and the whole queue behind
+        // it, until somebody walked over and clicked it. Set after the start,
+        // which is when the transaction has options to read.
+        var failures = new ResolveQuietly();
+        var handling = transaction.GetFailureHandlingOptions();
+        handling.SetFailuresPreprocessor(failures);
+        handling.SetClearAfterRollback(true);
+        transaction.SetFailureHandlingOptions(handling);
 
         try
         {
@@ -206,13 +220,14 @@ public sealed class DimensionHandler : ICommandHandler
                 }
             }
 
-            // One string per tray run, laid alongside the run it measures.
-            foreach (var run in hangerRuns)
+            // One string per tray run, and one per wall-mounted device, each
+            // on the line it belongs beside.
+            foreach (var strand in strands)
             {
-                if (!Place(doc, view, run.Chain, run.Line)) continue;
+                if (!Place(doc, view, strand.Chain, strand.Line)) continue;
 
                 created++;
-                used += run.Chain.Count;
+                used += strand.Chain.Count;
             }
 
             transaction.Commit();
@@ -222,6 +237,14 @@ public sealed class DimensionHandler : ICommandHandler
             transaction.RollBack();
             Logger.Error("dimension rolled back", ex);
             return CommandResult.FromException(ex);
+        }
+
+        if (failures.Resolved > 0)
+        {
+            // Said rather than swallowed: a string Revit dropped a reference
+            // from measures something other than what was asked for.
+            notes.Add("dimension.references_dropped");
+            Logger.Warn($"dimension: Revit rejected {failures.Resolved} reference set(s) in {view.Name}");
         }
 
         Logger.Info($"dimension: {created} string(s) over {used} reference(s) in {view.Name}");
@@ -234,6 +257,46 @@ public sealed class DimensionHandler : ICommandHandler
             Targets = targets,
             Notes = notes.Count > 0 ? notes : null,
         });
+    }
+
+    /// <summary>
+    /// Takes Revit's own answer to a failure instead of asking the user for one.
+    ///
+    /// "One or more dimension references are or have become invalid" is an error
+    /// Revit calls un-ignorable, and its dialog blocks until a human clicks
+    /// Remove Reference(s). This applies that same resolution, and counts it so
+    /// the reply can say a string came back short. A failure with no resolution
+    /// to offer takes the elements that caused it, because a rolled-back
+    /// transaction would lose the strings that were fine.
+    /// </summary>
+    private sealed class ResolveQuietly : IFailuresPreprocessor
+    {
+        public int Resolved { get; private set; }
+
+        public FailureProcessingResult PreprocessFailures(FailuresAccessor accessor)
+        {
+            foreach (var failure in accessor.GetFailureMessages())
+            {
+                if (failure.GetSeverity() == FailureSeverity.Warning)
+                {
+                    accessor.DeleteWarning(failure);
+                    continue;
+                }
+
+                Resolved++;
+
+                if (failure.HasResolutions())
+                {
+                    accessor.ResolveFailure(failure);
+                    continue;
+                }
+
+                var failing = failure.GetFailingElementIds();
+                if (failing.Count > 0) accessor.DeleteElements(failing.ToList());
+            }
+
+            return FailureProcessingResult.ProceedWithCommit;
+        }
     }
 
     // ----------------------------------------------------------------- view
@@ -328,14 +391,23 @@ public sealed class DimensionHandler : ICommandHandler
     /// planes, which is exactly what a fixture layout is dimensioned to — centre
     /// to centre — so those are asked for by name rather than derived from
     /// geometry.
+    ///
+    /// A wall-mounted device is a different drawing from a ceiling one: it is
+    /// set out along the wall it sits on, from the wall at one end of that wall,
+    /// one dimension per device. A chain across the room says how far the
+    /// sockets are from each other, which is not how anybody sets one out.
     /// </summary>
     private static int CollectDevices(
         Document doc,
         View view,
         Room room,
         string key,
+        RoomBounds? bounds,
+        double offsetFeet,
+        double elevation,
         List<Anchor> alongX,
-        List<Anchor> alongY)
+        List<Anchor> alongY,
+        List<Strand> strands)
     {
         if (!DeviceCategories.TryGetValue(key, out var category)) return 0;
 
@@ -352,6 +424,14 @@ public sealed class DimensionHandler : ICommandHandler
         {
             if (device.Location is not LocationPoint location) continue;
             var point = location.Point;
+
+            var strand = WallStrand(device, point, bounds, offsetFeet, elevation);
+            if (strand is not null)
+            {
+                strands.Add(strand.Value);
+                found++;
+                continue;
+            }
 
             var across = CentreReference(device, FamilyInstanceReferenceType.CenterLeftRight);
             var up = CentreReference(device, FamilyInstanceReferenceType.CenterFrontBack);
@@ -374,6 +454,58 @@ public sealed class DimensionHandler : ICommandHandler
     }
 
     /// <summary>
+    /// One wall-mounted device, dimensioned back along its own wall to the wall
+    /// at the nearer end of it. Null when it is not on a wall, or when there is
+    /// nothing to measure it to.
+    /// </summary>
+    private static Strand? WallStrand(
+        FamilyInstance device,
+        XYZ point,
+        RoomBounds? bounds,
+        double offsetFeet,
+        double elevation)
+    {
+        if (bounds is null) return null;
+        if (device.Host is not Wall wall) return null;
+        if (wall.Location is not LocationCurve curve || curve.Curve is not Line line) return null;
+
+        var direction = Flatten(line.Direction);
+        if (direction is null) return null;
+
+        var end = bounds.Nearest(point, direction);
+        if (end is null) return null;
+
+        // The centre plane facing along the wall, whichever of the family's own
+        // axes that turned out to be once the device was hosted.
+        var centre = CentreReferenceAlong(device, direction);
+        if (centre is null) return null;
+
+        // Into the room, so the string is not drawn along the wall it measures
+        // from and buried in it.
+        var toCentre = new XYZ(bounds.Centre.X - point.X, bounds.Centre.Y - point.Y, 0);
+        var inward = toCentre - direction.Multiply(toCentre.DotProduct(direction));
+        if (inward.GetLength() < CoincidentToleranceFeet) return null;
+
+        var offset = inward.Normalize().Multiply(offsetFeet);
+        var alongTheXAxis = Math.Abs(direction.X) > AxisTolerance;
+
+        var from = alongTheXAxis
+            ? new XYZ(end.Value.Position, point.Y, elevation)
+            : new XYZ(point.X, end.Value.Position, elevation);
+        var to = new XYZ(point.X, point.Y, elevation);
+
+        if (from.DistanceTo(to) < CoincidentToleranceFeet) return null;
+
+        var chain = new List<Anchor>
+        {
+            end.Value,
+            new Anchor(centre, alongTheXAxis ? point.X : point.Y, point),
+        };
+
+        return new Strand(chain, Line.CreateBound(from + offset, to + offset));
+    }
+
+    /// <summary>
     /// One of a family's centre planes, when it publishes one.
     ///
     /// Families authored without reference planes marked as references publish
@@ -393,8 +525,12 @@ public sealed class DimensionHandler : ICommandHandler
         }
     }
 
-    /// <summary>One tray run's hangers, ordered, with the line to measure them on.</summary>
-    private readonly record struct HangerRun(List<Anchor> Chain, Line Line);
+    /// <summary>
+    /// One dimension string that carries its own line rather than joining a
+    /// plan-wide chain: a tray run's hangers, or one wall-mounted device
+    /// measured back along its wall.
+    /// </summary>
+    private readonly record struct Strand(List<Anchor> Chain, Line Line);
 
     /// <summary>
     /// The hangers on each cable tray run, one dimensionable string per run.
@@ -410,7 +546,7 @@ public sealed class DimensionHandler : ICommandHandler
     /// varies with it, so they cannot go through the category table the device
     /// targets use.
     /// </summary>
-    private static List<HangerRun> CollectHangerRuns(
+    private static List<Strand> CollectHangerRuns(
         HandlerContext context,
         ViewPlan view,
         Room? room,
@@ -418,7 +554,7 @@ public sealed class DimensionHandler : ICommandHandler
     {
         var doc = context.Doc;
         var family = context.Config.HangerFamilyName;
-        var runs = new List<HangerRun>();
+        var runs = new List<Strand>();
 
         var segments = RevitUtils.AllTraySegments(doc)
             .Where(segment => segment.IsHorizontal && segment.LengthMm > 0)
@@ -483,7 +619,7 @@ public sealed class DimensionHandler : ICommandHandler
             var end = new XYZ(chain[^1].Point.X, chain[^1].Point.Y, elevation) + offset;
             if (start.DistanceTo(end) < CoincidentToleranceFeet) continue;
 
-            runs.Add(new HangerRun(chain, Line.CreateBound(start, end)));
+            runs.Add(new Strand(chain, Line.CreateBound(start, end)));
         }
 
         Logger.Info($"dimension: {runs.Count} hanger run(s) to measure in '{view.Name}'.");
@@ -622,6 +758,47 @@ public sealed class DimensionHandler : ICommandHandler
         return best;
     }
 
+    /// <summary>The faces of the walls a room is drawn inside.</summary>
+    private sealed class RoomBounds
+    {
+        /// <summary>Faces square to X — what a horizontal string measures to.</summary>
+        public List<Anchor> AlongX { get; } = new();
+
+        public List<Anchor> AlongY { get; } = new();
+
+        public XYZ Centre { get; init; } = XYZ.Zero;
+
+        /// <summary>
+        /// The bounding face nearest a point, measured along a direction — the
+        /// wall an engineer would set that device out from.
+        /// </summary>
+        public Anchor? Nearest(XYZ point, XYZ direction)
+        {
+            var alongTheXAxis = Math.Abs(direction.X) > AxisTolerance;
+            var candidates = alongTheXAxis
+                ? AlongX
+                : Math.Abs(direction.Y) > AxisTolerance ? AlongY : null;
+
+            if (candidates is null || candidates.Count == 0) return null;
+
+            var position = alongTheXAxis ? point.X : point.Y;
+
+            Anchor? best = null;
+            var bestGap = double.MaxValue;
+
+            foreach (var anchor in candidates)
+            {
+                var gap = Math.Abs(anchor.Position - position);
+                if (gap >= bestGap) continue;
+
+                bestGap = gap;
+                best = anchor;
+            }
+
+            return best;
+        }
+    }
+
     /// <summary>
     /// The inner faces of the walls a room is drawn inside.
     ///
@@ -629,22 +806,27 @@ public sealed class DimensionHandler : ICommandHandler
     /// is set out from the wall it is on, and a chain running device to device
     /// says where they are relative to each other but not where any of them is.
     ///
-    /// Only the two faces bracketing the room on each axis are taken. Every
-    /// face of every bounding wall would dimension each wall's thickness as
-    /// well, which is a different drawing.
+    /// The faces come from <see cref="HostObjectUtils"/> rather than by walking
+    /// the wall's solid. A face picked out of geometry carries a reference that
+    /// Revit will accept when the dimension is made and then reject when it
+    /// regenerates — "one or more dimension references are or have become
+    /// invalid", a modal error over a drawing nobody was looking at. The side
+    /// faces of a host object are the references Revit itself keeps stable.
+    ///
+    /// Only the two faces bracketing the room on each axis are kept. Every face
+    /// of every bounding wall would dimension each wall's thickness as well,
+    /// which is a different drawing.
     /// </summary>
-    private static void CollectRoomBounds(
-        Document doc,
-        View view,
-        Room room,
-        List<Anchor> alongX,
-        List<Anchor> alongY)
+    private static RoomBounds? CollectRoomBounds(Document doc, Room room)
     {
         var box = room.get_BoundingBox(null);
-        if (box is null) return;
+        if (box is null) return null;
 
         var walls = new HashSet<ElementId>();
-        foreach (var loop in room.GetBoundarySegments(new SpatialElementBoundaryOptions()) ?? new List<IList<BoundarySegment>>())
+        var loops = room.GetBoundarySegments(new SpatialElementBoundaryOptions());
+        if (loops is null) return null;
+
+        foreach (var loop in loops)
         {
             foreach (var segment in loop)
             {
@@ -652,9 +834,12 @@ public sealed class DimensionHandler : ICommandHandler
             }
         }
 
-        if (walls.Count == 0) return;
+        if (walls.Count == 0) return null;
 
-        var options = new Options { ComputeReferences = true, View = view };
+        var bounds = new RoomBounds
+        {
+            Centre = new XYZ((box.Min.X + box.Max.X) / 2, (box.Min.Y + box.Max.Y) / 2, 0),
+        };
 
         Anchor? minX = null, maxX = null, minY = null, maxY = null;
         double minXGap = double.MaxValue, maxXGap = double.MaxValue;
@@ -662,29 +847,24 @@ public sealed class DimensionHandler : ICommandHandler
 
         foreach (var id in walls)
         {
-            var wall = doc.GetElement(id);
-            if (wall is null) continue;
+            if (doc.GetElement(id) is not Wall wall) continue;
 
-            GeometryElement? geometry;
-            try
+            foreach (var side in new[] { ShellLayerType.Interior, ShellLayerType.Exterior })
             {
-                geometry = wall.get_Geometry(options);
-            }
-            catch (Exception ex)
-            {
-                Logger.Debug($"No usable geometry on bounding wall {id}: {ex.Message}");
-                continue;
-            }
-
-            if (geometry is null) continue;
-
-            foreach (var item in geometry)
-            {
-                if (item is not Solid solid) continue;
-
-                foreach (Face face in solid.Faces)
+                IList<Reference> faces;
+                try
                 {
-                    if (face is not PlanarFace planar || planar.Reference is null) continue;
+                    faces = HostObjectUtils.GetSideFaces(wall, side);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Debug($"No {side} faces on bounding wall {id}: {ex.Message}");
+                    continue;
+                }
+
+                foreach (var reference in faces)
+                {
+                    if (wall.GetGeometryObjectFromReference(reference) is not PlanarFace planar) continue;
 
                     var normal = planar.FaceNormal;
                     if (Math.Abs(normal.Z) > 1 - AxisTolerance) continue;
@@ -693,24 +873,24 @@ public sealed class DimensionHandler : ICommandHandler
 
                     if (Math.Abs(normal.X) > AxisTolerance)
                     {
-                        Keep(ref minX, ref minXGap, origin.X, box.Min.X, planar.Reference, origin);
-                        Keep(ref maxX, ref maxXGap, origin.X, box.Max.X, planar.Reference, origin);
+                        Keep(ref minX, ref minXGap, origin.X, box.Min.X, reference, origin);
+                        Keep(ref maxX, ref maxXGap, origin.X, box.Max.X, reference, origin);
                     }
                     else if (Math.Abs(normal.Y) > AxisTolerance)
                     {
-                        Keep(ref minY, ref minYGap, origin.Y, box.Min.Y, planar.Reference, origin);
-                        Keep(ref maxY, ref maxYGap, origin.Y, box.Max.Y, planar.Reference, origin);
+                        Keep(ref minY, ref minYGap, origin.Y, box.Min.Y, reference, origin);
+                        Keep(ref maxY, ref maxYGap, origin.Y, box.Max.Y, reference, origin);
                     }
                 }
             }
         }
 
-        // The X string measures across, so it wants the faces that bracket the
-        // room in X; the Y string wants the other pair.
-        if (minX is not null) alongX.Add(minX.Value);
-        if (maxX is not null) alongX.Add(maxX.Value);
-        if (minY is not null) alongY.Add(minY.Value);
-        if (maxY is not null) alongY.Add(maxY.Value);
+        if (minX is not null) bounds.AlongX.Add(minX.Value);
+        if (maxX is not null) bounds.AlongX.Add(maxX.Value);
+        if (minY is not null) bounds.AlongY.Add(minY.Value);
+        if (maxY is not null) bounds.AlongY.Add(maxY.Value);
+
+        return bounds.AlongX.Count + bounds.AlongY.Count > 0 ? bounds : null;
 
         void Keep(ref Anchor? slot, ref double gap, double position, double wanted, Reference reference, XYZ origin)
         {
