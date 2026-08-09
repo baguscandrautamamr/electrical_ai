@@ -1,6 +1,7 @@
 using Autodesk.Revit.UI;
 using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Database;
+using RevitCommandCenter.Electrical.Models;
 using RevitCommandCenter.Electrical.Queue;
 using RevitCommandCenter.Electrical.Utils;
 
