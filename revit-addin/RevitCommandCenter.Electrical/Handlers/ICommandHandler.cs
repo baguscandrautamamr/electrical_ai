@@ -46,7 +46,18 @@ public sealed class HandlerContext
 
         if (Config.SendFilesToTelegram)
         {
-            PendingUploads.Add(new PendingUpload(localPath, ContentTypeOf(fileName)));
+            if (string.IsNullOrWhiteSpace(Config.TelegramBotToken))
+            {
+                // Knowable now, and worth saying now. Discovering it at upload
+                // time means the reply has already gone out saying the file was
+                // printed, and the reason it never arrived is a line in a log
+                // on a machine nobody is looking at.
+                Warn("print.no_bot_token");
+            }
+            else
+            {
+                PendingUploads.Add(new PendingUpload(localPath, ContentTypeOf(fileName)));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(Config.ExportBaseUrl))
@@ -55,6 +66,20 @@ public sealed class HandlerContext
         }
 
         return localPath;
+    }
+
+    /// <summary>
+    /// Things the person who sent the command should be told, as i18n keys.
+    ///
+    /// For what a handler notices but cannot fix — a missing setting, a family
+    /// that states no load. Carried on the result so it reaches the chat rather
+    /// than only the log.
+    /// </summary>
+    public List<string> Warnings { get; } = new();
+
+    public void Warn(string key)
+    {
+        if (!Warnings.Contains(key)) Warnings.Add(key);
     }
 
     private static string ContentTypeOf(string fileName) =>

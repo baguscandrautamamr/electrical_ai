@@ -188,6 +188,7 @@
     "printed": "Sheet yang dicetak",
     "files": "Berkas",
     "saved_at": "Tersimpan di",
+    "no_bot_token": "⚠️ Berkas tidak dikirim ke chat: Telegram bot token belum diisi di setting add-in Revit. Isi di panel Command Center → Settings, lalu cetak ulang.",
     "not_found": "Tidak ada sheet yang cocok dengan: {sheets}"
   },
   "dimension": {
@@ -243,6 +244,7 @@
     "tray_fill": "Cable fill dalam batas",
     "hanger_load": "Beban hanger dalam kapasitas",
     "breaker_load": "Beban breaker dalam batas",
+    "requested_count": "Jumlah yang dipasang sesuai permintaan",
     "switch_type_available": "Type saklar yang diminta tersedia di proyek"
   },
   "admin": {

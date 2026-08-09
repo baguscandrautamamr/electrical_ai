@@ -290,6 +290,7 @@ export function formatExport(result: ExportResult, ctx: FormatContext): string {
   const links = exportRows(t, result.exports);
   if (links.length > 0) {
     b.links(links);
+    appendNotes(b, t, result.notes);
     return b.build();
   }
 
@@ -300,6 +301,8 @@ export function formatExport(result: ExportResult, ctx: FormatContext): string {
     b.section(t('print.saved_at'));
     for (const path of paths.slice(0, 5)) b.code(path);
   }
+
+  appendNotes(b, t, result.notes);
 
   return b.build();
 }
@@ -345,7 +348,21 @@ export function formatPrint(result: PrintResult, ctx: FormatContext): string {
     b.blank().bullets([t('print.not_found', { sheets: missing.join(', ') })]);
   }
 
+  appendNotes(b, t, result.notes);
+
   return b.build();
+}
+
+/**
+ * What the add-in could see going wrong but could not fix.
+ *
+ * A file that never left the Revit machine is the case this exists for: the
+ * print succeeded, so the reply is a success, and the reason it did not arrive
+ * would otherwise be a line in a log on a machine nobody is looking at.
+ */
+function appendNotes(b: MessageBuilder, t: Translate, notes: string[] | undefined): void {
+  const lines = (notes ?? []).map((note) => maybeTranslate(t, note));
+  if (lines.length > 0) b.blank().bullets(lines);
 }
 
 // ---------------------------------------------------------------------------

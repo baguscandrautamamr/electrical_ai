@@ -82,6 +82,7 @@ public sealed class PrintPdfHandler : ICommandHandler
                 Sheets = matched.Select(sheet => Describe(context, sheet, files, stamp, combine)).ToList(),
                 Files = files.Select(context.Share).ToList(),
                 NotFound = unmatched.Count > 0 ? unmatched : null,
+                Notes = context.Warnings.Count > 0 ? context.Warnings : null,
             };
 
             Logger.Info($"print_pdf: {matched.Count} sheet(s) -> {files.Count} file(s)");

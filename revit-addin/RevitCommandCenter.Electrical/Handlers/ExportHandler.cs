@@ -68,7 +68,11 @@ public sealed class ExportHandler : ICommandHandler
             return CommandResult.Fail("Export produced no files.", retryable: false);
         }
 
-        return CommandResult.Ok(new ExportResultDto { Exports = links });
+        return CommandResult.Ok(new ExportResultDto
+        {
+            Exports = links,
+            Notes = context.Warnings.Count > 0 ? context.Warnings : null,
+        });
     }
 
     // ---------------------------------------------------------------- Excel

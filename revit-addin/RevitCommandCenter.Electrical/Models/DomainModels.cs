@@ -134,6 +134,10 @@ public sealed class ExportResultDto
 {
     [JsonProperty("kind")] public string Kind => "export";
     [JsonProperty("exports")] public ExportLinksDto Exports { get; set; } = new();
+
+    /// <summary>i18n keys for anything the engineer should know. See HandlerContext.Warn.</summary>
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
 }
 
 /// <summary>One sheet sent to the printer, as it is named in the title block.</summary>
@@ -155,6 +159,10 @@ public sealed class PrintResultDto
 
     [JsonProperty("not_found", NullValueHandling = NullValueHandling.Ignore)]
     public List<string>? NotFound { get; set; }
+
+    /// <summary>i18n keys for anything the engineer should know. See HandlerContext.Warn.</summary>
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
 }
 
 /// <summary>Matches the TypeScript <c>DeleteResult</c>.</summary>

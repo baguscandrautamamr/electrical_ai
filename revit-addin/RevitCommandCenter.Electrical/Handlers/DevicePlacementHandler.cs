@@ -168,6 +168,19 @@ public abstract class DevicePlacementHandler : ICommandHandler
 
         Decorate(result, context, command, room, placed);
 
+        // Placing fewer than were asked for is a fact about the room, and it
+        // has to be said. Reporting five where six were asked for, with nothing
+        // to mark it, is how an engineer finds out from the drawing instead.
+        if (placed.Count < count)
+        {
+            result.Compliance ??= new List<ComplianceCheckDto>();
+            result.Compliance.Insert(0, ComplianceCheckDto.Of(
+                "compliance.requested_count",
+                false,
+                $"asked for {count}, placed {placed.Count} — "
+                + $"no wall clear of the doors and windows in '{room.Name}' for the rest"));
+        }
+
         Logger.Info($"{CommandType}: placed {placed.Count} device(s) in {room.Name}");
         return CommandResult.Ok(result);
     }

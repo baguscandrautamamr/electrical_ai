@@ -100,12 +100,57 @@ public sealed class CommandPoller : IDisposable
     private async Task DrainAsync()
     {
         const int maxPerTick = 10;
+        var didWork = false;
 
         for (var run = 0; run < maxPerTick; run++)
         {
-            if (_cancellation.IsCancellationRequested) return;
-            if (!await RunCycleAsync().ConfigureAwait(false)) return;
+            if (_cancellation.IsCancellationRequested) break;
+            if (!await RunCycleAsync().ConfigureAwait(false)) break;
+            didWork = true;
         }
+
+        UpdateCadence(didWork);
+    }
+
+    /// <summary>How long a burst of fast polling lasts after the last command.</summary>
+    private static readonly TimeSpan ActiveWindow = TimeSpan.FromMinutes(2);
+
+    /// <summary>How often to ask while somebody is plainly working.</summary>
+    private static readonly TimeSpan ActiveInterval = TimeSpan.FromSeconds(1);
+
+    private DateTime _activeUntil = DateTime.MinValue;
+    private bool _polledFast;
+
+    /// <summary>
+    /// Polls hard while someone is working, and backs off when they stop.
+    /// </summary>
+    /// <remarks>
+    /// The configured interval is a compromise between how quickly the bot
+    /// answers and how much of the Supabase call budget an idle Revit burns
+    /// sitting on a desk overnight. It does not have to be one number: nobody
+    /// sends one command, and for the two minutes after any command a second of
+    /// waiting is what the engineer actually feels.
+    ///
+    /// An idle add-in still asks exactly as often as it always did, so the
+    /// daily call budget is unchanged for the case that dominates it.
+    /// </remarks>
+    private void UpdateCadence(bool didWork)
+    {
+        if (_timer is null) return;
+
+        if (didWork) _activeUntil = DateTime.UtcNow.Add(ActiveWindow);
+
+        var shouldPollFast = DateTime.UtcNow < _activeUntil;
+        if (shouldPollFast == _polledFast) return;
+
+        var interval = shouldPollFast
+            ? ActiveInterval
+            : TimeSpan.FromSeconds(_config.PollingIntervalSeconds);
+
+        _timer.Change(interval, interval);
+        _polledFast = shouldPollFast;
+
+        Logger.Debug($"Polling every {interval.TotalSeconds:F0}s");
     }
 
     /// <summary>
