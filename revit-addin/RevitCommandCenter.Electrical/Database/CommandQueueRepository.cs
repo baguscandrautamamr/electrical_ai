@@ -44,12 +44,6 @@ public sealed class CommandQueueRepository
     public string WorkerId => _workerId;
 
     /// <summary>
-    /// The underlying client, for the calls that are not queue operations —
-    /// today, composing a Storage URL from inside a handler.
-    /// </summary>
-    public SupabaseClient Supabase => _client;
-
-    /// <summary>
     /// Claims the oldest pending command, across every project unless this
     /// repository was scoped to one. Null when there is nothing to do.
     /// </summary>

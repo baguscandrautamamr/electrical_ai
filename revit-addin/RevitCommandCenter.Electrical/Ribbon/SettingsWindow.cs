@@ -44,6 +44,8 @@ internal sealed class SettingsWindow : Window
     private readonly TextBox _pollInterval = new();
     private readonly TextBox _hangerFamily = new();
     private readonly TextBox _exportDirectory = new();
+    private readonly PasswordBox _botToken = new();
+    private readonly CheckBox _sendFiles = new();
     private readonly ComboBox _language = new();
     private readonly CheckBox _autoStart = new();
     private readonly TextBlock _status = new();
@@ -96,6 +98,15 @@ internal sealed class SettingsWindow : Window
         root.Children.Add(Field("Poll interval (seconds)", _pollInterval, "4 — lower feels faster and costs more API calls"));
         root.Children.Add(Field("Hanger family name", _hangerFamily));
         root.Children.Add(Field("Export folder", _exportDirectory));
+
+        _sendFiles.Content = "Send printed sheets and schedules to the Telegram chat";
+        _sendFiles.Margin = new Thickness(0, 10, 0, 0);
+        root.Children.Add(_sendFiles);
+        root.Children.Add(Field(
+            "Telegram bot token",
+            _botToken,
+            "The same token the webhook uses. Needed only to upload files; leave blank "
+            + "and exports stay on this machine."));
 
         _language.Items.Add("id");
         _language.Items.Add("en");
@@ -176,6 +187,8 @@ internal sealed class SettingsWindow : Window
         _pollInterval.Text = _config.PollingIntervalSeconds.ToString();
         _hangerFamily.Text = _config.HangerFamilyName;
         _exportDirectory.Text = _config.ExportDirectory;
+        _botToken.Password = _config.TelegramBotToken;
+        _sendFiles.IsChecked = _config.SendFilesToTelegram;
         _language.SelectedItem = _config.Language == "en" ? "en" : "id";
         _autoStart.IsChecked = _config.StartPollingOnLaunch;
 
@@ -298,6 +311,8 @@ internal sealed class SettingsWindow : Window
         _config.PollingIntervalSeconds = Math.Clamp(interval, 2, 300);
         _config.HangerFamilyName = _hangerFamily.Text.Trim();
         _config.ExportDirectory = _exportDirectory.Text.Trim();
+        _config.TelegramBotToken = _botToken.Password.Trim();
+        _config.SendFilesToTelegram = _sendFiles.IsChecked == true;
         _config.Language = (_language.SelectedItem as string) ?? "id";
         _config.StartPollingOnLaunch = _autoStart.IsChecked == true;
 

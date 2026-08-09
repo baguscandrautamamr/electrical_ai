@@ -55,19 +55,25 @@ public sealed class AddinConfig
     public string ExportBaseUrl { get; set; } = string.Empty;
 
     /// <summary>
-    /// Upload exports to Supabase Storage so Telegram can deliver them as files.
+    /// Send generated files to the chat that asked for them.
     ///
     /// On by default: without it a printed drawing reaches the chat as a path on
     /// a Windows machine nobody reading the message is sitting at. Turn it off
     /// for a site that will not have drawings leave the building, and the reply
     /// falls back to ExportBaseUrl and then to the local path.
     /// </summary>
-    [JsonProperty("upload_exports")]
-    public bool UploadExports { get; set; } = true;
+    [JsonProperty("send_files_to_telegram")]
+    public bool SendFilesToTelegram { get; set; } = true;
 
-    /// <summary>Storage bucket the exports go into. Must exist and be public.</summary>
-    [JsonProperty("storage_bucket")]
-    public string StorageBucket { get; set; } = "exports";
+    /// <summary>
+    /// The bot's token, needed to upload a file to the chat.
+    ///
+    /// The same token the webhook uses — from BotFather, or from the Vercel
+    /// environment where it is already set. Only this machine and the
+    /// deployment hold it; treat it like the Supabase key beside it.
+    /// </summary>
+    [JsonProperty("telegram_bot_token")]
+    public string TelegramBotToken { get; set; } = string.Empty;
 
     [JsonProperty("language")]
     public string Language { get; set; } = "id";

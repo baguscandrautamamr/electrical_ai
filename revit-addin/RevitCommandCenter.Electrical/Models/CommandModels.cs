@@ -12,6 +12,14 @@ public sealed class CommandModel
     [JsonProperty("command_type")] public string CommandType { get; set; } = string.Empty;
     [JsonProperty("command_text")] public string? CommandText { get; set; }
     [JsonProperty("command_json")] public JObject Params { get; set; } = new();
+
+    /// <summary>
+    /// The Telegram chat this command came from, so a generated file can be
+    /// sent back to it. Null for a command queued by something other than the
+    /// bot.
+    /// </summary>
+    [JsonProperty("chat_id")] public long? ChatId { get; set; }
+
     [JsonProperty("status")] public string Status { get; set; } = "pending";
     [JsonProperty("retry_count")] public int RetryCount { get; set; }
     [JsonProperty("max_retries")] public int MaxRetries { get; set; } = 3;

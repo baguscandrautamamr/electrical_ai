@@ -186,6 +186,7 @@
     "sheets": "Sheets",
     "printed": "Sheets printed",
     "files": "Files",
+    "saved_at": "Saved at",
     "not_found": "No sheet matched: {sheets}"
   },
   "dimension": {
