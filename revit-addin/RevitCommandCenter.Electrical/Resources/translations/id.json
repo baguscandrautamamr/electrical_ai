@@ -123,6 +123,7 @@
     "skipped_vertical": "Segmen vertikal dilewati",
     "type_without_fittings": "⚠️ Tipe cable tray di model ini tidak punya fitting elbow (tipe \"without fittings\"). Load tipe yang pakai fitting kalau belokan perlu tersambung.",
     "hangers_failed": "Hanger gagal dipasang; tray-nya tetap terbuat.",
+    "hangers_none": "Tidak ada hanger yang terpasang. Cek nama family hanger di setelan add-in (Hanger family name), dan pastikan family-nya punya type untuk ukuran tray ini.",
     "elbows_missing": "⚠️ Sebagian belokan tidak bisa dipasangi elbow — cek di Revit, run-nya mungkin terputus di situ.",
     "panel_updated": "Panel diperbarui"
   },

@@ -148,7 +148,8 @@ public sealed class CableTrayHandler : ICommandHandler
             },
         };
 
-        var placement = new SmartHangerPlacement(context.Doc, command.GetString("hanger_family", "Hanger"));
+        var family = HangerFamily(context, command);
+        var placement = new SmartHangerPlacement(context.Doc, family);
 
         SmartHangerPlacement.PlacementOutcome outcome;
         try
@@ -171,6 +172,17 @@ public sealed class CableTrayHandler : ICommandHandler
                 stack: ex.ToString());
         }
 
+        // The tray is real either way, so this is not an exception — but a run
+        // that got no hanger must not come back as a tick. The reason names the
+        // family or the type list, which is what the user has to act on.
+        if (outcome.Failure is not null)
+        {
+            Logger.Error($"Tray {trayId} created but not hung: {outcome.Failure}");
+            return CommandResult.Fail(
+                $"Tray {trayId} was created, but no hanger was placed. {outcome.Failure}",
+                retryable: false);
+        }
+
         PersistTrayAndHangers(context, command, trayId, tray, widthMm, heightMm, lengthMm, outcome);
 
         var result = new CableTrayResultDto
@@ -189,9 +201,29 @@ public sealed class CableTrayHandler : ICommandHandler
         if (outcome.Warnings.Count > 0)
         {
             Logger.Warn($"Tray {trayId} warnings: {string.Join("; ", outcome.Warnings)}");
+            foreach (var warning in outcome.Warnings) context.Warn(warning);
         }
 
+        result.Notes = context.Warnings.Count > 0 ? context.Warnings : null;
+
         return CommandResult.Ok(result);
+    }
+
+    /// <summary>
+    /// The hanger family to use: the one named in the command, otherwise the
+    /// one configured in the add-in settings.
+    ///
+    /// The settings dialog is where the family name is actually kept — it is a
+    /// property of the office's content, not of one command — so a command that
+    /// does not name a family must defer to it. It used to default to "Hanger"
+    /// at the webhook instead, which meant every command silently asked for a
+    /// family no project has, found none, and reported a tray hung with zero
+    /// hangers.
+    /// </summary>
+    internal static string HangerFamily(HandlerContext context, CommandModel command)
+    {
+        var named = command.GetString("hanger_family");
+        return string.IsNullOrWhiteSpace(named) ? context.Config.HangerFamilyName : named;
     }
 
     /// <summary>
@@ -375,20 +407,32 @@ public sealed class CableTrayHandler : ICommandHandler
 
         try
         {
-            var placement = new SmartHangerPlacement(
-                context.Doc, command.GetString("hanger_family", "Hanger"));
+            var placement = new SmartHangerPlacement(context.Doc, HangerFamily(context, command));
 
-            return placement.PlaceHangers(
+            var outcome = placement.PlaceHangers(
                 segments,
                 command.GetDouble("hanger_spacing", 1500),
                 command.GetBool("preserve_existing", true),
                 command.GetDouble("fill_target", 50),
                 command.GetString("material", "aluminum"));
+
+            // Zero hangers is a result the reply has to explain, not a number to
+            // print beside a tick. The trays are real, so this stays a warning
+            // rather than failing the route that did work.
+            foreach (var warning in outcome.Warnings) context.Warn(warning);
+            if (outcome.Failure is not null)
+            {
+                context.Warn("cable_tray.hangers_failed");
+                context.Warn(outcome.Failure);
+            }
+
+            return outcome;
         }
         catch (Exception ex)
         {
             Logger.Error("Hanger placement failed after the followed route was created", ex);
             context.Warn("cable_tray.hangers_failed");
+            context.Warn(ex.Message);
             return null;
         }
     }
@@ -577,7 +621,7 @@ public sealed class CableTrayHandler : ICommandHandler
             {
                 project_id = context.Config.ProjectId,
                 hanger_id = hanger.HangerId,
-                hanger_family_name = command.GetString("hanger_family", "Hanger"),
+                hanger_family_name = HangerFamily(context, command),
                 hanger_type = hanger.FamilyType,
                 position_from_start = hanger.PositionMm,
                 coordinates = hanger.Coordinates,
@@ -646,7 +690,7 @@ public sealed class AddHangersHandler : ICommandHandler
                 retryable: false);
         }
 
-        var family = command.GetString("hanger_family", "Hanger");
+        var family = CableTrayHandler.HangerFamily(context, command);
 
         // "modifikasi hanger" means set them out again, so what is there comes
         // out first. "pasang hanger" leaves them alone and fills the gaps, which
@@ -654,10 +698,12 @@ public sealed class AddHangersHandler : ICommandHandler
         var replacing = string.Equals(command.GetString("mode", "fill"), "replace",
             StringComparison.OrdinalIgnoreCase);
 
+        var placement = new SmartHangerPlacement(context.Doc, family);
+
         var removed = 0;
         if (replacing)
         {
-            removed = RemoveHangers(context.Doc, segments, family);
+            removed = RemoveHangers(context.Doc, placement, segments);
             if (removed < 0)
             {
                 return CommandResult.Fail(
@@ -665,8 +711,6 @@ public sealed class AddHangersHandler : ICommandHandler
                     retryable: true);
             }
         }
-
-        var placement = new SmartHangerPlacement(context.Doc, family);
 
         var outcome = placement.PlaceHangers(
             segments,
@@ -677,19 +721,36 @@ public sealed class AddHangersHandler : ICommandHandler
             fillPercentage: 50,
             material: "aluminum");
 
-        var first = segments[0];
+        // Hanging is the whole command here — unlike a routed tray, there is no
+        // other deliverable to report. Nothing placed is a failure, and it says
+        // which family it looked in and what that family holds.
+        if (outcome.Failure is not null)
+        {
+            Logger.Error($"add_hangers placed nothing: {outcome.Failure}");
+            return CommandResult.Fail(outcome.Failure, retryable: false);
+        }
+
         var totalLength = segments.Sum(segment => segment.LengthMm);
         var trays = segments.Select(segment => segment.Element.Id).Distinct().Count();
+
+        // One command can cross several sizes, and the sizes are the reason the
+        // types differ. Reporting only the first run's size beside a list of
+        // types reads as a mismatch.
+        var sizes = segments
+            .Select(segment => $"{segment.WidthMm:F0}x{segment.HeightMm:F0}mm")
+            .Distinct()
+            .ToList();
 
         var result = new CableTrayResultDto
         {
             TrayId = wantsEverything ? $"{trays} tray run(s)" : requested,
-            CableTraySize = $"{first.WidthMm:F0}x{first.HeightMm:F0}mm",
+            CableTraySize = string.Join(", ", sizes),
             RouteLengthM = Math.Round(totalLength / 1000.0, 2),
             Hangers = SmartHangerPlacement.Summarize(outcome),
         };
 
         if (replacing) context.Warn($"Replaced: {removed} existing hanger(s) removed first");
+        foreach (var warning in outcome.Warnings) context.Warn(warning);
         result.Notes = context.Warnings.Count > 0 ? context.Warnings : null;
 
         Logger.Info(
@@ -706,19 +767,21 @@ public sealed class AddHangersHandler : ICommandHandler
     /// Deletes the hangers already on these runs. Returns how many, or -1 when
     /// the deletion failed and nothing was changed.
     /// </summary>
-    private static int RemoveHangers(Document doc, List<TraySegment> segments, string family)
+    /// <remarks>
+    /// Asks the placement engine which hangers belong to these runs rather than
+    /// reading hosts directly. A hanger family that is not host-based — most of
+    /// them — carries no host at all, and a replace that skipped those cleared
+    /// nothing and then set out a second hanger beside every one of them.
+    /// </remarks>
+    private static int RemoveHangers(
+        Document doc,
+        SmartHangerPlacement placement,
+        List<TraySegment> segments)
     {
-        var hosts = segments.Select(segment => segment.Element.Id).ToHashSet();
-
-        var existing = new FilteredElementCollector(doc)
-            .OfClass(typeof(FamilyInstance))
-            .Cast<FamilyInstance>()
-            .Where(instance =>
-                instance.Host is not null
-                && hosts.Contains(instance.Host.Id)
-                && string.Equals(
-                    instance.Symbol?.Family?.Name, family, StringComparison.OrdinalIgnoreCase))
-            .Select(instance => instance.Id)
+        var existing = placement.FindExistingHangers(segments)
+            .SelectMany(entry => entry.Value)
+            .Select(hanger => hanger.Id)
+            .Distinct()
             .ToList();
 
         if (existing.Count == 0) return 0;

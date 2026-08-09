@@ -299,7 +299,14 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
       hanger_spacing: { kind: 'number', default: 1500, min: 100, max: 6000, describe: 'Hanger spacing (mm)', aliases: ['spacing'] },
       fill_target: { kind: 'number', default: 50, min: 1, max: 100, describe: 'Target cable fill (%)' },
       preserve_existing: { kind: 'boolean', default: true, describe: 'Keep hangers already in the model' },
-      hanger_family: { kind: 'string', default: 'Hanger', describe: 'Hanger family name in Revit' },
+      /**
+       * No default. A default here is not a fallback — it is an answer, and it
+       * outranks the family name configured in the add-in, which is the only
+       * place that knows what this office's hangers are called. Defaulting it
+       * to "Hanger" made every command ask for a family no model contains, and
+       * the reply still read as a success with zero hangers.
+       */
+      hanger_family: { kind: 'string', describe: 'Hanger family name in Revit; defaults to the add-in setting' },
     },
   },
 
@@ -334,7 +341,14 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
         describe: 'fill keeps existing hangers and fills gaps; replace clears them and sets out again',
       },
       preserve_existing: { kind: 'boolean', default: true, describe: 'Keep hangers already in the model' },
-      hanger_family: { kind: 'string', default: 'Hanger', describe: 'Hanger family name in Revit' },
+      /**
+       * No default. A default here is not a fallback — it is an answer, and it
+       * outranks the family name configured in the add-in, which is the only
+       * place that knows what this office's hangers are called. Defaulting it
+       * to "Hanger" made every command ask for a family no model contains, and
+       * the reply still read as a success with zero hangers.
+       */
+      hanger_family: { kind: 'string', describe: 'Hanger family name in Revit; defaults to the add-in setting' },
     },
   },
 

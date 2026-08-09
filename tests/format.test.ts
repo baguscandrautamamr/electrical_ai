@@ -66,6 +66,33 @@ const lighting: PlacementResult = {
 };
 
 describe('cable tray formatting', () => {
+  it('does not tick a tray that got no hangers', () => {
+    // What this is here to stop: the reply that said the tray was hung, with a
+    // zero beside it, when nothing had been placed.
+    const text = formatResult(
+      { ...cableTray, hangers: { ...cableTray.hangers, total: 0, existing_preserved: 0, new_added_gap_fill: 0, load_per_hanger_kg: [] } },
+      EN,
+    );
+
+    expect(text).not.toContain('\u2705');
+    expect(text).toContain('\u26a0\ufe0f');
+    expect(text).toContain('Total hangers: 0 units');
+    expect(text).toContain('Hanger family name');
+  });
+
+  it('carries the add-in reason for an unhung tray into the reply', () => {
+    const text = formatResult(
+      {
+        ...cableTray,
+        hangers: { ...cableTray.hangers, total: 0, existing_preserved: 0, new_added_gap_fill: 0 },
+        notes: ["Hanger family 'Hanger' is not loaded in this model."],
+      },
+      EN,
+    );
+
+    expect(text).toContain("Hanger family 'Hanger' is not loaded in this model.");
+  });
+
   it('reports the hanger breakdown in English', () => {
     const text = formatResult(cableTray, EN);
 

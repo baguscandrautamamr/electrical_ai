@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Electrical;
 using RevitCommandCenter.Electrical.Models;
+using RevitCommandCenter.Electrical.SmartHangers;
 using RevitCommandCenter.Electrical.Utils;
 
 namespace RevitCommandCenter.Electrical.Handlers;
@@ -177,10 +178,8 @@ public sealed class QueryHandler : ICommandHandler
             return new FilteredElementCollector(doc)
                 .OfClass(typeof(FamilyInstance))
                 .Cast<FamilyInstance>()
-                .Where(instance => string.Equals(
-                    instance.Symbol?.Family?.Name,
-                    context.Config.HangerFamilyName,
-                    StringComparison.OrdinalIgnoreCase));
+                .Where(instance =>
+                    HangerTypeDetector.IsHangerFamily(instance, context.Config.HangerFamilyName));
         }
 
         var collector = new FilteredElementCollector(doc)
