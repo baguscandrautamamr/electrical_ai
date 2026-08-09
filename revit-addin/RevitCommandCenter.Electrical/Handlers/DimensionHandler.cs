@@ -800,9 +800,9 @@ public sealed class DimensionHandler : ICommandHandler
     {
         if (bounds is null) return null;
         if (device.Host is not Wall wall) return null;
-        if (wall.Location is not LocationCurve curve || curve.Curve is not Line line) return null;
+        if (wall.Location is not LocationCurve curve || curve.Curve is not Line along) return null;
 
-        var direction = Flatten(line.Direction);
+        var direction = Flatten(along.Direction);
         if (direction is null) return null;
 
         var end = bounds.Nearest(point, direction);
