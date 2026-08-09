@@ -208,7 +208,9 @@
     "no_grids": "Tidak ada grid di view ini, jadi tidak ada dimensi grid.",
     "no_walls": "Tidak ada muka dinding yang bisa diukur di view ini.",
     "nothing": "Tidak ada yang bisa diberi dimensi di view ini.",
-    "no_devices": "Tidak ada perangkat yang bisa diukur di ruangan ini. Family-nya mungkin tidak punya reference plane untuk dimensi."
+    "no_devices": "Tidak ada perangkat yang bisa diukur di ruangan ini. Family-nya mungkin tidak punya reference plane untuk dimensi.",
+    "hangers": "Hanger cable tray",
+    "no_hangers": "Tidak ada hanger cable tray yang bisa didimensi di view ini."
   },
   "delete": {
     "title": "Hapus",
@@ -250,7 +252,8 @@
     "hanger_load": "Beban hanger dalam kapasitas",
     "breaker_load": "Beban breaker dalam batas",
     "requested_count": "Jumlah yang dipasang sesuai permintaan",
-    "switch_type_available": "Type saklar yang diminta tersedia di proyek"
+    "switch_type_available": "Type saklar yang diminta tersedia di proyek",
+    "nfpa72_detector_count": "Jumlah detektor mencukupi ruangan"
   },
   "admin": {
     "api_connected": "Kredensial API tersimpan.",

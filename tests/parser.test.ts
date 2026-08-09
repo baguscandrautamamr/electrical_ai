@@ -301,6 +301,51 @@ describe('validateParams', () => {
     expect(hangers.normalized.hanger_family).toBeUndefined();
   });
 
+  it('accepts hangers as a dimension target, with or without a room', () => {
+    // "kasih dimension hanger cable tray" names no room because a tray run
+    // crosses several. It used to be rejected and re-read as a command to hang
+    // the tray again.
+    const dimension = specFor('dimension')!;
+
+    const everywhere = validateParams(dimension, '', { what: 'hanger' });
+    const inRoom = validateParams(dimension, 'Meeting 2', { what: 'hanger' });
+
+    expect(everywhere.ok).toBe(true);
+    expect(everywhere.normalized.what).toBe('hanger');
+    expect(inRoom.ok).toBe(true);
+    expect(inRoom.normalized.room).toBe('Meeting 2');
+  });
+
+  it('dimensions a room\'s receptacles', () => {
+    const outcome = validateParams(specFor('dimension')!, 'Meeting 2', { what: 'receptacle' });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized).toMatchObject({ room: 'Meeting 2', what: 'receptacle', offset: 1000 });
+  });
+
+  it('takes a stated detector count instead of computing one', () => {
+    // "pasang smoke detector 1 unit" means one, and the handler reads count.
+    const outcome = validateParams(specFor('place_fire_alarm')!, 'Service', {
+      type: 'smoke',
+      loop_id: 'FD-Loop-01',
+      count: '1',
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.count).toBe(1);
+  });
+
+  it('leaves the detector count unset when nobody states one', () => {
+    // Unset, not defaulted: the handler falls back to NFPA coverage, and a
+    // default here would silently outrank it.
+    const outcome = validateParams(specFor('place_fire_alarm')!, 'Service', {
+      loop_id: 'FD-Loop-01',
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.count).toBeUndefined();
+  });
+
   it('still passes a hanger family the engineer named', () => {
     const outcome = validateParams(addHangers, 'CT-A1', {
       hanger_family: 'ACT_E SUPPORT HANGING CABLE TRAY',

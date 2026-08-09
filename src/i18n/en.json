@@ -208,7 +208,9 @@
     "no_grids": "No grids in this view, so no grid dimensions.",
     "no_walls": "No measurable wall faces in this view.",
     "nothing": "Nothing in this view could be dimensioned.",
-    "no_devices": "No dimensionable devices in this room. Their family may publish no reference planes to dimension to."
+    "no_devices": "No dimensionable devices in this room. Their family may publish no reference planes to dimension to.",
+    "hangers": "Cable tray hangers",
+    "no_hangers": "No cable-tray hangers found to dimension in this view."
   },
   "delete": {
     "title": "Delete",
@@ -250,7 +252,8 @@
     "hanger_load": "Hanger load within capacity",
     "breaker_load": "Breaker load within limit",
     "requested_count": "Placed as many as were asked for",
-    "switch_type_available": "The requested switch type is loaded in the project"
+    "switch_type_available": "The requested switch type is loaded in the project",
+    "nfpa72_detector_count": "Detector count covers the room"
   },
   "admin": {
     "api_connected": "API credential saved.",
