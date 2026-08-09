@@ -121,7 +121,12 @@ export function formatCableTray(result: CableTrayResult, ctx: FormatContext): st
   const t = translator(ctx.language);
   const b = new MessageBuilder(ctx.theme);
 
-  b.title(t('common.success'), t('cable_tray.created'));
+  // A tray built and left unhung is not a success, and must not carry the tick
+  // that says it is. The count is the thing an engineer reads first, and "0"
+  // beside a ✅ is how a run that placed nothing gets believed.
+  const unhung = result.hangers.total === 0;
+
+  b.title(unhung ? t('common.warning') : t('common.success'), t('cable_tray.created'));
 
   const head: Row[] = [
     {
@@ -188,7 +193,9 @@ export function formatCableTray(result: CableTrayResult, ctx: FormatContext): st
     b.links(links);
   }
 
-  appendNotes(b, t, result.notes);
+  // The add-in normally sends its own reason. When it sends none, a zero still
+  // needs an explanation, and the two things worth checking are always the same.
+  appendNotes(b, t, unhung ? [...(result.notes ?? []), 'cable_tray.hangers_none'] : result.notes);
 
   return b.build();
 }

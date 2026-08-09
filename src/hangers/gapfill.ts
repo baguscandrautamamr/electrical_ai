@@ -10,6 +10,7 @@
  *
  * Mirrors:
  *   revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerPositionCalculator.cs
+ *   revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerTypeDetector.cs
  */
 
 /** Two hangers closer than this are treated as the same support point. */
@@ -135,6 +136,90 @@ export function buildHangerTypeName(widthMm: number, heightMm?: number | null): 
   const width = Math.round(widthMm);
   if (heightMm === undefined || heightMm === null || heightMm <= 0) return String(width);
   return `${width}x${Math.round(heightMm)}`;
+}
+
+/**
+ * The size a hanger type name states.
+ *
+ * Read as a size rather than compared as a string: "300x100", "300 X 100",
+ * "CT-300x100" and "W300" all name a tray, and a type list built up over years
+ * of a company's projects contains all of them.
+ */
+export function parseTypeSize(
+  typeName: string,
+): { widthMm: number; heightMm: number | null } | null {
+  const pair = /(\d+)\s*[x×X]\s*(\d+)/.exec(typeName);
+  if (pair) return { widthMm: Number(pair[1]), heightMm: Number(pair[2]) };
+
+  const single = /\d+/.exec(typeName);
+  if (single) return { widthMm: Number(single[0]), heightMm: null };
+
+  return null;
+}
+
+/**
+ * The hanger type that carries a tray of this size, from the type names a
+ * family holds. Null when none of them fits.
+ *
+ * Match order:
+ *   1. Exact size — "300x100" for a 300x100 tray.
+ *   2. Width only — "300". How ranges that do not vary with height are named.
+ *   3. Next size up. A hanger rated for a larger tray is safe; a smaller one is
+ *      not, so it never rounds down.
+ *
+ * The rule is per run, not per command: a model hung in one pass crosses every
+ * size in it, and a 100 mm tray takes the "100" type even when the run beside
+ * it is 300 mm.
+ *
+ * Mirrors HangerTypeDetector.FindMatchingType in the add-in.
+ */
+export function matchHangerType(
+  availableTypeNames: readonly string[],
+  trayWidthMm: number,
+  trayHeightMm?: number | null,
+): string | null {
+  const sized = availableTypeNames.map((name) => ({ name, size: parseTypeSize(name) }));
+  const height = trayHeightMm === undefined || trayHeightMm === null || trayHeightMm <= 0
+    ? null
+    : trayHeightMm;
+
+  // Within a millimetre — Revit's feet conversion never lands exact.
+  const same = (a: number, b: number): boolean => Math.abs(a - b) < 1;
+
+  const exact = sized.find(
+    (entry) =>
+      entry.size !== null &&
+      same(entry.size.widthMm, trayWidthMm) &&
+      entry.size.heightMm !== null &&
+      height !== null &&
+      same(entry.size.heightMm, height),
+  );
+  if (exact) return exact.name;
+
+  const byWidth = sized.find(
+    (entry) => entry.size !== null && entry.size.heightMm === null && same(entry.size.widthMm, trayWidthMm),
+  );
+  if (byWidth) return byWidth.name;
+
+  // Wide enough, smallest first; preferring one whose stated height also covers
+  // the tray, because a 300x100 hanger will not take a 300x300 tray however
+  // well the width reads as a fit.
+  const covers = (entry: { size: { widthMm: number; heightMm: number | null } }): number =>
+    height === null || entry.size.heightMm === null || entry.size.heightMm >= height - 1 ? 0 : 1;
+
+  const upsized = sized
+    .filter(
+      (entry): entry is { name: string; size: { widthMm: number; heightMm: number | null } } =>
+        entry.size !== null && entry.size.widthMm >= trayWidthMm - 1,
+    )
+    .sort(
+      (a, b) =>
+        a.size.widthMm - b.size.widthMm ||
+        covers(a) - covers(b) ||
+        (a.size.heightMm ?? 0) - (b.size.heightMm ?? 0),
+    );
+
+  return upsized.length > 0 ? upsized[0]!.name : null;
 }
 
 export interface GapFillPlan {

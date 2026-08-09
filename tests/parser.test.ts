@@ -289,6 +289,26 @@ describe('isKnownCommand', () => {
 describe('validateParams', () => {
   const lighting = specFor('place_lighting')!;
   const cableTray = specFor('create_cable_tray')!;
+  const addHangers = specFor('add_hangers')!;
+
+  it('leaves the hanger family to the add-in when the command does not name one', () => {
+    // A default here would outrank the family name configured in Revit, which
+    // is the only place that knows what this office's hangers are called.
+    const tray = validateParams(cableTray, 'CT-A1', { from: 'PA-01', to: 'Zone_A' });
+    const hangers = validateParams(addHangers, '', {});
+
+    expect(tray.normalized.hanger_family).toBeUndefined();
+    expect(hangers.normalized.hanger_family).toBeUndefined();
+  });
+
+  it('still passes a hanger family the engineer named', () => {
+    const outcome = validateParams(addHangers, 'CT-A1', {
+      hanger_family: 'ACT_E SUPPORT HANGING CABLE TRAY',
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.hanger_family).toBe('ACT_E SUPPORT HANGING CABLE TRAY');
+  });
 
   it('applies defaults for omitted parameters', () => {
     const outcome = validateParams(lighting, 'Office_A', { space: '45' });

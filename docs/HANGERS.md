@@ -18,19 +18,43 @@ So the rule is: **add what is missing, never move what is there.**
 ### 1. Auto-match the hanger type to the tray size
 
 Hanger family types are named after the tray they support. A 150×100 mm tray
-takes hanger type `"150x100"`; a 600 mm ladder takes `"600"`.
+takes hanger type `"150x100"`; a 600 mm ladder takes `"600"`; a 100 mm tray
+takes `"100"`.
 
 Match order:
 
-1. Exact name — `150x100`.
+1. Exact size — `150x100`.
 2. Width only — `150`. Common for ladder trays where the type does not vary
    with height.
 3. **Next size up.** A hanger rated for a larger tray is safe; a smaller one is
    not, so it never rounds down.
 
-If nothing fits, placement stops and the reply lists the type names the family
-actually contains — so the user can see whether the family is wrong or the tray
-is an unusual size.
+Names are read as sizes, not compared as strings: `300x100`, `300 X 100`,
+`CT-300x100` and `W300` all state a size, and a type list built up over years of
+a company's projects holds all of them.
+
+**The match is per run, not per command.** "Pasang hanger di cable tray" hangs
+every run in the model, and those runs are not one size — a 100 mm tray takes
+the `100` type while the 300 mm run beside it takes `300`, in the same pass.
+Resolving the type once from the first run and using it everywhere is how a
+100 mm tray ends up carrying a 300 mm hanger. The reply lists every type used.
+
+If nothing fits, that run places nothing, and the reply names the size it looked
+for and lists the type names the family actually contains — so the user can see
+whether the family is wrong or the tray is an unusual size.
+
+### Which family
+
+The family name is not a command parameter with a default. It lives in the
+add-in settings (**Hanger family name**), because it is a property of the
+office's content rather than of one command, and a command that does not name a
+family uses that setting.
+
+This is worth stating because getting it wrong is silent. The webhook used to
+default `hanger_family` to `"Hanger"`, which outranked the configured name, so
+every command asked for a family no project contains — and the run came back a
+tick with **Total hangers: 0**. Names are matched forgiving case, spacing,
+hyphens and underscores; anything further apart than that is a different family.
 
 ### 2. Gap-fill, preserving existing hangers
 
@@ -149,24 +173,59 @@ API cannot run in CI, so the pure geometry lives in two places:
 
 | File | Role |
 |---|---|
-| [`src/hangers/gapfill.ts`](../src/hangers/gapfill.ts) | Executable reference, pinned by 27 tests |
-| [`HangerPositionCalculator.cs`](../revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerPositionCalculator.cs) | Production, mirrors the reference function for function |
+| [`src/hangers/gapfill.ts`](../src/hangers/gapfill.ts) | Executable reference: positions, loads and type matching |
+| [`HangerPositionCalculator.cs`](../revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerPositionCalculator.cs) | Production positions and loads, mirrors the reference function for function |
+| [`HangerTypeDetector.cs`](../revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerTypeDetector.cs) | Production type matching, mirrored by `matchHangerType` |
 
 **Change one, change both.** A divergence here does not raise an error — it
 silently places hangers in the wrong positions, which is the worst failure mode
 this system has. Both files carry a header comment saying so.
 
 `SmartHangerPlacement.cs` is the Revit-facing layer: it reads existing hangers,
-calls the calculator, opens the transaction, and hosts each new instance on the
-tray element so the hanger follows the tray when the route is edited.
+resolves a type per run, opens the transaction, and creates each instance.
+
+### How an instance is placed
+
+Hosting on the tray element is right for a *host-based* family — the hanger then
+follows the tray when the route is edited. Most support families in a real
+project are not host-based: they are level-based, carrying a Level and an
+"Elevation from Level", and Revit refuses to host one on a cable tray. Asking it
+to anyway threw on every position, each one caught and logged, leaving a
+committed transaction and no hangers — the model unchanged and the reply a tick.
+
+So the family is asked how it wants to be placed
+(`Family.FamilyPlacementType`) and placed that way, falling back to the other
+route if Revit refuses. A level-based instance is placed on the tray's own level
+with its elevation set to the tray, not the floor.
+
+### Finding what is already there
+
+A hosted hanger names its host, so it is read straight off it. An unhosted one
+names nothing, and matching only on host would read every model hung with a
+level-based family as empty — preserving nothing and stacking a second hanger on
+every station of every re-run. Those are matched by geometry instead: projected
+onto the run's axis, within one tray width in plan and two metres vertically,
+and claimed by the nearest run only so a stacked tray does not steal the one
+below it. `mode=replace` clears using the same matching, so replace and gap-fill
+always agree on what "already there" means.
 
 ## Failure handling
 
-- **No matching hanger type** → nothing is placed; the reply names the size it
-  looked for and lists what the family has.
-- **One position fails** (no host face, out of range) → logged as a warning and
-  skipped; the rest of the run still gets hung.
+The rule underneath all of these: **a reply never reports hangers it did not
+place.** Zero hangers is a ⚠️ or an ❌ carrying the reason, never a ✅ with a
+zero in it. That is what `PlacementOutcome.Failure` is for — set when work was
+expected and none of it happened, and checked by every caller.
+
+- **The family is not in the model** → nothing is placed; the reply names the
+  family it looked for and lists the families present that look like hangers.
+- **No matching hanger type** → that run places nothing; the reply names the
+  size it looked for and lists what the family has.
+- **One position fails** (Revit refuses the instance) → logged as a warning and
+  skipped; the rest of the run still gets hung. If they all fail, the run
+  reports the first few reasons rather than a zero.
 - **The transaction throws** → rolled back entirely. A partially-hung tray is
   worse than none, because it looks finished.
 - **The tray was created but hanging failed** → reported as a failure that names
   the tray, so the user knows the model changed.
+- **`/add_hangers` placed nothing** → the command failed. Hanging is the whole
+  command; there is no other deliverable to soften it with.

@@ -147,21 +147,35 @@ sending, deliberately: a rare lost message is a better failure than a duplicate.
 
 ### None were placed
 
-Check the reply text — it names the cause.
+A run that placed nothing comes back as a ⚠️ or an ❌ naming the cause — never a
+✅ with a zero beside it. What the reply says:
 
-- *"No hanger type matches a 150x100 tray"* — the family has no type named
-  `150x100`, no `150`, and nothing larger. Type names **are** the auto-match;
-  see [HANGERS.md](HANGERS.md).
-- *"Every segment is vertical"* — the run rises more than 10 mm end to end.
-  Hangers only apply to horizontal tray.
-- *"Hanger family 'Hanger' not found"* — the family is not loaded, or
-  `hanger_family_name` in the add-in config does not match it exactly.
+- *"Hanger family 'X' is not loaded in this model"* — the name in the add-in
+  settings (**Hanger family name**) matches no family here. The reply lists the
+  families in the model that look like hangers; copy one into the setting.
+  Case, spacing and underscores are forgiven, the words are not.
+- *"No hanger type fits a 300x300 tray in family 'X'. It has: …"* — the family
+  is loaded but holds no type for this size and nothing larger. Type names
+  **are** the auto-match; see [HANGERS.md](HANGERS.md).
+- *"All N segment(s) are vertical drops"* — the run rises more than 10 mm end
+  to end. Hangers only apply to horizontal tray.
+- *"Could not place hanger at 1500 mm: …"* — Revit refused that instance, and
+  its own wording says why.
+
+If a reply still reads ✅ with **Total hangers: 0**, the add-in is older than
+this behaviour — rebuild and reinstall it.
 
 ### Existing hangers were duplicated
 
-The existing hangers are not *hosted on* the tray element. The query matches on
-`instance.Host.Id == tray.Id`; a free-standing hanger placed at the same
-coordinates is invisible to it and reads as a gap. Re-host them on the tray.
+Two causes, both fixed in the current add-in but worth knowing:
+
+- **The hangers were placed by hand and are not hosted on the tray.** Existing
+  hangers are now found by geometry as well as by host: one on the run's centre
+  line in plan, within a couple of metres vertically, counts as that run's
+  hanger. A hanger further off the line than the tray is wide will still read
+  as a gap — move it onto the run.
+- **The run was hung twice with `mode=replace`.** Replace clears what it finds
+  first, using the same matching, then sets out again.
 
 ### Existing hangers were ignored and new ones added alongside
 

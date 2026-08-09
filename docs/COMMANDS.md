@@ -231,7 +231,7 @@ algorithm.
 | `hanger_spacing` | number | 1500 | mm; alias `spacing` |
 | `fill_target` | number | 50 | % |
 | `preserve_existing` | boolean | true | **Keep hangers already in the model** |
-| `hanger_family` | string | Hanger | Family name in Revit |
+| `hanger_family` | string | *the add-in setting* | Family name in Revit. Omit it: the add-in's **Hanger family name** setting is where that name lives |
 
 ```
 /create_cable_tray CT-A1 from=PA-01 to=Zone_A cable_type=power size=auto material=aluminum installation=ceiling hanger_spacing=1500 fill_target=50 preserve_existing=true
@@ -245,7 +245,8 @@ Hangs a tray that already exists. Same engine, no routing.
 |---|---|---|
 | `spacing` | number | 1500 |
 | `preserve_existing` | boolean | true |
-| `hanger_family` | string | Hanger |
+| `mode` | fill\|replace | fill |
+| `hanger_family` | string | *the add-in setting* |
 
 ```
 /add_hangers

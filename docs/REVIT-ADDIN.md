@@ -175,7 +175,7 @@ still edit by hand. On first run the add-in writes this template:
 |---|---|
 | `supabase_key` | Service role key. This machine is trusted; the key never leaves it. |
 | `project_id` | The **UUID** from `projects.id`, not the project code. One Revit instance drains one project's queue. |
-| `hanger_family_name` | Must match the family name in your model exactly. |
+| `hanger_family_name` | The hanger family in your model, e.g. `ACT_E_SUPPORT HANGING CABEL TRAY`. Case, spacing and underscores are forgiven; the words are not. Nothing else supplies this — a command that names no family uses this setting, and a name that matches nothing places no hanger and says so. |
 | `export_base_url` | If exports are served over HTTP, put the base URL here and Telegram replies become clickable links. Otherwise replies carry the local path. |
 | `start_polling_on_launch` | `false` by default: opening Revit to look at a model should not silently start mutating it. |
 

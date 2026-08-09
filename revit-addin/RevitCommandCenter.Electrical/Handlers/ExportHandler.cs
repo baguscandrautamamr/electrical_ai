@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Electrical;
 using RevitCommandCenter.Electrical.Models;
+using RevitCommandCenter.Electrical.SmartHangers;
 using RevitCommandCenter.Electrical.Utils;
 
 namespace RevitCommandCenter.Electrical.Handlers;
@@ -202,10 +203,7 @@ public sealed class ExportHandler : ICommandHandler
         var rows = new FilteredElementCollector(doc)
             .OfClass(typeof(FamilyInstance))
             .Cast<FamilyInstance>()
-            .Where(instance => string.Equals(
-                instance.Symbol?.Family?.Name,
-                hangerFamilyName,
-                StringComparison.OrdinalIgnoreCase))
+            .Where(instance => HangerTypeDetector.IsHangerFamily(instance, hangerFamilyName))
             .Select(hanger => (IReadOnlyList<object?>)new object?[]
             {
                 $"H-{hanger.Id}",
@@ -241,10 +239,8 @@ public sealed class ExportHandler : ICommandHandler
         var hangers = new FilteredElementCollector(doc)
             .OfClass(typeof(FamilyInstance))
             .Cast<FamilyInstance>()
-            .Where(instance => string.Equals(
-                instance.Symbol?.Family?.Name,
-                context.Config.HangerFamilyName,
-                StringComparison.OrdinalIgnoreCase))
+            .Where(instance =>
+                HangerTypeDetector.IsHangerFamily(instance, context.Config.HangerFamilyName))
             .ToList();
 
         var overloaded = hangers

@@ -6,6 +6,8 @@ import {
   calculateLoadPerHanger,
   estimateTotalLoadKg,
   findGapPositions,
+  matchHangerType,
+  parseTypeSize,
   planGapFill,
 } from '../src/hangers/gapfill.js';
 
@@ -233,5 +235,61 @@ describe('planGapFill', () => {
     expect(plan.newCount).toBe(0);
     expect(plan.preservedCount).toBe(5);
     expect(plan.gaps).toEqual([]);
+  });
+});
+
+describe('parseTypeSize', () => {
+  it('reads a width and a height', () => {
+    expect(parseTypeSize('300x100')).toEqual({ widthMm: 300, heightMm: 100 });
+  });
+
+  it('reads names that carry the size among other words', () => {
+    expect(parseTypeSize('ACT_E SUPPORT 300 X 100')).toEqual({ widthMm: 300, heightMm: 100 });
+    expect(parseTypeSize('W300')).toEqual({ widthMm: 300, heightMm: null });
+  });
+
+  it('reads a width on its own', () => {
+    expect(parseTypeSize('100')).toEqual({ widthMm: 100, heightMm: null });
+  });
+
+  it('returns null for a name that states no size', () => {
+    expect(parseTypeSize('Standard')).toBeNull();
+  });
+});
+
+describe('matchHangerType', () => {
+  const types = ['100', '200', '300', '400'];
+
+  it('takes the type named for the tray width', () => {
+    // The rule the whole feature turns on: a 100 mm tray takes the "100" type,
+    // and the 300 mm run beside it takes "300" in the same command.
+    expect(matchHangerType(types, 100, 100)).toBe('100');
+    expect(matchHangerType(types, 300, 300)).toBe('300');
+  });
+
+  it('prefers an exact WxH over a width-only type', () => {
+    expect(matchHangerType(['300', '300x100', '300x300'], 300, 300)).toBe('300x300');
+  });
+
+  it('falls back to width when no type states the height', () => {
+    expect(matchHangerType(['300', '400'], 300, 300)).toBe('300');
+  });
+
+  it('rounds up rather than down when nothing fits exactly', () => {
+    // A hanger rated for a larger tray is safe; a smaller one is not.
+    expect(matchHangerType(types, 250, 100)).toBe('300');
+  });
+
+  it('prefers a type tall enough for the tray at the same width', () => {
+    expect(matchHangerType(['300x100', '300x300'], 300, 300)).toBe('300x300');
+  });
+
+  it('returns null when every type is narrower than the tray', () => {
+    expect(matchHangerType(types, 600, 100)).toBeNull();
+    expect(matchHangerType([], 100, 100)).toBeNull();
+  });
+
+  it('ignores types that state no size at all', () => {
+    expect(matchHangerType(['Standard', '300'], 300, 100)).toBe('300');
   });
 });

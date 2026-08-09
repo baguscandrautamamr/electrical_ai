@@ -248,7 +248,9 @@ public sealed class EquipRoomHandler : ICommandHandler
                 ["hanger_spacing"] = command.GetDouble("hanger_spacing", 1500),
                 ["fill_target"] = 50,
                 ["preserve_existing"] = command.GetBool("preserve_existing", true),
-                ["hanger_family"] = "Hanger",
+                // No hanger_family: naming one here would override the family
+                // configured in the add-in settings, which is the only place
+                // that knows what this office's hangers are called.
             });
         }
     }

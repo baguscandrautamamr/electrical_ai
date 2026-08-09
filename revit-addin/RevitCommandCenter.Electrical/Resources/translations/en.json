@@ -123,6 +123,7 @@
     "skipped_vertical": "Vertical segments skipped",
     "type_without_fittings": "⚠️ The cable tray type in this model carries no elbow fittings (a \"without fittings\" type). Load one with fittings if the corners need to connect.",
     "hangers_failed": "Hangers could not be placed; the trays were still created.",
+    "hangers_none": "No hanger was placed. Check the hanger family name in the add-in settings (Hanger family name), and that the family has a type for this tray size.",
     "elbows_missing": "⚠️ Some corners took no elbow — check them in Revit, the run may be broken there.",
     "panel_updated": "Panel updated"
   },

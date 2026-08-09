@@ -69,9 +69,11 @@ than merely refused.
 
 This is the feature the system exists for. Given a tray run and a spacing, it:
 
-1. **Auto-matches the hanger type to the tray size.** A 150×100 mm tray gets
-   hanger type `"150x100"`; a 600 mm ladder gets `"600"`. If there is no exact
-   match it takes the next size *up*, never down.
+1. **Auto-matches the hanger type to the tray size, run by run.** A 150×100 mm
+   tray gets hanger type `"150x100"`; a 100 mm tray gets `"100"`; a 600 mm
+   ladder gets `"600"`. If there is no exact match it takes the next size *up*,
+   never down. One command hangs runs of every size in the model, and each one
+   gets the type for its own size.
 2. **Preserves the hangers already in the model.** Engineers hand-place hangers
    around structure, ducts and other services, and those positions encode
    knowledge the model does not. Only the genuine gaps get filled.
@@ -79,6 +81,9 @@ This is the feature the system exists for. Given a tray run and a spacing, it:
    are counted and reported, not hung.
 4. **Calculates load per hanger** from tray mass and cable fill, and reports it
    against the family's rated capacity.
+5. **Reports nothing it did not do.** A run that placed no hanger comes back
+   naming the reason — the family that is not loaded, the type that does not
+   exist — never a tick with a zero beside it.
 
 The pure geometry is specified and tested in
 [`src/hangers/gapfill.ts`](src/hangers/gapfill.ts), and mirrored in

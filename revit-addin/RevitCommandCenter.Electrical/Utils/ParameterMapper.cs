@@ -41,9 +41,21 @@ public static class ParameterMapper
     }
 
     /// <summary>Sets one parameter. Returns false when it is absent or read-only.</summary>
-    public static bool TrySetParameter(Element element, string name, object value)
+    public static bool TrySetParameter(Element element, string name, object value) =>
+        Apply(element, element.LookupParameter(name), name, value);
+
+    /// <summary>
+    /// Sets one built-in parameter.
+    ///
+    /// By id rather than by name because the built-ins a placement depends on —
+    /// an instance's elevation above its level, say — are named differently in
+    /// every language Revit ships in.
+    /// </summary>
+    public static bool TrySetParameter(Element element, BuiltInParameter id, object value) =>
+        Apply(element, element.get_Parameter(id), id.ToString(), value);
+
+    private static bool Apply(Element element, Parameter? parameter, string name, object value)
     {
-        var parameter = element.LookupParameter(name);
         if (parameter is null || parameter.IsReadOnly) return false;
 
         try
