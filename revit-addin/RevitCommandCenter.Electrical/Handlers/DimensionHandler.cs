@@ -478,48 +478,76 @@ public sealed class DimensionHandler : ICommandHandler
     /// Everything here is a property of the view or the model rather than of
     /// the command, which is exactly why the command has to report it: none of
     /// it is visible from a chat, and all of it looks like "nothing happened".
+    ///
+    /// Each question is asked on its own. Wrapped together, one of them
+    /// throwing takes the answers to all the others with it — which is a way of
+    /// reporting nothing that looks exactly like having nothing to report.
     /// </summary>
     private static void Diagnose(Document doc, View view, Dimension dimension, List<string> notes)
     {
-        try
+        // How big the string is, and how big Revit drew it. A dimension of a few
+        // millimetres is on the drawing and invisible at any plan scale, which
+        // is indistinguishable from absent without the number.
+        Ask("size", () =>
+        {
+            var box = dimension.get_BoundingBox(view);
+            var span = dimension.Value is { } value ? $"{RevitUnits.FeetToMm(value):F0} mm" : "multi-segment";
+
+            notes.Add(box is null
+                ? $"First string measures {span}, and has no extent in {view.Name}."
+                : $"First string measures {span}, drawn from {Mm(box.Min)} to {Mm(box.Max)} mm.");
+        });
+
+        Ask("hidden", () =>
         {
             if (dimension.IsHidden(view))
             {
                 notes.Add($"The string is hidden in {view.Name} (Reveal Hidden Elements shows it).");
             }
+        });
 
+        Ask("crop", () =>
+        {
             if (view.CropBoxActive)
             {
-                notes.Add(
-                    $"{view.Name} has an active crop region; anything outside it is not drawn.");
+                notes.Add($"{view.Name} has an active crop region; anything outside it is not drawn.");
             }
+        });
 
-            // A workshared model puts new elements on the active workset, and a
-            // workset switched off in the view takes its elements with it.
-            if (doc.IsWorkshared)
-            {
-                var partition = dimension.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
-                if (partition is not null)
-                {
-                    var workset = new WorksetId(partition.AsInteger());
-                    var name = doc.GetWorksetTable().GetWorkset(workset)?.Name ?? "unknown";
-
-                    if (view.GetWorksetVisibility(workset) == WorksetVisibility.Hidden)
-                    {
-                        notes.Add(
-                            $"Workset '{name}' is switched off in {view.Name}, and the new "
-                            + "dimensions are on it.");
-                    }
-                    else
-                    {
-                        Logger.Info($"New dimensions are on workset '{name}'.");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
+        // A workshared model puts new elements on the active workset, and a
+        // workset switched off in the view takes its elements with it.
+        Ask("workset", () =>
         {
-            Logger.Debug($"Could not diagnose dimension visibility: {ex.Message}");
+            if (!doc.IsWorkshared) return;
+
+            var partition = dimension.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+            if (partition is null) return;
+
+            var workset = new WorksetId(partition.AsInteger());
+            var name = doc.GetWorksetTable().GetWorkset(workset)?.Name ?? "unknown";
+
+            if (view.GetWorksetVisibility(workset) == WorksetVisibility.Hidden)
+            {
+                notes.Add(
+                    $"Workset '{name}' is switched off in {view.Name}, and the new dimensions "
+                    + "are on it.");
+            }
+            else
+            {
+                Logger.Info($"New dimensions are on workset '{name}'.");
+            }
+        });
+
+        void Ask(string what, Action check)
+        {
+            try
+            {
+                check();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not check the {what} of dimension {dimension.Id}: {ex.Message}");
+            }
         }
     }
 
