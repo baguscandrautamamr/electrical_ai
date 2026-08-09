@@ -247,6 +247,12 @@ public sealed class DimensionHandler : ICommandHandler
             // still open, and count what is left.
             doc.Regenerate();
 
+            // A view can be hiding the whole category, and then everything below
+            // this is measuring something nobody will ever see. Turned back on
+            // rather than reported, because a dimension command that leaves
+            // dimensions switched off has not done its job.
+            Reveal(view, notes);
+
             // What the view actually draws. A view-scoped collector answers the
             // only question that matters here — is this string on the drawing —
             // and it answers it for every reason a string might not be: a
@@ -296,6 +302,7 @@ public sealed class DimensionHandler : ICommandHandler
                         (extent.Min.X + extent.Max.X) / 2,
                         (extent.Min.Y + extent.Max.Y) / 2,
                         0);
+                    Diagnose(doc, view, dimension, notes);
                 }
             }
 
@@ -342,10 +349,16 @@ public sealed class DimensionHandler : ICommandHandler
         {
             // Where, in project millimetres. A string drawn a mile off the plan
             // and a string that was never drawn look identical from the chat,
-            // and this is the number that tells them apart.
-            notes.Add(
-                $"Drawn around ({RevitUnits.FeetToMm(where.X):F0}, "
-                + $"{RevitUnits.FeetToMm(where.Y):F0}) mm in {Describe(view)}");
+            // and this is the number that tells them apart — but only next to
+            // where the thing being measured actually is, so the room's own
+            // centre goes beside it and the comparison is one glance.
+            var at = $"({RevitUnits.FeetToMm(where.X):F0}, {RevitUnits.FeetToMm(where.Y):F0}) mm";
+            var centre = room is null ? null : RevitUtils.RoomCenter(room);
+
+            notes.Add(centre is null
+                ? $"Drawn around {at} in {Describe(view)}"
+                : $"Drawn around {at}; {room!.Name} is centred on "
+                  + $"({RevitUnits.FeetToMm(centre.X):F0}, {RevitUnits.FeetToMm(centre.Y):F0}) mm");
         }
 
         // Left selected in Revit: the quickest way to find a dimension is to
@@ -366,6 +379,87 @@ public sealed class DimensionHandler : ICommandHandler
             Targets = targets,
             Notes = notes.Count > 0 ? notes : null,
         });
+    }
+
+    /// <summary>
+    /// Turns the Dimensions category back on in the view if it is switched off.
+    ///
+    /// A view with the category hidden takes every dimension the API makes,
+    /// keeps them, lists them, gives them an extent — and draws none of them.
+    /// From a chat that is indistinguishable from a command that does nothing,
+    /// which is where several rounds of this went.
+    /// </summary>
+    private static void Reveal(View view, List<string> notes)
+    {
+        var dimensions = new ElementId(BuiltInCategory.OST_Dimensions);
+
+        try
+        {
+            if (!view.GetCategoryHidden(dimensions)) return;
+
+            view.SetCategoryHidden(dimensions, false);
+            notes.Add($"Dimensions were switched off in {view.Name}; turned back on.");
+            Logger.Warn($"Dimensions category was hidden in '{view.Name}'; re-enabled.");
+        }
+        catch (Exception ex)
+        {
+            // A view template owns the setting, and only a person can change it.
+            notes.Add(
+                $"Dimensions are switched off in {view.Name} and a view template controls it — "
+                + "turn the Dimensions category on in Visibility/Graphics for that template.");
+            Logger.Warn($"Could not re-enable dimensions in '{view.Name}': {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Why a dimension that exists might still not be on the drawing.
+    ///
+    /// Everything here is a property of the view or the model rather than of
+    /// the command, which is exactly why the command has to report it: none of
+    /// it is visible from a chat, and all of it looks like "nothing happened".
+    /// </summary>
+    private static void Diagnose(Document doc, View view, Dimension dimension, List<string> notes)
+    {
+        try
+        {
+            if (dimension.IsHidden(view))
+            {
+                notes.Add($"The string is hidden in {view.Name} (Reveal Hidden Elements shows it).");
+            }
+
+            if (view.CropBoxActive)
+            {
+                notes.Add(
+                    $"{view.Name} has an active crop region; anything outside it is not drawn.");
+            }
+
+            // A workshared model puts new elements on the active workset, and a
+            // workset switched off in the view takes its elements with it.
+            if (doc.IsWorkshared)
+            {
+                var partition = dimension.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                if (partition is not null)
+                {
+                    var workset = new WorksetId(partition.AsInteger());
+                    var name = doc.GetWorksetTable().GetWorkset(workset)?.Name ?? "unknown";
+
+                    if (view.GetWorksetVisibility(workset) == WorksetVisibility.Hidden)
+                    {
+                        notes.Add(
+                            $"Workset '{name}' is switched off in {view.Name}, and the new "
+                            + "dimensions are on it.");
+                    }
+                    else
+                    {
+                        Logger.Info($"New dimensions are on workset '{name}'.");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"Could not diagnose dimension visibility: {ex.Message}");
+        }
     }
 
     /// <summary>A view named so it can be found: name, type and id.</summary>
