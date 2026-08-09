@@ -28,7 +28,6 @@ export const DEVICE_COMMAND_TYPES = [
   'equip_room',
   'export',
   'print_pdf',
-  'dimension',
   'delete_devices',
   'modify_devices',
   'undo',
@@ -55,6 +54,9 @@ export const ADMIN_COMMAND_TYPES = [
   'set_theme',
   'set_language',
   'status',
+  /** Opens and closes the PUIL/SNI/IEC channel. Handled before the parser. */
+  'standards_start',
+  'standards_exit',
 ] as const;
 
 export type AdminCommandType = (typeof ADMIN_COMMAND_TYPES)[number];
@@ -81,6 +83,19 @@ export interface Project {
   updated_at: string;
 }
 
+/**
+ * Which of the bot's two conversations a user is currently in.
+ *
+ * `command` is the normal one: a message is parsed into a Revit command.
+ * `standards` is the PUIL/SNI/IEC reference channel — every message is a
+ * question, nothing reaches the queue, and the add-in is not involved at all.
+ */
+export type ChatMode = 'command' | 'standards';
+
+export function isChatMode(value: string): value is ChatMode {
+  return value === 'command' || value === 'standards';
+}
+
 export interface User {
   id: string;
   telegram_user_id: number;
@@ -92,7 +107,25 @@ export interface User {
   language: Language;
   is_active: boolean;
   last_command_at: string | null;
+  /** Absent on a row written before migration 0007; read as 'command'. */
+  chat_mode?: ChatMode | null;
+  /** Last activity in `chat_mode`, refreshed each turn. Drives the idle sweep. */
+  chat_mode_at?: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+/** One exchange in a standards conversation. */
+export interface StandardsTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface StandardsThread {
+  user_id: string;
+  chat_id: number | null;
+  turns: StandardsTurn[];
+  started_at: string;
   updated_at: string;
 }
 
@@ -264,18 +297,6 @@ export interface ModifyResult {
   placement?: PlacementResult | null;
 }
 
-export interface DimensionResult {
-  kind: 'dimension';
-  /** View that was dimensioned. */
-  view: string;
-  dimensions_created: number;
-  /** How many faces and grid lines the dimension strings picked up. */
-  references_used: number;
-  /** i18n keys naming what got dimensioned, e.g. `dimension.grids`. */
-  targets: string[];
-  notes?: string[];
-}
-
 /** One counted category in a query result. */
 export interface QueryGroup {
   /** i18n key under `query.` or a device namespace, or a literal label. */
@@ -334,7 +355,6 @@ export type CommandResult =
   | PrintResult
   | DeleteResult
   | ModifyResult
-  | DimensionResult
   | QueryResult;
 
 // ---------------------------------------------------------------------------

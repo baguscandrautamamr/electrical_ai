@@ -13,6 +13,7 @@
 import { supabase } from '../../src/lib/supabase.js';
 import { isAuthorizedCron, unauthorized } from '../../src/lib/cron-auth.js';
 import { runSweep } from '../../src/services/maintenance.js';
+import { expireIdleStandardsModes } from '../../src/services/standards.js';
 import type { QueuedCommand } from '../../src/types/index.js';
 
 const COMPLETED_RETENTION_DAYS = 30;
@@ -88,7 +89,14 @@ export async function GET(request: Request): Promise<Response> {
     );
     report.confirmations_expired = expired.length;
 
-    // 4. Expired model cache.
+    // 4. Standards sessions nobody closed.
+    //
+    // The webhook already checks this per message, so a user is never actually
+    // stuck. This is for the rows: a session left open in January should not
+    // still be a row in July.
+    report.standards_sessions_expired = await expireIdleStandardsModes();
+
+    // 5. Expired model cache.
     await supabase().delete('model_cache_mep', {
       filters: [`expires_at=lt.${new Date().toISOString()}`],
     });

@@ -117,7 +117,6 @@ Vocabulary, so an unfamiliar word is read rather than refused:
 - "modifikasi", "ubah", "ganti", "modify", "change" followed by a new quantity or layout mean re-lay out what is already there: the modify_devices command. "menjadi 9 lampu" is count=9; "menjadi 2x3" is grid=2x3.
 - "cetak", "print", "plot" mean print to PDF, and a sheet number like "E-101" or "EL-201" is the subject of that command.
 - "sheet apa saja", "daftar sheet", "list sheets" ask which sheets exist: the list_sheets command, which takes no subject.
-- "dimensi", "kasih dimensi", "ukuran", "dimension" as a verb mean place dimensions. The subject is the ROOM when one is named — "kasih dimensi lampu di pantry" is subject "pantry", what=lighting. It is only a view name when the message clearly names a view.
 - "pasang hanger", "kasih hanger", "tambah hanger" mean the add_hangers command. When no run is named — "pasang hanger di cable tray", "pasang hanger di cable ladder" — leave subject null for all trays, or set it to "ladder" when they said ladder. "modifikasi hanger" / "ubah hanger" is the same command with mode=replace.
 - "mengikuti", "ikuti", "sesuai", "following" before a line style name mean the cable tray traces lines already drawn: put the style name in "follow". "pasang cable tray 300x300 mengikuti thin lines" is create_cable_tray with follow="Thin Lines" and size="300x300", and no from or to.
 - Device words: lampu/downlight/luminaire = lighting; saklar/switch/dimmer = lighting_device; stop kontak/stopkontak/outlet/colokan = receptacle; kabel tray/tray/rak kabel = cable_tray; detektor/smoke/heat/alarm = fire_alarm; telepon/PABX = telephone; LAN/data/jaringan/UTP = lan; CCTV/kamera/sensor = security; speaker/PA/antena = communication.
@@ -134,7 +133,7 @@ Rules:
 - A layout written as "3x2", "3 x 2" or "grid 3x2" is the grid parameter on place_lighting, columns by rows. Set grid, and leave count alone — the add-in multiplies them out.
 - Use the exact parameter names from the reference. Values go in as plain strings; numeric conversion happens downstream.
 - subject is the room name, tray id or sheet number the command acts on. Room names on a drawing carry their number — "ruangan meeting 1" is the room "meeting 1", not "meeting". Keep every word of it, and never drop a trailing number.
-- A device word in a delete, modify or dimension request names the category in "what", not the subject: "hapus lampu di pantry" is what=lighting, subject "pantry".
+- A device word in a delete or modify request names the category in "what", not the subject: "hapus lampu di pantry" is what=lighting, subject "pantry".
 - confidence reflects how sure you are of the command_type and the extracted values.
 
 Answer with the command only. No prose, no explanation, no advice about the design — the engineer asked for a placement, not a review.

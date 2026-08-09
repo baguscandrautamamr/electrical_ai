@@ -185,8 +185,6 @@ function summarize(result: CommandResult | null): string {
     case 'modify':
       return `${result.room ?? 'room'}: ${result.what} re-laid out, `
         + `-${result.devices_removed} / +${result.placement?.devices_placed ?? 0}`;
-    case 'dimension':
-      return `${result.view}: ${result.dimensions_created} dimension string(s)`;
     case 'query':
       return `${result.what} in ${result.room ?? 'model'}: ${result.total} found`;
     default:

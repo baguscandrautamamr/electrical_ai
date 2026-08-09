@@ -193,19 +193,6 @@ public sealed class ModifyResultDto
     public object? Placement { get; set; }
 }
 
-/// <summary>Matches the TypeScript <c>DimensionResult</c>.</summary>
-public sealed class DimensionResultDto
-{
-    [JsonProperty("kind")] public string Kind => "dimension";
-    [JsonProperty("view")] public string View { get; set; } = string.Empty;
-    [JsonProperty("dimensions_created")] public int DimensionsCreated { get; set; }
-    [JsonProperty("references_used")] public int ReferencesUsed { get; set; }
-    [JsonProperty("targets")] public List<string> Targets { get; set; } = new();
-
-    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
-    public List<string>? Notes { get; set; }
-}
-
 /// <summary>One counted category in a query result.</summary>
 public sealed class QueryGroupDto
 {

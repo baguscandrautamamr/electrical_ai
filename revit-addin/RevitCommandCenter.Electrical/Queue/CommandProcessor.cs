@@ -30,7 +30,6 @@ public sealed class CommandProcessor
             new CommunicationHandler(),
             new ExportHandler(),
             new PrintPdfHandler(),
-            new DimensionHandler(),
             new DeleteDevicesHandler(),
             new QueryHandler(),
         };

@@ -100,11 +100,15 @@
     "description": "Cetak sheet ke PDF sesuai nomor sheet / print sheets by number"
   },
   {
-    "command": "dimension",
-    "description": "Beri dimensi otomatis pada view denah / auto-dimension a plan view"
-  },
-  {
     "command": "query",
     "description": "Baca isi model: hitung/daftar yang sudah ada / read the model, changes nothing"
+  },
+  {
+    "command": "standar",
+    "description": "Mode tanya standar PUIL/SNI/IEC, tidak menyentuh Revit / two-way standards Q&A, never touches Revit"
+  },
+  {
+    "command": "keluar",
+    "description": "Tutup mode tanya standar, kembali ke mode perintah / leave standards mode"
   }
 ]

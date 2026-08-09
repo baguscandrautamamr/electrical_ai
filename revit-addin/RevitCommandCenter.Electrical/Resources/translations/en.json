@@ -196,23 +196,6 @@
     "no_bot_token": "⚠️ The file was not sent to the chat: no Telegram bot token is set in the Revit add-in. Fill it in under Command Center → Settings, then print again.",
     "not_found": "No sheet matched: {sheets}"
   },
-  "dimension": {
-    "title": "Dimensions",
-    "created": "DIMENSIONS PLACED",
-    "view": "View",
-    "strings": "Dimension strings",
-    "references": "References picked up",
-    "target": "Dimensioned",
-    "grids": "Grids",
-    "walls": "Walls",
-    "no_grids": "No grids in this view, so no grid dimensions.",
-    "no_walls": "No measurable wall faces in this view.",
-    "nothing": "Nothing in this view could be dimensioned.",
-    "no_devices": "No dimensionable devices in this room. Their family may publish no reference planes to dimension to.",
-    "hangers": "Cable tray hangers",
-    "no_hangers": "No cable-tray hangers found to dimension in this view.",
-    "references_dropped": "Revit rejected some references, so a string measures less than was asked for. Its usual cause is a wall face that changed after the dimension was made."
-  },
   "delete": {
     "title": "Delete",
     "done": "DEVICES REMOVED",
@@ -240,6 +223,26 @@
     "cancelled_title": "CANCELLED",
     "cancelled_detail": "Nothing in Revit was changed.",
     "expired": "This button is no longer live"
+  },
+  "standards": {
+    "mode_on": "STANDARDS MODE ON",
+    "mode_on_detail": "Ask anything about PUIL / SNI / IEC. Answers come straight back in this chat.",
+    "mode_on_scope": "PUIL 2011 (SNI 0225), the SNI lighting and fire standards, IEC 60364/60529/61439/60947.",
+    "mode_on_safety": "Nothing is sent to Revit while this mode is on.",
+    "mode_on_exit": "Type /keluar to go back to command mode.",
+    "mode_off": "COMMAND MODE ON",
+    "mode_off_detail": "Revit commands are read normally again.",
+    "mode_expired": "STANDARDS MODE ENDED",
+    "mode_expired_detail": "The standards session closed after a spell of inactivity, so your message was read as an ordinary command. Type /standar to open it again.",
+    "answer_title": "Standards Reference",
+    "sources": "Sources",
+    "footer_exit": "/keluar to return to command mode.",
+    "blocked": "COMMAND NOT RUN",
+    "blocked_detail": "You are in standards mode, so this command was deliberately not sent to Revit. Type /keluar first, then send it again.",
+    "already_on": "You are already in standards mode. Just type the question, or /keluar to leave.",
+    "not_on": "You are in command mode, so there is nothing to close. Type /standar to open standards mode.",
+    "unavailable": "Standards mode needs a working ANTHROPIC_API_KEY. Ask whoever runs this bot.",
+    "failed": "Could not answer the standards question."
   },
   "compliance": {
     "title": "Compliance",
@@ -310,6 +313,8 @@
     "admin_health": "system health",
     "admin_theme": "switch theme",
     "admin_lang": "switch language",
-    "admin_help": "every parameter of one command, with ranges and defaults"
+    "admin_help": "every parameter of one command, with ranges and defaults",
+    "admin_standards": "open the two-way PUIL/SNI/IEC standards channel; never touches Revit",
+    "admin_standards_exit": "close the standards channel"
   }
 }
