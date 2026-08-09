@@ -92,6 +92,11 @@ public sealed class DimensionHandler : ICommandHandler
         var wantsGrids = target == "grids" || (target == "all" && room is null);
         var wantsWalls = target == "walls" || (target == "all" && room is null);
 
+        // Hangers belong to a tray, not to a room, so they are the one target
+        // that works with or without one. "kasih dimension hanger cable tray"
+        // names no room because a tray run crosses several.
+        var wantsHangers = target == "hanger";
+
         foreach (var key in deviceKeys)
         {
             // `<category>.title` is the label the rest of the system already
@@ -103,6 +108,24 @@ public sealed class DimensionHandler : ICommandHandler
         }
 
         if (deviceKeys.Count > 0 && targets.Count == 0) notes.Add("dimension.no_devices");
+
+        if (wantsHangers)
+        {
+            if (CollectHangers(context, view, room, alongX, alongY) > 0) targets.Add("dimension.hangers");
+            else notes.Add("dimension.no_hangers");
+        }
+
+        // The walls a room is drawn inside are part of the same string as the
+        // devices in it: an outlet is set out from the wall it is on, and a
+        // chain that runs device to device says where they are relative to each
+        // other but not where any of them is. They are kept apart so a wall
+        // reference Revit will not take cannot cost the whole string.
+        var bounds = new List<Anchor>();
+        var boundsY = new List<Anchor>();
+        if (room is not null && (deviceKeys.Count > 0 || wantsHangers))
+        {
+            CollectRoomBounds(doc, view, room, bounds, boundsY);
+        }
 
         if (wantsGrids)
         {
@@ -116,8 +139,12 @@ public sealed class DimensionHandler : ICommandHandler
             else notes.Add("dimension.no_walls");
         }
 
-        var xChain = Chain(alongX);
-        var yChain = Chain(alongY);
+        // Two chains per axis: the one an engineer wants, and the one to fall
+        // back to if Revit refuses a wall face in it.
+        var xChain = Chain(alongX.Concat(bounds));
+        var yChain = Chain(alongY.Concat(boundsY));
+        var xWithoutBounds = Chain(alongX);
+        var yWithoutBounds = Chain(alongY);
 
         if (xChain.Count < 2 && yChain.Count < 2)
         {
@@ -134,7 +161,7 @@ public sealed class DimensionHandler : ICommandHandler
             });
         }
 
-        var extents = Extents(alongX.Concat(alongY));
+        var extents = Extents(alongX.Concat(alongY).Concat(bounds).Concat(boundsY));
         var elevation = view.GenLevel?.Elevation ?? 0;
 
         var created = 0;
@@ -147,16 +174,20 @@ public sealed class DimensionHandler : ICommandHandler
         {
             // The X string measures across, so it sits below the drawing; the Y
             // string measures up, so it sits to the left of it.
-            if (Place(doc, view, xChain, LineAlongX(extents, elevation, offsetFeet)))
+            var x = PlaceWithFallback(
+                doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
+            if (x > 0)
             {
                 created++;
-                used += xChain.Count;
+                used += x;
             }
 
-            if (Place(doc, view, yChain, LineAlongY(extents, elevation, offsetFeet)))
+            var y = PlaceWithFallback(
+                doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
+            if (y > 0)
             {
                 created++;
-                used += yChain.Count;
+                used += y;
             }
 
             transaction.Commit();
@@ -338,6 +369,236 @@ public sealed class DimensionHandler : ICommandHandler
     }
 
     /// <summary>
+    /// Cable-tray hangers visible in the view, as dimension references.
+    ///
+    /// Hangers are matched by family name rather than category — the family is
+    /// whatever the office's content calls it, and the category it was built in
+    /// varies with it — so they cannot go through the category table the device
+    /// targets use.
+    ///
+    /// The string that comes out is the one an engineer sets out by hand: the
+    /// spacing between consecutive supports along the run, with the odd first
+    /// and last bay that the run's ends produce.
+    /// </summary>
+    private static int CollectHangers(
+        HandlerContext context,
+        View view,
+        Room? room,
+        List<Anchor> alongX,
+        List<Anchor> alongY)
+    {
+        var family = context.Config.HangerFamilyName;
+
+        var hangers = new FilteredElementCollector(context.Doc, view.Id)
+            .OfClass(typeof(FamilyInstance))
+            .Cast<FamilyInstance>()
+            .Where(instance => SmartHangers.HangerTypeDetector.IsHangerFamily(instance, family))
+            .Where(instance => room is null || DeleteDevicesHandler.InRoom(instance, room))
+            .ToList();
+
+        if (hangers.Count == 0)
+        {
+            Logger.Info($"No hangers of family '{family}' in view '{view.Name}' to dimension.");
+            return 0;
+        }
+
+        var options = new Options { ComputeReferences = true, View = view };
+        var found = 0;
+
+        foreach (var hanger in hangers)
+        {
+            if (hanger.Location is not LocationPoint location) continue;
+            var point = location.Point;
+
+            // A support family published by the office may carry centre planes;
+            // most do not, and then the string measures to the nearest face of
+            // the hanger instead, which is where a tape measure would go.
+            var across = CentreReference(hanger, FamilyInstanceReferenceType.CenterLeftRight)
+                         ?? NearestFace(hanger, options, point, alongAxis: true);
+            var up = CentreReference(hanger, FamilyInstanceReferenceType.CenterFrontBack)
+                     ?? NearestFace(hanger, options, point, alongAxis: false);
+
+            if (across is not null)
+            {
+                alongX.Add(new Anchor(across, point.X, point));
+                found++;
+            }
+
+            if (up is not null)
+            {
+                alongY.Add(new Anchor(up, point.Y, point));
+                found++;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// The instance's own planar face nearest its insertion point, facing along
+    /// the axis being measured. Null when its geometry publishes none.
+    /// </summary>
+    private static Reference? NearestFace(
+        FamilyInstance instance,
+        Options options,
+        XYZ point,
+        bool alongAxis)
+    {
+        GeometryElement? geometry;
+        try
+        {
+            geometry = instance.get_Geometry(options);
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"No usable geometry on {instance.Id}: {ex.Message}");
+            return null;
+        }
+
+        if (geometry is null) return null;
+
+        Reference? best = null;
+        var bestDistance = double.MaxValue;
+
+        // A family instance's geometry arrives wrapped in its own transform, so
+        // the solids hang off the instance geometry rather than sitting in it.
+        foreach (var item in geometry)
+        {
+            var solids = item switch
+            {
+                Solid direct => new[] { direct },
+                GeometryInstance nested => nested.GetInstanceGeometry().OfType<Solid>().ToArray(),
+                _ => Array.Empty<Solid>(),
+            };
+
+            foreach (var solid in solids)
+            {
+                foreach (Face face in solid.Faces)
+                {
+                    if (face is not PlanarFace planar || planar.Reference is null) continue;
+
+                    var normal = planar.FaceNormal;
+                    var facingAxis = alongAxis
+                        ? Math.Abs(normal.X) > AxisTolerance
+                        : Math.Abs(normal.Y) > AxisTolerance;
+                    if (!facingAxis) continue;
+
+                    var distance = alongAxis
+                        ? Math.Abs(planar.Origin.X - point.X)
+                        : Math.Abs(planar.Origin.Y - point.Y);
+
+                    if (distance >= bestDistance) continue;
+
+                    bestDistance = distance;
+                    best = planar.Reference;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// The inner faces of the walls a room is drawn inside.
+    ///
+    /// What makes a device dimension a drawing rather than a diagram: an outlet
+    /// is set out from the wall it is on, and a chain running device to device
+    /// says where they are relative to each other but not where any of them is.
+    ///
+    /// Only the two faces bracketing the room on each axis are taken. Every
+    /// face of every bounding wall would dimension each wall's thickness as
+    /// well, which is a different drawing.
+    /// </summary>
+    private static void CollectRoomBounds(
+        Document doc,
+        View view,
+        Room room,
+        List<Anchor> alongX,
+        List<Anchor> alongY)
+    {
+        var box = room.get_BoundingBox(null);
+        if (box is null) return;
+
+        var walls = new HashSet<ElementId>();
+        foreach (var loop in room.GetBoundarySegments(new SpatialElementBoundaryOptions()) ?? new List<IList<BoundarySegment>>())
+        {
+            foreach (var segment in loop)
+            {
+                if (segment.ElementId != ElementId.InvalidElementId) walls.Add(segment.ElementId);
+            }
+        }
+
+        if (walls.Count == 0) return;
+
+        var options = new Options { ComputeReferences = true, View = view };
+
+        Anchor? minX = null, maxX = null, minY = null, maxY = null;
+        double minXGap = double.MaxValue, maxXGap = double.MaxValue;
+        double minYGap = double.MaxValue, maxYGap = double.MaxValue;
+
+        foreach (var id in walls)
+        {
+            var wall = doc.GetElement(id);
+            if (wall is null) continue;
+
+            GeometryElement? geometry;
+            try
+            {
+                geometry = wall.get_Geometry(options);
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"No usable geometry on bounding wall {id}: {ex.Message}");
+                continue;
+            }
+
+            if (geometry is null) continue;
+
+            foreach (var item in geometry)
+            {
+                if (item is not Solid solid) continue;
+
+                foreach (Face face in solid.Faces)
+                {
+                    if (face is not PlanarFace planar || planar.Reference is null) continue;
+
+                    var normal = planar.FaceNormal;
+                    if (Math.Abs(normal.Z) > 1 - AxisTolerance) continue;
+
+                    var origin = planar.Origin;
+
+                    if (Math.Abs(normal.X) > AxisTolerance)
+                    {
+                        Keep(ref minX, ref minXGap, origin.X, box.Min.X, planar.Reference, origin);
+                        Keep(ref maxX, ref maxXGap, origin.X, box.Max.X, planar.Reference, origin);
+                    }
+                    else if (Math.Abs(normal.Y) > AxisTolerance)
+                    {
+                        Keep(ref minY, ref minYGap, origin.Y, box.Min.Y, planar.Reference, origin);
+                        Keep(ref maxY, ref maxYGap, origin.Y, box.Max.Y, planar.Reference, origin);
+                    }
+                }
+            }
+        }
+
+        // The X string measures across, so it wants the faces that bracket the
+        // room in X; the Y string wants the other pair.
+        if (minX is not null) alongX.Add(minX.Value);
+        if (maxX is not null) alongX.Add(maxX.Value);
+        if (minY is not null) alongY.Add(minY.Value);
+        if (maxY is not null) alongY.Add(maxY.Value);
+
+        void Keep(ref Anchor? slot, ref double gap, double position, double wanted, Reference reference, XYZ origin)
+        {
+            var distance = Math.Abs(position - wanted);
+            if (distance >= gap) return;
+
+            gap = distance;
+            slot = new Anchor(reference, position, origin);
+        }
+    }
+
+    /// <summary>
     /// Grids visible in the view.
     ///
     /// A grid running north-south is measured along X, so it belongs to the X
@@ -468,7 +729,7 @@ public sealed class DimensionHandler : ICommandHandler
     /// Two references at the same position produce a zero-length segment, which
     /// Revit rejects — and takes the whole string with it.
     /// </summary>
-    private static List<Anchor> Chain(List<Anchor> anchors)
+    private static List<Anchor> Chain(IEnumerable<Anchor> anchors)
     {
         var ordered = anchors.OrderBy(anchor => anchor.Position).ToList();
         var chain = new List<Anchor>();
@@ -523,6 +784,35 @@ public sealed class DimensionHandler : ICommandHandler
         var start = new XYZ(x, box.MinY, elevation);
         var end = new XYZ(x, box.MaxY <= box.MinY ? box.MinY + 1 : box.MaxY, elevation);
         return Line.CreateBound(start, end);
+    }
+
+    /// <summary>
+    /// Places the full string, falling back to the devices alone if Revit
+    /// refuses it. Returns how many references the string that landed used.
+    /// </summary>
+    /// <remarks>
+    /// A wall face is the reference most likely to be rejected — it belongs to
+    /// a linked model, or the wall is joined to another and the face the solid
+    /// published no longer exists. Losing the whole string over one of those
+    /// would be a worse drawing than the device-to-device one this add-in drew
+    /// before walls were ever in it.
+    /// </remarks>
+    private static int PlaceWithFallback(
+        Document doc,
+        View view,
+        List<Anchor> full,
+        List<Anchor> fallback,
+        Line line)
+    {
+        if (Place(doc, view, full, line)) return full.Count;
+
+        if (fallback.Count >= 2 && fallback.Count < full.Count && Place(doc, view, fallback, line))
+        {
+            Logger.Info("Dimension string placed without its wall references.");
+            return fallback.Count;
+        }
+
+        return 0;
     }
 
     /// <summary>

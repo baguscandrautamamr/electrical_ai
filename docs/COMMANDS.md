@@ -267,15 +267,25 @@ NFPA 72 spacing, addressable loop assignment, compliance reported per rule.
 | `address` | string | auto | `auto` or an explicit address |
 | `mounting` | ceiling\|wall\|floor | ceiling | |
 | `coverage_target` | number | 100 | % |
+| `count` | integer | from NFPA coverage | Number of detectors; stating it overrides the calculation |
 | `space` | number | from the model | Floor area in m²; read off the Revit space when omitted |
 | `roof_pitch_deg` | number | 0 | Above 14° triggers apex rules |
 
 ```
 /place_fire_alarm Office_A type=dual standard=NFPA_72 loop_id=FD-Loop-01 address=auto mounting=ceiling coverage_target=100
+/place_fire_alarm Service type=smoke loop_id=FD-Loop-01 count=1 height=3
 ```
 
+**A stated count is obeyed.** *"pasang fire alarm smoke detector 1 unit di
+service ketinggian 3 meter"* places one, not the two the room's area works out
+to. Whether one is enough is a compliance question, and the reply answers it:
+the detector-count check names how many NFPA 72 coverage needs beside how many
+were placed. Placing two and reporting it against a request for one is the
+answer that helps nobody.
+
 Checks reported: smoke spacing ≤5.5 m, heat spacing ≤7.0 m, manual call points
-≤25 m, apex coverage on pitched roofs, and loop addresses within 46–113.
+≤25 m, apex coverage on pitched roofs, detector count against coverage when a
+count was stated, and loop addresses within 46–113.
 
 ### `/place_telephone <room>`
 
@@ -528,22 +538,33 @@ Aliases: `/dimensi`, `/beri_dimensi`, `/auto_dimension`, `/ukur`.
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
 | `room` | string | the open view | Room to dimension; a plan view name also works |
-| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication, grids, walls, all | all | What to measure to |
+| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication, hanger, grids, walls, all | all | What to measure to |
 | `view` | string | the room's floor plan | Plan view to draw in |
 | `offset` | number | 1000 | Distance from the outermost element to the dimension line (mm) |
 
 ```
 /dimension Pantry
 /dimension Pantry what=lighting
+/dimension "Meeting 2" what=receptacle
+/dimension what=hanger
 /dimension "Level 1" what=grids
 ```
 
-Plain language works: *"kasih dimensi lampu di pantry"*.
+Plain language works: *"kasih dimensi lampu di pantry"*, *"kasih dimension
+receptacle di meeting 2"*, *"kasih dimension hanger cable tray"*.
 
 **With a room**, the devices are what gets measured — centre to centre, the way
-a ceiling layout is dimensioned on a real drawing. `all` means the lighting
-there; dimensioning eight categories at once buries the layout under seven
-strings nobody asked for.
+a ceiling layout is dimensioned on a real drawing, **and out to the room's own
+walls at each end**. An outlet is set out from the wall it is on; a chain
+running device to device says where they are relative to each other but not
+where any of them is. `all` means the lighting there; dimensioning eight
+categories at once buries the layout under seven strings nobody asked for.
+
+**`what=hanger`** measures the cable-tray hangers along their run — the spacing
+between consecutive supports, which is the string an engineer sets out by hand.
+It is the one target that works with or without a room, because a tray run
+crosses several. Hangers are found by the family named in the add-in settings,
+so they are dimensioned whatever category the office built them in.
 
 **Without one**, the whole view's grids and walls are measured instead. Grids
 are measured to the grid line, walls to the vertical faces the view actually

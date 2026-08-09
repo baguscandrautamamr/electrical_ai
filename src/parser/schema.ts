@@ -374,6 +374,18 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
       address: { kind: 'string', default: 'auto', describe: '"auto" or an explicit loop address' },
       mounting: { kind: 'enum', values: MOUNTING, default: 'ceiling', describe: 'Mounting type' },
       coverage_target: { kind: 'number', default: 100, min: 1, max: 100, describe: 'Required coverage (%)' },
+      /**
+       * "pasang smoke detector 1 unit" means one. Without this the request had
+       * nowhere to land and the room's NFPA coverage decided instead, which is
+       * the right answer to a question the engineer did not ask.
+       */
+      count: {
+        kind: 'integer',
+        min: 1,
+        max: 200,
+        describe: 'Number of detectors; stating it overrides the NFPA coverage calculation',
+        aliases: ['jumlah', 'unit', 'quantity', 'qty', 'detectors', 'detector'],
+      },
       space: { kind: 'number', ...SPACE, aliases: ['area', 'luas'] },
       roof_pitch_deg: { kind: 'number', default: 0, min: 0, max: 89, describe: 'Roof pitch in degrees; >14 triggers apex rules' },
     },
@@ -660,7 +672,9 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     name: 'dimension',
     aliases: ['dimensi', 'beri_dimensi', 'auto_dimension', 'ukur'],
     role: 'editor',
-    describe: 'Dimension a room\'s devices, or a whole plan view\'s grids and walls.',
+    describe:
+      'Dimension a room\'s devices, the cable-tray hangers along their run, or a whole plan '
+      + 'view\'s grids and walls. Measures what is there; places nothing.',
     example: '/dimension Pantry what=lighting offset=1000',
     subject: {
       name: 'room',
@@ -670,10 +684,18 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     params: {
       what: {
         kind: 'enum',
-        values: [...DEVICE_TARGETS, 'grids', 'walls', 'all'],
+        /**
+         * `hanger` is not in DEVICE_TARGETS and does not belong there — a
+         * hanger cannot be placed or deleted by room. It can be measured
+         * though, and "kasih dimension hanger cable tray" is a drawing an
+         * engineer sets out by hand today.
+         */
+        values: [...DEVICE_TARGETS, 'hanger', 'grids', 'walls', 'all'],
         default: 'all',
         describe:
-          'What to measure to. In a room this is a device category ("all" means the lighting); with no room it is the grids and walls',
+          'What to measure to. In a room this is a device category ("all" means the lighting); '
+          + '"hanger" measures the cable-tray hangers along their run, with or without a room; '
+          + 'with no room "all" is the grids and walls',
         aliases: ['target', 'objek', 'category', 'device'],
       },
       view: {

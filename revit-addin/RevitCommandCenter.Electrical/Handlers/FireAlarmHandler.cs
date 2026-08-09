@@ -43,6 +43,20 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
 
     protected override int ResolveCount(CommandModel command, Room room)
     {
+        // "1 unit" means one. The coverage calculation is how many detectors a
+        // room needs when nobody has said; it is not a correction to apply to
+        // somebody who has. Whether one is enough is then a compliance question,
+        // and the reply answers it — placing two and saying "1 unit" was asked
+        // for is the one response that helps nobody.
+        var stated = command.GetInt("count");
+        if (stated > 0) return stated;
+
+        return CoverageCount(command, room);
+    }
+
+    /// <summary>Detectors this room needs for NFPA 72 coverage.</summary>
+    private static int CoverageCount(CommandModel command, Room room)
+    {
         var areaSqM = RevitUtils.AreaSqM(command, room);
         var deviceType = command.GetString("type", "dual");
         var spacing = NominalSpacing(deviceType);
@@ -204,6 +218,19 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
             addressesFit
                 ? $"{_startAddress}-{lastAddress} within {LoopAddressMin}-{LoopAddressMax}"
                 : $"{lastAddress} exceeds loop maximum {LoopAddressMax}"));
+
+        // A stated count is obeyed, so the reply has to say what that count
+        // costs. Under-covering a room is a life-safety defect and the engineer
+        // who asked for one detector is the person who needs to read it.
+        var stated = command.GetInt("count");
+        if (stated > 0)
+        {
+            var needed = CoverageCount(command, room);
+            checks.Add(ComplianceCheckDto.Of(
+                "compliance.nfpa72_detector_count",
+                placed.Count >= needed,
+                $"{placed.Count} placed as asked, NFPA 72 coverage needs {needed}"));
+        }
 
         result.Compliance = checks;
     }
