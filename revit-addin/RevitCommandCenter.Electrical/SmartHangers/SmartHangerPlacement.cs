@@ -287,6 +287,12 @@ public sealed class SmartHangerPlacement
         var symbol = match.Symbol!;
         var direction = (segment.End - segment.Start).Normalize();
 
+        // A tray's location line runs down the middle of its section, not along
+        // its underside, so a hanger placed on that line sits halfway up the
+        // tray with the trapeze cutting through it. The tray rests *on* its
+        // support, so every hanger drops half the tray's height.
+        var bearingDrop = XYZ.BasisZ.Multiply(RevitUnits.MmToFeet(segment.HeightMm / 2.0));
+
         var expected = HangerPositionCalculator.CalculateExpectedPositions(segment.LengthMm, spacingMm);
         if (expected.Count == 0) return;
 
@@ -350,7 +356,7 @@ public sealed class SmartHangerPlacement
         {
             try
             {
-                var point = RevitUnits.PointAlong(segment.Start, direction, position);
+                var point = RevitUnits.PointAlong(segment.Start, direction, position) - bearingDrop;
 
                 if (IsOccupied(occupied, point))
                 {

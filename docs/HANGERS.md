@@ -212,6 +212,22 @@ So the family is asked how it wants to be placed
 route if Revit refuses. A level-based instance is placed on the tray's own level
 with its elevation set to the tray, not the floor.
 
+### Where the hanger sits
+
+A tray's location line runs down the **middle** of its section, not along its
+underside. Placing a hanger on that line puts the trapeze halfway up the tray,
+cutting through it — the tray appears to be threaded onto its own support rather
+than resting on it.
+
+So every hanger drops half the tray's height below the location line, which puts
+it under the tray it carries. On a 300×300 tray routed at 3000, the hangers sit
+at 2850.
+
+Where that lands inside the hanger family depends on where the family's origin
+is. The rule here is the one that can be stated: **the family origin goes to the
+underside of the tray.** A trapeze drawn with its origin on the bearing surface
+therefore takes the tray exactly.
+
 ### Which way the hanger faces
 
 A free-standing instance is created facing whichever way the family was drawn —
