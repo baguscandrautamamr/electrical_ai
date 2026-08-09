@@ -40,6 +40,15 @@ export interface CommandSpec {
   /** Positional argument, if the command takes one. */
   subject?: { name: string; required: boolean; describe: string };
   params: Record<string, ParamSpec>;
+  /**
+   * Groups of parameters where at least one member must be given.
+   *
+   * For a command with more than one valid shape. A cable tray is routed either
+   * between two named places or along lines already drawn, and neither pair can
+   * be marked `required` without rejecting the other way of asking. Checked by
+   * the validator, so the engineer is told before the command reaches Revit.
+   */
+  requireOneOf?: readonly (readonly string[])[];
   /** Minimum role required. */
   role: 'viewer' | 'editor' | 'admin';
   describe: string;
@@ -265,12 +274,24 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     name: 'create_cable_tray',
     aliases: ['pasang_cable_tray', 'pasang_kabel_tray', 'buat_cable_tray'],
     role: 'editor',
-    describe: 'Route a cable tray and place hangers with gap-fill (preserves existing hangers).',
-    example: '/create_cable_tray CT-A1 from=PA-01 to=Zone_A cable_type=power size=auto material=aluminum installation=ceiling hanger_spacing=1500 fill_target=50 preserve_existing=true',
+    describe: 'Route a cable tray — between two places, or along lines already drawn — and place hangers with gap-fill.',
+    example: '/create_cable_tray CT-A1 follow="Thin Lines" size=300x300',
     subject: { name: 'tray_id', required: true, describe: 'Tray identifier, e.g. CT-A1' },
+    requireOneOf: [['from', 'follow'], ['to', 'follow']],
     params: {
-      from: { kind: 'string', required: true, describe: 'Origin, e.g. panel PA-01', aliases: ['from_location'] },
-      to: { kind: 'string', required: true, describe: 'Destination, e.g. Zone_A', aliases: ['to_location'] },
+      /**
+       * Not required, because `follow` is the other way to say where the tray
+       * goes. The handler asks for one or the other; requiring these here would
+       * reject "pasang cable tray 300x300 mengikuti thin lines", which names a
+       * route more precisely than either endpoint could.
+       */
+      from: { kind: 'string', describe: 'Origin, e.g. panel PA-01', aliases: ['from_location'] },
+      to: { kind: 'string', describe: 'Destination, e.g. Zone_A', aliases: ['to_location'] },
+      follow: {
+        kind: 'string',
+        describe: 'Trace lines already drawn in this line style, e.g. "Thin Lines"',
+        aliases: ['line_style', 'lines', 'ikuti', 'mengikuti'],
+      },
       cable_type: { kind: 'enum', values: ['power', 'data', 'mixed'], default: 'power', describe: 'Cable category' },
       size: { kind: 'string', default: 'auto', describe: '"auto" or explicit WxH in mm, e.g. 150x100' },
       material: { kind: 'enum', values: ['aluminum', 'steel', 'stainless'], default: 'aluminum', describe: 'Tray material' },

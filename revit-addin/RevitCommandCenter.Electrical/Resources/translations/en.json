@@ -54,6 +54,7 @@
     "not_a_number": "must be a number",
     "not_an_integer": "must be a whole number",
     "out_of_range": "must be between {min} and {max}",
+    "required_one_of": "needs one of: {fields}",
     "not_in_enum": "must be one of: {allowed}",
     "not_a_boolean": "must be true or false",
     "bad_size_format": "bad size format, e.g. 150x100",
@@ -120,6 +121,8 @@
     "load_per_hanger": "Load per hanger",
     "load_capacity": "Capacity",
     "skipped_vertical": "Vertical segments skipped",
+    "elbows_missing": "⚠️ Some corners took no elbow — check them in Revit, the run may be broken there.",
+    "extra_runs": "That line style holds more than one run; the longest was used.",
     "panel_updated": "Panel updated"
   },
   "fire_alarm": {
@@ -188,6 +191,7 @@
     "printed": "Sheets printed",
     "files": "Files",
     "saved_at": "Saved at",
+    "no_bot_token": "⚠️ The file was not sent to the chat: no Telegram bot token is set in the Revit add-in. Fill it in under Command Center → Settings, then print again.",
     "not_found": "No sheet matched: {sheets}"
   },
   "dimension": {
@@ -243,6 +247,7 @@
     "tray_fill": "Cable fill within limit",
     "hanger_load": "Hanger load within capacity",
     "breaker_load": "Breaker load within limit",
+    "requested_count": "Placed as many as were asked for",
     "switch_type_available": "The requested switch type is loaded in the project"
   },
   "admin": {

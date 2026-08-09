@@ -164,5 +164,19 @@ export function validateParams(
     if (value !== undefined) normalized[field] = value;
   }
 
+  // Commands with more than one valid shape: at least one of each group has to
+  // be present. Reported against the first name in the group, because that is
+  // the one whose absence the engineer is most likely to have meant.
+  for (const group of spec.requireOneOf ?? []) {
+    const satisfied = group.some((field) => normalized[field] !== undefined);
+    if (satisfied) continue;
+
+    issues.push({
+      field: group[0]!,
+      code: 'required_one_of',
+      detail: group.join(', '),
+    });
+  }
+
   return { ok: issues.length === 0, issues, normalized };
 }

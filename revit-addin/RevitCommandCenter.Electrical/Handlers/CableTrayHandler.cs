@@ -33,8 +33,24 @@ public sealed class CableTrayHandler : ICommandHandler
             return CommandResult.Fail("tray_id is required.", retryable: false);
         }
 
+        // "mengikuti thin lines" — the route is already drawn, and following it
+        // is a different job from routing between two named places.
+        var follow = command.GetString("follow");
+        if (!string.IsNullOrWhiteSpace(follow))
+        {
+            return FollowLines(context, command, trayId, follow);
+        }
+
         var fromName = command.GetString("from");
         var toName = command.GetString("to");
+
+        if (string.IsNullOrWhiteSpace(fromName) || string.IsNullOrWhiteSpace(toName))
+        {
+            return CommandResult.Fail(
+                "Say where the tray runs: from= and to=, or follow=<line style> to trace lines "
+                + "already drawn.",
+                retryable: false);
+        }
 
         var start = ResolveEndpoint(context.Doc, fromName);
         if (start is null)
@@ -182,6 +198,166 @@ public sealed class CableTrayHandler : ICommandHandler
     /// Tray size: explicit "WxH", or the narrowest standard width that keeps
     /// cable fill at or under the target.
     /// </summary>
+    /// <summary>
+    /// Builds the tray along lines already drawn in a named line style.
+    ///
+    /// One tray per straight, and an elbow at every corner — without the
+    /// fittings the run is a row of unconnected trays that looks right in plan
+    /// and carries nothing: no connected system, no length to schedule, nothing
+    /// for a fill calculation to work from.
+    /// </summary>
+    private static CommandResult FollowLines(
+        HandlerContext context,
+        CommandModel command,
+        string trayId,
+        string lineStyle)
+    {
+        var doc = context.Doc;
+
+        var trayType = new FilteredElementCollector(doc)
+            .OfClass(typeof(CableTrayType))
+            .Cast<CableTrayType>()
+            .FirstOrDefault();
+
+        if (trayType is null)
+        {
+            return CommandResult.Fail("No cable tray type is loaded in this model.", retryable: false);
+        }
+
+        var level = new FilteredElementCollector(doc)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .OrderBy(candidate => candidate.Elevation)
+            .FirstOrDefault();
+
+        if (level is null) return CommandResult.Fail("The model has no levels.", retryable: false);
+
+        var installationHeightM = command.GetString("installation", "ceiling") == "ceiling" ? 3.0 : 0.5;
+        var runZ = level.Elevation + RevitUnits.MToFeet(installationHeightM);
+
+        var runs = LineRoute.Collect(doc, lineStyle, runZ);
+        if (runs.Count == 0)
+        {
+            return CommandResult.Fail(
+                $"No straight lines in the style '{lineStyle}' were found. Check the line style name "
+                + "in Revit, and note that arcs are not followed.",
+                retryable: false);
+        }
+
+        var route = runs[0];
+        var (widthMm, heightMm) = ResolveSize(command);
+
+        var trays = new List<CableTray>();
+        var elbows = 0;
+
+        using (var transaction = new Transaction(doc, $"Cable tray {trayId} along {lineStyle}"))
+        {
+            transaction.Start();
+            try
+            {
+                foreach (var segment in route)
+                {
+                    var tray = CableTray.Create(doc, trayType.Id, segment.Start, segment.End, level.Id);
+
+                    ParameterMapper.TrySetParameters(tray, new Dictionary<string, object>
+                    {
+                        ["Mark"] = trayId,
+                        ["Comments"] = $"follows {lineStyle}",
+                    });
+                    ParameterMapper.TrySetParameter(tray, "Width", RevitUnits.MmToFeet(widthMm));
+                    ParameterMapper.TrySetParameter(tray, "Height", RevitUnits.MmToFeet(heightMm));
+
+                    trays.Add(tray);
+                }
+
+                // Sizes have to be set before the fittings are made: an elbow is
+                // built to the trays it joins, and one made against the default
+                // width will not fit a 300 mm tray.
+                doc.Regenerate();
+
+                for (var i = 1; i < trays.Count; i++)
+                {
+                    if (Connect(doc, trays[i - 1], trays[i], route[i].Start)) elbows++;
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                transaction.RollBack();
+                Logger.Error($"Failed to route tray {trayId} along '{lineStyle}'", ex);
+                return CommandResult.FromException(ex);
+            }
+        }
+
+        var lengthM = route.Sum(segment => RevitUnits.FeetToM(segment.LengthFeet));
+
+        Logger.Info(
+            $"create_cable_tray: {trays.Count} segment(s), {elbows} elbow(s) along '{lineStyle}'");
+
+        var result = new CableTrayResultDto
+        {
+            TrayId = trayId,
+            CableTraySize = $"{widthMm:F0}x{heightMm:F0}mm",
+            Material = command.GetString("material", "aluminum"),
+            FromLocation = lineStyle,
+            ToLocation = $"{trays.Count} segment(s), {elbows} elbow(s)",
+            RouteLengthM = Math.Round(lengthM, 2),
+        };
+
+        // Corners that could not be fitted leave the run broken, and a broken
+        // run is not something to find out about from the model.
+        if (elbows < trays.Count - 1) context.Warn("cable_tray.elbows_missing");
+        if (runs.Count > 1) context.Warn("cable_tray.extra_runs");
+
+        result.Notes = context.Warnings.Count > 0 ? context.Warnings : null;
+        return CommandResult.Ok(result);
+    }
+
+    /// <summary>
+    /// Fits an elbow between two trays meeting at <paramref name="corner"/>.
+    ///
+    /// The connectors are chosen by which end of each tray is actually at the
+    /// corner — a tray has one at each end, and joining the wrong pair produces
+    /// a fitting that spans the whole run.
+    /// </summary>
+    private static bool Connect(Document doc, CableTray a, CableTray b, XYZ corner)
+    {
+        var first = NearestConnector(a, corner);
+        var second = NearestConnector(b, corner);
+        if (first is null || second is null) return false;
+
+        try
+        {
+            doc.Create.NewElbowFitting(first, second);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Revit refuses an elbow the tray type has no fitting for, and one
+            // where the angle is outside what the fitting family supports.
+            Logger.Warn($"No elbow between {a.Id} and {b.Id}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static Connector? NearestConnector(CableTray tray, XYZ point)
+    {
+        Connector? best = null;
+        var bestDistance = double.MaxValue;
+
+        foreach (Connector connector in tray.ConnectorManager.Connectors)
+        {
+            var distance = connector.Origin.DistanceTo(point);
+            if (distance >= bestDistance) continue;
+
+            bestDistance = distance;
+            best = connector;
+        }
+
+        return best;
+    }
+
     private static (double WidthMm, double HeightMm) ResolveSize(CommandModel command)
     {
         var size = command.GetString("size", "auto");

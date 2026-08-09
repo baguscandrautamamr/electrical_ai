@@ -38,6 +38,15 @@ public sealed class RoomPerimeter
         public double Centre => (Start + End) / 2.0;
     }
 
+    /// <summary>
+    /// How far past a clearance an escape position is placed, in feet.
+    ///
+    /// A millimetre: enough to clear an inclusive bounds test without moving
+    /// anything a drawing would show, and far enough above floating-point noise
+    /// to survive the modulo in <see cref="Wrap"/>.
+    /// </summary>
+    private static readonly double NudgeFeet = RevitUnits.MToFeet(0.001);
+
     private readonly List<Span> _spans = new();
     private readonly List<Opening> _openings = new();
 
@@ -160,11 +169,18 @@ public sealed class RoomPerimeter
         // Both edges of whichever opening it landed in, then wider. Ordered by
         // how far the device has to move, so it stays as close as possible to
         // the even spacing it was given.
+        //
+        // Nudged a millimetre past the clearance rather than landing on it.
+        // IsBlocked spans the clearance inclusively, so a candidate placed
+        // exactly at `Start - clearance` tested as blocked — by the very edge
+        // it was derived from. Every escape rejected itself, NearestFree
+        // returned null, and the caller dropped the device instead of moving
+        // it: three outlets asked for, two placed.
         var candidates = _openings
             .SelectMany(opening => new[]
             {
-                opening.Start - clearanceFeet,
-                opening.End + clearanceFeet,
+                opening.Start - clearanceFeet - NudgeFeet,
+                opening.End + clearanceFeet + NudgeFeet,
             })
             .Select(Wrap)
             .Where(candidate => !IsBlocked(candidate, clearanceFeet))

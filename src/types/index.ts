@@ -180,6 +180,8 @@ export interface CableTrayResult {
   hangers: HangerSummary;
   panel_updated: string | null;
   exports?: ExportLinks;
+  /** i18n keys for anything the add-in noticed but could not fix. */
+  notes?: string[];
 }
 
 export interface PlacementResult {
@@ -215,6 +217,8 @@ export interface EquipRoomResult {
 export interface ExportResult {
   kind: 'export';
   exports: ExportLinks;
+  /** i18n keys for anything the add-in noticed but could not fix. */
+  notes?: string[];
 }
 
 /** One printed sheet, named as it is named in the title block. */
@@ -235,6 +239,8 @@ export interface PrintResult {
    * typo in a sheet number otherwise prints the rest and says nothing.
    */
   not_found?: string[];
+  /** i18n keys for anything the add-in noticed but could not fix. */
+  notes?: string[];
 }
 
 export interface DeleteResult {

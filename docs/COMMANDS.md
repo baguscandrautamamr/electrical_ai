@@ -195,6 +195,28 @@ opening the model.
 
 ### `/create_cable_tray <tray_id>`
 
+Two ways to say where it goes: between two named places (`from=`/`to=`), or
+along lines already drawn (`follow=`). One of them is required.
+
+**Following drawn lines.** `follow="Thin Lines"` traces every straight drawn in
+that line style, one tray per straight and an **elbow at each corner** so the run
+is connected rather than a row of separate trays that only looks right in plan.
+
+```
+/create_cable_tray CT-A1 follow="Thin Lines" size=300x300
+```
+
+Plain language works: *"pasang cable tray 300x300 mengikuti thin lines"*.
+
+The style name is matched without brackets or spaces, so `Thin Lines`,
+`<Thin Lines>` and `thinlines` all find the same style. Arcs are skipped — a
+bent tray is a different job from following a drafted route, and chording one
+would put the tray where nobody drew it. Where three lines meet, the run ends:
+a tee is not an elbow, and picking two of the three would be inventing a
+decision you did not draw. If the style holds several separate runs, the longest
+is used and the reply says so.
+
+
 Routes a tray and hangs it. See [HANGERS.md](HANGERS.md) for the hanger
 algorithm.
 
