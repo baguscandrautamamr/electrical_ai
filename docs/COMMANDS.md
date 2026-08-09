@@ -35,6 +35,8 @@ reads better:
 | `/list_sheets` | `/sheets`, `/daftar_sheet` |
 | `/undo` | `/batal`, `/batalkan` |
 | `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
+| `/standar` | `/standard`, `/puil`, `/sni`, `/iec`, `/referensi`, `/ref` |
+| `/keluar` | `/selesai`, `/exit`, `/quit` |
 
 Only the canonical names appear in Telegram's command menu — one entry per
 command keeps it readable — but the parser accepts either everywhere.
@@ -560,6 +562,65 @@ Lighting groups carry total wattage, cable tray total length, rooms total area.
 `what=lighting` reads each fixture's `Wattage`, `Apparent Load` or `Load`
 parameter and falls back to the wattage in the family name — the same reading
 `/place_lighting` used when it placed them.
+
+---
+
+## Standards mode
+
+A two-way PUIL / SNI / IEC reference channel. Not a command that answers once —
+a **mode** the bot stays in until you leave it.
+
+| Command | Role | What it does |
+|---|---|---|
+| `/standar [question]` | viewer | Open the channel; aliases `/standard`, `/puil`, `/sni`, `/iec`, `/referensi`, `/ref` |
+| `/keluar` | viewer | Close it; aliases `/selesai`, `/exit`, `/quit` |
+
+```
+/standar
+📘 STANDARDS MODE ON
+   Ask anything about PUIL / SNI / IEC…
+
+standar instalasi socket outlet
+📘 Standards Reference
+   …
+
+kalau di kamar mandi?          ← follows on; no need to repeat the context
+📘 Standards Reference
+   …
+
+/keluar
+✅ COMMAND MODE ON
+```
+
+A question sent with the command opens the channel and answers in one go:
+`/puil berapa tinggi kotak kontak`.
+
+**Nothing reaches Revit while the mode is on.** The webhook branches to this
+channel *before* the parser runs, so a question about how a device should be
+installed cannot be read as a request to install one. A Revit command typed by
+mistake is refused by name rather than answered:
+
+```
+/place_lighting Office_A count=6
+⚠️ COMMAND NOT RUN
+   └ Command: /place_lighting
+   You are in standards mode… type /keluar first, then send it again.
+```
+
+`/help`, `/lang`, `/theme`, `/status` and `/start` still work inside the mode —
+none of them touch the model. Everything else is either a question or a refusal.
+
+The channel needs no active project and no add-in: it works with Revit closed
+and nothing installed. It runs on the same `ANTHROPIC_API_KEY` as the parser,
+grounded on the curated notes in `src/standards/references.ts`, and the model is
+instructed never to cite a clause number it is not certain of — a standard named
+without a clause is a good answer, a wrong pasal is not.
+
+A session with no activity for **30 minutes** closes itself and says so, so a
+command typed hours later is never swallowed as a question.
+
+Every answer carries the same footer: reference material, not the standard
+itself and not a substitute for a competent engineer's check.
 
 ---
 

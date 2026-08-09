@@ -13,7 +13,7 @@
  * been accepted — failures are reported to the user in-chat, not via status code.
  */
 
-import { env } from '../../src/config/env.js';
+import { env, hasAnthropicKey } from '../../src/config/env.js';
 import { telegram, type CallbackQuery, type TelegramUpdate } from '../../src/lib/telegram.js';
 import { parseMessage } from '../../src/parser/index.js';
 import { specFor } from '../../src/parser/schema.js';
@@ -30,6 +30,23 @@ import {
   placementOf,
 } from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
+import {
+  answerStandardsQuestion,
+  decideStandardsRoute,
+  disclaimer,
+  enterStandardsMode,
+  exitStandardsMode,
+  inStandardsMode,
+  isIdle,
+  StandardsError,
+} from '../../src/services/standards.js';
+import {
+  formatStandardsAnswer,
+  formatStandardsBlocked,
+  formatStandardsEnter,
+  formatStandardsExit,
+  formatStandardsTimedOut,
+} from '../../src/format/standards.js';
 import {
   accessForProjectOrAdmin,
   findUserByTelegramId,
@@ -313,6 +330,96 @@ async function handleCallbackQuery(query: CallbackQuery): Promise<Response> {
   return ok({ ok: true, active_project: projectId });
 }
 
+async function replyWithStandardsAnswer(
+  user: User,
+  chatId: number,
+  ctx: FormatContext,
+  question: string,
+): Promise<void> {
+  try {
+    const answer = await answerStandardsQuestion(user, chatId, question);
+    await telegram().sendMessage(
+      chatId,
+      formatStandardsAnswer(ctx, answer, disclaimer(ctx.language)),
+    );
+  } catch (error) {
+    console.error('[webhook] standards answer failed', error);
+    // A missing key and a rejected request need different fixes from whoever
+    // runs the bot, and one message for both sends them looking in the wrong
+    // place — the same reason the parse errors are split out below.
+    const key = hasAnthropicKey() ? 'standards.failed' : 'standards.unavailable';
+    const detail = error instanceof StandardsError ? error.detail : String(error);
+    await telegram().sendMessage(chatId, formatError(ctx, key, {}, detail));
+  }
+}
+
+/**
+ * Standards mode: the branch that runs before the parser.
+ *
+ * This is the whole safety argument for the feature. While a user is in
+ * standards mode, `parseMessage` is never called, so there is no path from
+ * "standar pemasangan stop kontak?" to a `place_receptacle` row on the queue —
+ * not an unlikely path, none. A question about how something should be
+ * installed cannot install it.
+ *
+ * Returns 'passthrough' when the message is an ordinary one and the caller
+ * should carry on into the parser.
+ */
+async function routeStandards(
+  user: User,
+  chatId: number,
+  text: string,
+  ctx: FormatContext,
+): Promise<'handled' | 'passthrough'> {
+  let active = inStandardsMode(user);
+
+  // Before anything else: a session that went quiet must not colour how this
+  // message is read. Someone who asked about IP ratings this morning is typing
+  // a placement command now, and it has to run.
+  if (active && isIdle(user)) {
+    await exitStandardsMode(user);
+    user.chat_mode = 'command';
+    active = false;
+    await telegram().sendMessage(chatId, formatStandardsTimedOut(ctx));
+  }
+
+  const action = decideStandardsRoute(text, active);
+
+  switch (action.kind) {
+    case 'passthrough':
+      return 'passthrough';
+
+    case 'enter':
+      await enterStandardsMode(user, chatId);
+      user.chat_mode = 'standards';
+      await telegram().sendMessage(chatId, formatStandardsEnter(ctx));
+      if (action.question) await replyWithStandardsAnswer(user, chatId, ctx, action.question);
+      return 'handled';
+
+    case 'exit':
+      await exitStandardsMode(user);
+      user.chat_mode = 'command';
+      await telegram().sendMessage(chatId, formatStandardsExit(ctx));
+      return 'handled';
+
+    case 'already_on':
+      await telegram().sendMessage(chatId, formatError(ctx, 'standards.already_on'));
+      return 'handled';
+
+    case 'not_on':
+      await telegram().sendMessage(chatId, formatError(ctx, 'standards.not_on'));
+      return 'handled';
+
+    case 'blocked':
+      await telegram().sendMessage(chatId, formatStandardsBlocked(ctx, action.command));
+      return 'handled';
+
+    case 'answer':
+      await replyWithStandardsAnswer(user, chatId, ctx, action.question);
+      return 'handled';
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   // --- 1. Authenticate the webhook -----------------------------------------
   const expectedSecret = env.telegramWebhookSecret;
@@ -376,6 +483,14 @@ export async function POST(request: Request): Promise<Response> {
   if (!user.is_active) {
     await telegram().sendMessage(chatId, formatError(ctx, 'errors.inactive_user'));
     return ok();
+  }
+
+  // --- 2b. Standards mode ---------------------------------------------------
+  //
+  // Deliberately ahead of the parser: see routeStandards. Everything below this
+  // point can reach the queue, and while standards mode is on, nothing does.
+  if (await routeStandards(user, chatId, text, ctx) === 'handled') {
+    return ok({ ok: true, mode: 'standards' });
   }
 
   // --- 3. Parse -------------------------------------------------------------

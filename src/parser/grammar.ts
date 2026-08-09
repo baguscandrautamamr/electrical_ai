@@ -119,6 +119,25 @@ export function parseAdmin(text: string): AdminParse | null {
       return { type: 'project_list', args: [] };
     case 'health':
       return { type: 'health_status', args: [] };
+    // Standards mode. `/puil`, `/sni` and `/iec` are the same door under the
+    // names people reach for — nobody types "/standar" when the thing on their
+    // mind is a PUIL clause.
+    case 'standar':
+    case 'standard':
+    case 'standards':
+    case 'referensi':
+    case 'ref':
+    case 'puil':
+    case 'sni':
+    case 'iec':
+      return { type: 'standards_start', args: rest };
+    // Not /batal: that is already an alias of /undo, and a mistyped exit that
+    // deletes the last placement instead is the worst possible collision.
+    case 'keluar':
+    case 'selesai':
+    case 'exit':
+    case 'quit':
+      return { type: 'standards_exit', args: [] };
     case 'theme':
       return { type: 'set_theme', args: rest };
     case 'lang':

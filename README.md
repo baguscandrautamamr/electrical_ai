@@ -89,6 +89,31 @@ The pure geometry is specified and tested in
 [`HangerPositionCalculator.cs`](revit-addin/RevitCommandCenter.Electrical/SmartHangers/HangerPositionCalculator.cs).
 See [docs/HANGERS.md](docs/HANGERS.md) for the algorithm in detail.
 
+### The standards channel
+
+`/standar` — also `/puil`, `/sni`, `/iec` — switches the bot into a two-way
+PUIL / SNI / IEC reference conversation. Ask a question, get an answer, ask a
+follow-up and it still knows what you were talking about. `/keluar` switches
+back.
+
+It is a **mode**, not a command, and that is the point. While it is on, the
+webhook branches before the parser runs, so there is no code path from
+*"standar pemasangan stop kontak berapa tinggi?"* to a `place_receptacle` row on
+the queue — not an unlikely one, none. A question about how something should be
+installed cannot install it. A Revit command typed by mistake is refused by
+name, with the way out, rather than answered as though it were a question.
+
+Nothing here touches `commands_queue`, needs a project selected, or involves the
+add-in; the channel works with Revit closed and the add-in never installed. It
+runs on the same `ANTHROPIC_API_KEY` as the parser, grounded on the curated
+notes in [`src/standards/references.ts`](src/standards/references.ts) so that
+clause numbers come from something written down. A session left open times out
+after thirty minutes, because a mode you have forgotten being in is a mode that
+eats your next command.
+
+Answers are reference material and say so on every message: they are not the
+standard, and not a substitute for a competent engineer's check.
+
 ### Bilingual and themed
 
 Every reply is rendered in the user's language (Indonesian or English) and
@@ -110,7 +135,8 @@ public/index.html         landing page + the static output dir Vercel's build ne
 src/
   parser/                 grammar, Claude NLP fallback, validation, schema
   format/                 bilingual, theme-aware message rendering
-  services/               users, queue, credentials, admin, delivery
+  services/               users, queue, credentials, admin, delivery, standards
+  standards/              curated PUIL/SNI/IEC notes the standards mode is grounded on
   hangers/gapfill.ts      hanger algorithm reference implementation
   i18n/                   id.json, en.json
   theme/                  light/dark tokens
@@ -188,8 +214,9 @@ dotnet build -c Release
 
 ## Status
 
-The TypeScript half — webhook, parser, formatters, services, schema, cron jobs —
-is complete, typechecked and covered by 274 tests, and is deployed.
+The TypeScript half — webhook, parser, formatters, services, schema, cron jobs,
+the standards channel — is complete, typechecked and covered by 314 tests, and
+is deployed.
 
 The C# add-in **compiles** against the Revit 2025 API in CI (the `Revit add-in`
 workflow, which publishes the installable folder as an artifact). That is a

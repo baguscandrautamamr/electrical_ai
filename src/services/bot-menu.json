@@ -102,5 +102,13 @@
   {
     "command": "query",
     "description": "Baca isi model: hitung/daftar yang sudah ada / read the model, changes nothing"
+  },
+  {
+    "command": "standar",
+    "description": "Mode tanya standar PUIL/SNI/IEC, tidak menyentuh Revit / two-way standards Q&A, never touches Revit"
+  },
+  {
+    "command": "keluar",
+    "description": "Tutup mode tanya standar, kembali ke mode perintah / leave standards mode"
   }
 ]

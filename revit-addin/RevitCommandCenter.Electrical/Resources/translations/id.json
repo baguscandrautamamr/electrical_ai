@@ -224,6 +224,26 @@
     "cancelled_detail": "Tidak ada yang diubah di Revit.",
     "expired": "Tombol ini sudah tidak berlaku"
   },
+  "standards": {
+    "mode_on": "MODE STANDAR AKTIF",
+    "mode_on_detail": "Tanya apa saja soal PUIL / SNI / IEC. Jawaban langsung di chat ini.",
+    "mode_on_scope": "PUIL 2011 (SNI 0225), SNI pencahayaan & kebakaran, seri IEC 60364/60529/61439/60947.",
+    "mode_on_safety": "Tidak ada perintah yang dikirim ke Revit selama mode ini aktif.",
+    "mode_on_exit": "Ketik /keluar untuk kembali ke mode perintah.",
+    "mode_off": "MODE PERINTAH AKTIF",
+    "mode_off_detail": "Perintah Revit dibaca seperti biasa lagi.",
+    "mode_expired": "MODE STANDAR BERAKHIR",
+    "mode_expired_detail": "Sesi tanya standar ditutup karena tidak ada aktivitas. Pesan Anda dibaca sebagai perintah biasa. Ketik /standar untuk membukanya lagi.",
+    "answer_title": "Referensi Standar",
+    "sources": "Sumber",
+    "footer_exit": "/keluar untuk kembali ke mode perintah.",
+    "blocked": "PERINTAH TIDAK DIJALANKAN",
+    "blocked_detail": "Anda sedang di mode standar, jadi perintah ini sengaja tidak dikirim ke Revit. Ketik /keluar dulu, lalu kirim ulang.",
+    "already_on": "Anda sudah berada di mode standar. Langsung ketik pertanyaannya, atau /keluar untuk kembali.",
+    "not_on": "Anda sedang di mode perintah, jadi tidak ada yang perlu ditutup. Ketik /standar untuk membuka mode tanya standar.",
+    "unavailable": "Mode standar butuh ANTHROPIC_API_KEY yang aktif. Hubungi yang mengelola bot ini.",
+    "failed": "Gagal menjawab pertanyaan standar."
+  },
   "compliance": {
     "title": "Kepatuhan",
     "passed": "sesuai",
@@ -293,6 +313,8 @@
     "admin_health": "kesehatan sistem",
     "admin_theme": "ganti tema",
     "admin_lang": "ganti bahasa",
-    "admin_help": "seluruh parameter satu perintah, lengkap dengan rentang dan nilai bawaan"
+    "admin_help": "seluruh parameter satu perintah, lengkap dengan rentang dan nilai bawaan",
+    "admin_standards": "buka mode tanya standar PUIL/SNI/IEC (dua arah, tidak menyentuh Revit)",
+    "admin_standards_exit": "tutup mode tanya standar"
   }
 }

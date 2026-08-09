@@ -147,6 +147,8 @@ export function formatHelp(ctx: FormatContext): string {
     { label: '/health', value: t('help.admin_health') },
     { label: '/theme light|dark', value: t('help.admin_theme') },
     { label: '/lang id|en', value: t('help.admin_lang') },
+    { label: '/standar', value: t('help.admin_standards') },
+    { label: '/keluar', value: t('help.admin_standards_exit') },
   ]);
 
   b.section(t('help.example'));
