@@ -214,15 +214,16 @@ public sealed class CableTrayHandler : ICommandHandler
     {
         var doc = context.Doc;
 
-        var trayType = new FilteredElementCollector(doc)
-            .OfClass(typeof(CableTrayType))
-            .Cast<CableTrayType>()
-            .FirstOrDefault();
-
+        var trayType = PickTrayType(doc);
         if (trayType is null)
         {
             return CommandResult.Fail("No cable tray type is loaded in this model.", retryable: false);
         }
+
+        // A "without fittings" tray type has no elbow to place, and every corner
+        // in the run will stay open. Worth saying up front rather than letting
+        // it read as a failure to try.
+        if (ElbowRuleCount(trayType) == 0) context.Warn("cable_tray.type_without_fittings");
 
         var level = new FilteredElementCollector(doc)
             .OfClass(typeof(Level))
@@ -244,40 +245,60 @@ public sealed class CableTrayHandler : ICommandHandler
                 retryable: false);
         }
 
-        var route = runs[0];
         var (widthMm, heightMm) = ResolveSize(command);
 
-        var trays = new List<CableTray>();
+        // Marks are unique per tray, not per command. Every segment carrying the
+        // command's tray id is what Revit was warning about: one id, several
+        // elements, and no way to tell them apart on a schedule.
+        var taken = RevitUtils.ExistingMarks(doc, BuiltInCategory.OST_CableTray);
+        var sequence = RevitUtils.NextDeviceSequence(doc, BuiltInCategory.OST_CableTray, trayId);
+
+        var built = new List<(CableTray Tray, LineRoute.Segment Segment)>();
         var elbows = 0;
+        var corners = 0;
+        string? elbowError = null;
 
         using (var transaction = new Transaction(doc, $"Cable tray {trayId} along {lineStyle}"))
         {
             transaction.Start();
             try
             {
-                foreach (var segment in route)
+                // Every run, not just the longest. An engineer who draws two
+                // separate routes in one style means both of them — building one
+                // and mentioning the other in a footnote is not following the
+                // lines, it is picking one.
+                foreach (var route in runs)
                 {
-                    var tray = CableTray.Create(doc, trayType.Id, segment.Start, segment.End, level.Id);
+                    var trays = new List<CableTray>();
 
-                    ParameterMapper.TrySetParameters(tray, new Dictionary<string, object>
+                    foreach (var segment in route)
                     {
-                        ["Mark"] = trayId,
-                        ["Comments"] = $"follows {lineStyle}",
-                    });
-                    ParameterMapper.TrySetParameter(tray, "Width", RevitUnits.MmToFeet(widthMm));
-                    ParameterMapper.TrySetParameter(tray, "Height", RevitUnits.MmToFeet(heightMm));
+                        var tray = CableTray.Create(doc, trayType.Id, segment.Start, segment.End, level.Id);
 
-                    trays.Add(tray);
-                }
+                        ParameterMapper.TrySetParameters(tray, new Dictionary<string, object>
+                        {
+                            ["Mark"] = RevitUtils.NextFreeDeviceId(trayId, sequence++, taken),
+                            ["Comments"] = $"follows {lineStyle}",
+                        });
+                        ParameterMapper.TrySetParameter(tray, "Width", RevitUnits.MmToFeet(widthMm));
+                        ParameterMapper.TrySetParameter(tray, "Height", RevitUnits.MmToFeet(heightMm));
 
-                // Sizes have to be set before the fittings are made: an elbow is
-                // built to the trays it joins, and one made against the default
-                // width will not fit a 300 mm tray.
-                doc.Regenerate();
+                        trays.Add(tray);
+                        built.Add((tray, segment));
+                    }
 
-                for (var i = 1; i < trays.Count; i++)
-                {
-                    if (Connect(doc, trays[i - 1], trays[i], route[i].Start)) elbows++;
+                    // Sizes have to be set before the fittings are made: an elbow
+                    // is built to the trays it joins, and one made against the
+                    // default width will not fit a 300 mm tray.
+                    doc.Regenerate();
+
+                    for (var i = 1; i < trays.Count; i++)
+                    {
+                        corners++;
+                        var failure = Connect(doc, trays[i - 1], trays[i], route[i].Start);
+                        if (failure is null) elbows++;
+                        else elbowError ??= failure;
+                    }
                 }
 
                 transaction.Commit();
@@ -290,10 +311,13 @@ public sealed class CableTrayHandler : ICommandHandler
             }
         }
 
-        var lengthM = route.Sum(segment => RevitUnits.FeetToM(segment.LengthFeet));
+        var lengthM = built.Sum(entry => RevitUnits.FeetToM(entry.Segment.LengthFeet));
 
         Logger.Info(
-            $"create_cable_tray: {trays.Count} segment(s), {elbows} elbow(s) along '{lineStyle}'");
+            $"create_cable_tray: {built.Count} segment(s) in {runs.Count} run(s), "
+            + $"{elbows}/{corners} elbow(s) along '{lineStyle}'");
+
+        var outcome = PlaceHangersOn(context, command, built, widthMm, heightMm);
 
         var result = new CableTrayResultDto
         {
@@ -301,17 +325,107 @@ public sealed class CableTrayHandler : ICommandHandler
             CableTraySize = $"{widthMm:F0}x{heightMm:F0}mm",
             Material = command.GetString("material", "aluminum"),
             FromLocation = lineStyle,
-            ToLocation = $"{trays.Count} segment(s), {elbows} elbow(s)",
+            ToLocation = $"{built.Count} segment(s) in {runs.Count} run(s), {elbows}/{corners} elbow(s)",
             RouteLengthM = Math.Round(lengthM, 2),
+            Hangers = outcome is null ? new HangerSummaryDto() : SmartHangerPlacement.Summarize(outcome),
         };
 
-        // Corners that could not be fitted leave the run broken, and a broken
-        // run is not something to find out about from the model.
-        if (elbows < trays.Count - 1) context.Warn("cable_tray.elbows_missing");
-        if (runs.Count > 1) context.Warn("cable_tray.extra_runs");
+        // Corners that took no fitting leave the run broken, and a broken run is
+        // not something to find out about from the model. Revit's own reason is
+        // carried through — it names the thing to fix.
+        if (elbows < corners)
+        {
+            context.Warn("cable_tray.elbows_missing");
+            if (elbowError is not null) context.Warn($"Revit: {elbowError}");
+        }
 
         result.Notes = context.Warnings.Count > 0 ? context.Warnings : null;
         return CommandResult.Ok(result);
+    }
+
+    /// <summary>
+    /// Hangs the followed run, the same way a routed one is hung.
+    /// </summary>
+    /// <remarks>
+    /// Returns null when hanging failed. The trays exist either way, and losing
+    /// the hangers is not worth reporting the whole route as a failure — the
+    /// reply shows zero hangers, which is true.
+    /// </remarks>
+    private static SmartHangerPlacement.PlacementOutcome? PlaceHangersOn(
+        HandlerContext context,
+        CommandModel command,
+        List<(CableTray Tray, LineRoute.Segment Segment)> built,
+        double widthMm,
+        double heightMm)
+    {
+        if (built.Count == 0) return null;
+
+        var segments = built
+            .Select(entry => new TraySegment
+            {
+                Element = entry.Tray,
+                Start = entry.Segment.Start,
+                End = entry.Segment.End,
+                LengthMm = RevitUnits.FeetToMm(entry.Segment.LengthFeet),
+                IsHorizontal = RevitUtils.IsHorizontal(entry.Segment.Start, entry.Segment.End),
+                WidthMm = widthMm,
+                HeightMm = heightMm,
+            })
+            .ToList();
+
+        try
+        {
+            var placement = new SmartHangerPlacement(
+                context.Doc, command.GetString("hanger_family", "Hanger"));
+
+            return placement.PlaceHangers(
+                segments,
+                command.GetDouble("hanger_spacing", 1500),
+                command.GetBool("preserve_existing", true),
+                command.GetDouble("fill_target", 50),
+                command.GetString("material", "aluminum"));
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Hanger placement failed after the followed route was created", ex);
+            context.Warn("cable_tray.hangers_failed");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A cable tray type that can actually take fittings, if the model has one.
+    /// </summary>
+    /// <remarks>
+    /// Revit ships tray types in two flavours, with fittings and without, and
+    /// they look identical in a list. Taking whichever came first meant a model
+    /// holding both could land on the one that has no elbow to place — and then
+    /// every corner in the run stays open for a reason nothing in the reply
+    /// could name.
+    /// </remarks>
+    private static CableTrayType? PickTrayType(Document doc)
+    {
+        var types = new FilteredElementCollector(doc)
+            .OfClass(typeof(CableTrayType))
+            .Cast<CableTrayType>()
+            .ToList();
+
+        return types.FirstOrDefault(type => ElbowRuleCount(type) > 0) ?? types.FirstOrDefault();
+    }
+
+    /// <summary>How many elbow fittings a tray type's routing preferences offer.</summary>
+    private static int ElbowRuleCount(CableTrayType type)
+    {
+        try
+        {
+            return type.RoutingPreferenceManager?
+                .GetNumberOfRules(RoutingPreferenceRuleGroupType.Elbows) ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"Could not read routing preferences of '{type.Name}': {ex.Message}");
+            return 0;
+        }
     }
 
     /// <summary>
@@ -321,23 +435,29 @@ public sealed class CableTrayHandler : ICommandHandler
     /// corner — a tray has one at each end, and joining the wrong pair produces
     /// a fitting that spans the whole run.
     /// </summary>
-    private static bool Connect(Document doc, CableTray a, CableTray b, XYZ corner)
+    private static string? Connect(Document doc, CableTray a, CableTray b, XYZ corner)
     {
         var first = NearestConnector(a, corner);
         var second = NearestConnector(b, corner);
-        if (first is null || second is null) return false;
+        if (first is null || second is null) return "the trays published no connector at the corner";
+
+        // Already joined — Revit connects coincident collinear ends by itself,
+        // and asking for a fitting on top of that is an error rather than a
+        // second elbow.
+        if (first.IsConnectedTo(second)) return null;
 
         try
         {
             doc.Create.NewElbowFitting(first, second);
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             // Revit refuses an elbow the tray type has no fitting for, and one
-            // where the angle is outside what the fitting family supports.
+            // where the angle is outside what the fitting family supports. Its
+            // wording names which, so it is carried back rather than summarised.
             Logger.Warn($"No elbow between {a.Id} and {b.Id}: {ex.Message}");
-            return false;
+            return ex.Message;
         }
     }
 

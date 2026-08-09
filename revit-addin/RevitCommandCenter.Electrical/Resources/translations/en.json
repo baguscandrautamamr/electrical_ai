@@ -121,8 +121,9 @@
     "load_per_hanger": "Load per hanger",
     "load_capacity": "Capacity",
     "skipped_vertical": "Vertical segments skipped",
+    "type_without_fittings": "⚠️ The cable tray type in this model carries no elbow fittings (a \"without fittings\" type). Load one with fittings if the corners need to connect.",
+    "hangers_failed": "Hangers could not be placed; the trays were still created.",
     "elbows_missing": "⚠️ Some corners took no elbow — check them in Revit, the run may be broken there.",
-    "extra_runs": "That line style holds more than one run; the longest was used.",
     "panel_updated": "Panel updated"
   },
   "fire_alarm": {
