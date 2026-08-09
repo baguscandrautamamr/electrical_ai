@@ -422,6 +422,17 @@ public sealed class DimensionHandler : ICommandHandler
                   + $"({RevitUnits.FeetToMm(centre.X):F0}, {RevitUnits.FeetToMm(centre.Y):F0}) mm");
         }
 
+        if (survivors.Count > 0)
+        {
+            // The id is the one thing that settles "it is not there" against "I
+            // cannot see it": Manage > Select by ID takes it and Revit either
+            // finds the element or says it does not exist.
+            notes.Add(
+                "Element id(s): "
+                + string.Join(", ", survivors.Take(5).Select(id => id.ToString()))
+                + " — Manage > Select by ID finds them.");
+        }
+
         // Left selected in Revit: the quickest way to find a dimension is to
         // have Revit already holding it, so Zoom To Fit lands on it.
         Select(context, doc, survivors);
@@ -452,23 +463,64 @@ public sealed class DimensionHandler : ICommandHandler
     /// </summary>
     private static void Reveal(View view, List<string> notes)
     {
-        var dimensions = new ElementId(BuiltInCategory.OST_Dimensions);
+        // Three switches, any one of which hides every dimension in the view
+        // while the other two read as fine. The category's own switch is the
+        // obvious one; the master annotation switch above it and a view filter
+        // beside it are the two that look like nothing is wrong.
+        Flip(
+            "the Dimensions category",
+            () => view.GetCategoryHidden(new ElementId(BuiltInCategory.OST_Dimensions)),
+            () => view.SetCategoryHidden(new ElementId(BuiltInCategory.OST_Dimensions), false));
+
+        Flip(
+            "every annotation category",
+            () => view.AreAnnotationCategoriesHidden,
+            () => view.AreAnnotationCategoriesHidden = false);
 
         try
         {
-            if (!view.GetCategoryHidden(dimensions)) return;
+            foreach (var id in view.GetFilters())
+            {
+                if (view.GetFilterVisibility(id)) continue;
+                if (view.Document.GetElement(id) is not ParameterFilterElement filter) continue;
 
-            view.SetCategoryHidden(dimensions, false);
-            notes.Add($"Dimensions were switched off in {view.Name}; turned back on.");
-            Logger.Warn($"Dimensions category was hidden in '{view.Name}'; re-enabled.");
+                var categories = filter.GetCategories();
+                if (!categories.Any(category => category.Value == (int)BuiltInCategory.OST_Dimensions))
+                {
+                    continue;
+                }
+
+                // Not flipped: a filter is somebody's deliberate rule about this
+                // view, and turning it off would change more than dimensions.
+                notes.Add(
+                    $"View filter '{filter.Name}' hides dimensions in {view.Name}. "
+                    + "Nothing this command draws will show until it is switched on.");
+                Logger.Warn($"Filter '{filter.Name}' hides dimensions in '{view.Name}'.");
+            }
         }
         catch (Exception ex)
         {
-            // A view template owns the setting, and only a person can change it.
-            notes.Add(
-                $"Dimensions are switched off in {view.Name} and a view template controls it — "
-                + "turn the Dimensions category on in Visibility/Graphics for that template.");
-            Logger.Warn($"Could not re-enable dimensions in '{view.Name}': {ex.Message}");
+            Logger.Debug($"Could not read the filters on '{view.Name}': {ex.Message}");
+        }
+
+        void Flip(string what, Func<bool> hidden, Action show)
+        {
+            try
+            {
+                if (!hidden()) return;
+
+                show();
+                notes.Add($"{what} was switched off in {view.Name}; turned back on.");
+                Logger.Warn($"{what} was hidden in '{view.Name}'; re-enabled.");
+            }
+            catch (Exception ex)
+            {
+                // A view template owns the setting, and only a person can change it.
+                notes.Add(
+                    $"{what} is switched off in {view.Name} and a view template controls it — "
+                    + "turn it on in Visibility/Graphics for that template.");
+                Logger.Warn($"Could not re-enable {what} in '{view.Name}': {ex.Message}");
+            }
         }
     }
 
@@ -478,48 +530,76 @@ public sealed class DimensionHandler : ICommandHandler
     /// Everything here is a property of the view or the model rather than of
     /// the command, which is exactly why the command has to report it: none of
     /// it is visible from a chat, and all of it looks like "nothing happened".
+    ///
+    /// Each question is asked on its own. Wrapped together, one of them
+    /// throwing takes the answers to all the others with it — which is a way of
+    /// reporting nothing that looks exactly like having nothing to report.
     /// </summary>
     private static void Diagnose(Document doc, View view, Dimension dimension, List<string> notes)
     {
-        try
+        // How big the string is, and how big Revit drew it. A dimension of a few
+        // millimetres is on the drawing and invisible at any plan scale, which
+        // is indistinguishable from absent without the number.
+        Ask("size", () =>
+        {
+            var box = dimension.get_BoundingBox(view);
+            var span = dimension.Value is { } value ? $"{RevitUnits.FeetToMm(value):F0} mm" : "multi-segment";
+
+            notes.Add(box is null
+                ? $"First string measures {span}, and has no extent in {view.Name}."
+                : $"First string measures {span}, drawn from {Mm(box.Min)} to {Mm(box.Max)} mm.");
+        });
+
+        Ask("hidden", () =>
         {
             if (dimension.IsHidden(view))
             {
                 notes.Add($"The string is hidden in {view.Name} (Reveal Hidden Elements shows it).");
             }
+        });
 
+        Ask("crop", () =>
+        {
             if (view.CropBoxActive)
             {
-                notes.Add(
-                    $"{view.Name} has an active crop region; anything outside it is not drawn.");
+                notes.Add($"{view.Name} has an active crop region; anything outside it is not drawn.");
             }
+        });
 
-            // A workshared model puts new elements on the active workset, and a
-            // workset switched off in the view takes its elements with it.
-            if (doc.IsWorkshared)
-            {
-                var partition = dimension.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
-                if (partition is not null)
-                {
-                    var workset = new WorksetId(partition.AsInteger());
-                    var name = doc.GetWorksetTable().GetWorkset(workset)?.Name ?? "unknown";
-
-                    if (view.GetWorksetVisibility(workset) == WorksetVisibility.Hidden)
-                    {
-                        notes.Add(
-                            $"Workset '{name}' is switched off in {view.Name}, and the new "
-                            + "dimensions are on it.");
-                    }
-                    else
-                    {
-                        Logger.Info($"New dimensions are on workset '{name}'.");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
+        // A workshared model puts new elements on the active workset, and a
+        // workset switched off in the view takes its elements with it.
+        Ask("workset", () =>
         {
-            Logger.Debug($"Could not diagnose dimension visibility: {ex.Message}");
+            if (!doc.IsWorkshared) return;
+
+            var partition = dimension.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+            if (partition is null) return;
+
+            var workset = new WorksetId(partition.AsInteger());
+            var name = doc.GetWorksetTable().GetWorkset(workset)?.Name ?? "unknown";
+
+            if (view.GetWorksetVisibility(workset) == WorksetVisibility.Hidden)
+            {
+                notes.Add(
+                    $"Workset '{name}' is switched off in {view.Name}, and the new dimensions "
+                    + "are on it.");
+            }
+            else
+            {
+                Logger.Info($"New dimensions are on workset '{name}'.");
+            }
+        });
+
+        void Ask(string what, Action check)
+        {
+            try
+            {
+                check();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not check the {what} of dimension {dimension.Id}: {ex.Message}");
+            }
         }
     }
 
@@ -772,9 +852,9 @@ public sealed class DimensionHandler : ICommandHandler
     {
         if (bounds is null) return null;
         if (device.Host is not Wall wall) return null;
-        if (wall.Location is not LocationCurve curve || curve.Curve is not Line line) return null;
+        if (wall.Location is not LocationCurve curve || curve.Curve is not Line along) return null;
 
-        var direction = Flatten(line.Direction);
+        var direction = Flatten(along.Direction);
         if (direction is null) return null;
 
         var end = bounds.Nearest(point, direction);
