@@ -666,58 +666,6 @@ export const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
 
-  // -------------------------------------------------------------- dimension
-  dimension: {
-    type: 'dimension',
-    name: 'dimension',
-    aliases: ['dimensi', 'beri_dimensi', 'auto_dimension', 'ukur'],
-    role: 'editor',
-    describe:
-      'Dimension a room\'s devices, the cable-tray hangers along their run, or a whole plan '
-      + 'view\'s grids and walls. Measures what is there; places nothing.',
-    example: '/dimension Pantry what=lighting offset=1000',
-    subject: {
-      name: 'room',
-      required: false,
-      describe: 'Room to dimension the devices in; a plan view name also works, and omitting it uses the view open in Revit',
-    },
-    params: {
-      what: {
-        kind: 'enum',
-        /**
-         * `hanger` is not in DEVICE_TARGETS and does not belong there — a
-         * hanger cannot be placed or deleted by room. It can be measured
-         * though, and "kasih dimension hanger cable tray" is a drawing an
-         * engineer sets out by hand today.
-         */
-        values: [...DEVICE_TARGETS, 'hanger', 'grids', 'walls', 'all'],
-        default: 'all',
-        describe:
-          'What to measure to. In a room this is a device category ("all" means the lighting); '
-          + '"hanger" measures the cable-tray hangers along their run, with or without a room; '
-          + 'with no room "all" is the grids and walls',
-        aliases: ['target', 'objek', 'category', 'device'],
-      },
-      view: {
-        kind: 'string',
-        describe: 'Plan view to draw in; defaults to the room\'s floor plan or the view open in Revit',
-      },
-      /**
-       * How far outside the drawing the dimension line sits. 1 m at 1:100 is
-       * about 10 mm on the sheet, which clears a title block's margin without
-       * stranding the string halfway across the page.
-       */
-      offset: {
-        kind: 'number',
-        default: 1000,
-        min: 0,
-        max: 20000,
-        describe: 'Distance from the outermost element to the dimension line (mm)',
-        aliases: ['jarak', 'gap'],
-      },
-    },
-  },
-
   // ------------------------------------------------------------------ query
   query: {
     type: 'query',

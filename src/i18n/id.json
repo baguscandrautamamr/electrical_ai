@@ -196,23 +196,6 @@
     "no_bot_token": "⚠️ Berkas tidak dikirim ke chat: Telegram bot token belum diisi di setting add-in Revit. Isi di panel Command Center → Settings, lalu cetak ulang.",
     "not_found": "Tidak ada sheet yang cocok dengan: {sheets}"
   },
-  "dimension": {
-    "title": "Dimensi",
-    "created": "DIMENSI DITEMPATKAN",
-    "view": "View",
-    "strings": "Rangkaian dimensi",
-    "references": "Titik acuan",
-    "target": "Objek",
-    "grids": "Grid",
-    "walls": "Dinding",
-    "no_grids": "Tidak ada grid di view ini, jadi tidak ada dimensi grid.",
-    "no_walls": "Tidak ada muka dinding yang bisa diukur di view ini.",
-    "nothing": "Tidak ada yang bisa diberi dimensi di view ini.",
-    "no_devices": "Tidak ada perangkat yang bisa diukur di ruangan ini. Family-nya mungkin tidak punya reference plane untuk dimensi.",
-    "hangers": "Hanger cable tray",
-    "no_hangers": "Tidak ada hanger cable tray yang bisa didimensi di view ini.",
-    "references_dropped": "Revit menolak sebagian titik acuan, jadi ada rangkaian dimensi yang lebih pendek dari yang diminta. Biasanya karena muka dinding berubah setelah dimensi dibuat."
-  },
   "delete": {
     "title": "Hapus",
     "done": "PERANGKAT DIHAPUS",

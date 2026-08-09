@@ -88,7 +88,7 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     /// <remarks>
     /// Someone working through a room sends several commands in a row — place,
-    /// then modify, then dimension — and each one used to wait out a fresh poll
+    /// then modify, then delete — and each one used to wait out a fresh poll
     /// interval before it was even claimed. Draining costs nothing when the
     /// queue is empty, because an empty claim ends the loop immediately; the
     /// interval still governs how often an idle add-in asks at all, which is

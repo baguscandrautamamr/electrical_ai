@@ -28,7 +28,6 @@ export const DEVICE_COMMAND_TYPES = [
   'equip_room',
   'export',
   'print_pdf',
-  'dimension',
   'delete_devices',
   'modify_devices',
   'undo',
@@ -264,18 +263,6 @@ export interface ModifyResult {
   placement?: PlacementResult | null;
 }
 
-export interface DimensionResult {
-  kind: 'dimension';
-  /** View that was dimensioned. */
-  view: string;
-  dimensions_created: number;
-  /** How many faces and grid lines the dimension strings picked up. */
-  references_used: number;
-  /** i18n keys naming what got dimensioned, e.g. `dimension.grids`. */
-  targets: string[];
-  notes?: string[];
-}
-
 /** One counted category in a query result. */
 export interface QueryGroup {
   /** i18n key under `query.` or a device namespace, or a literal label. */
@@ -334,7 +321,6 @@ export type CommandResult =
   | PrintResult
   | DeleteResult
   | ModifyResult
-  | DimensionResult
   | QueryResult;
 
 // ---------------------------------------------------------------------------

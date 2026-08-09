@@ -9,7 +9,6 @@ import type {
   CommandResult,
   ComplianceCheck,
   DeleteResult,
-  DimensionResult,
   ModifyResult,
   EquipRoomResult,
   ExportLinks,
@@ -462,38 +461,6 @@ export function formatModify(result: ModifyResult, ctx: FormatContext): string {
 }
 
 // ---------------------------------------------------------------------------
-// Automatic dimensioning
-// ---------------------------------------------------------------------------
-
-export function formatDimension(result: DimensionResult, ctx: FormatContext): string {
-  const t = translator(ctx.language);
-  const b = new MessageBuilder(ctx.theme);
-
-  b.title(t('common.success'), t('dimension.created'));
-
-  const rows: Row[] = [
-    { label: t('dimension.view'), value: result.view },
-    {
-      label: t('dimension.strings'),
-      value: `${result.dimensions_created} ${t('common.units')}`,
-    },
-    { label: t('dimension.references'), value: String(result.references_used) },
-  ];
-  if (result.targets.length > 0) {
-    rows.push({
-      label: t('dimension.target'),
-      value: result.targets.map((target) => maybeTranslate(t, target)).join(', '),
-    });
-  }
-  b.tree(rows);
-
-  const notes = (result.notes ?? []).map((note) => maybeTranslate(t, note));
-  if (notes.length > 0) b.blank().bullets(notes);
-
-  return b.build();
-}
-
-// ---------------------------------------------------------------------------
 // Read-only query
 // ---------------------------------------------------------------------------
 
@@ -569,8 +536,6 @@ export function formatResult(result: CommandResult, ctx: FormatContext): string 
       return formatDelete(result, ctx);
     case 'modify':
       return formatModify(result, ctx);
-    case 'dimension':
-      return formatDimension(result, ctx);
     case 'query':
       return formatQuery(result, ctx);
     default:

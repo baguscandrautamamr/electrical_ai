@@ -35,7 +35,6 @@ reads better:
 | `/list_sheets` | `/sheets`, `/daftar_sheet` |
 | `/undo` | `/batal`, `/batalkan` |
 | `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
-| `/dimension` | `/dimensi`, `/beri_dimensi`, `/ukur` |
 
 Only the canonical names appear in Telegram's command menu — one entry per
 command keeps it readable — but the parser accepts either everywhere.
@@ -529,95 +528,6 @@ rather have a link.
 
 A viewer may run this — it reads the model and writes a file, and changes
 neither.
-
-### `/dimension [room]`
-
-Dimensions the devices in a room, or a whole plan view's grids and walls.
-Aliases: `/dimensi`, `/beri_dimensi`, `/auto_dimension`, `/ukur`.
-
-| Parameter | Type | Default | Notes |
-|---|---|---|---|
-| `room` | string | the open view | Room to dimension; a plan view name also works |
-| `what` | lighting, lighting_device, receptacle, fire_alarm, telephone, lan, security, communication, hanger, grids, walls, all | all | What to measure to |
-| `view` | string | the room's floor plan | Plan view to draw in |
-| `offset` | number | 1000 | Distance from the outermost element to the dimension line (mm) |
-
-```
-/dimension Pantry
-/dimension Pantry what=lighting
-/dimension "Meeting 2" what=receptacle
-/dimension what=hanger
-/dimension "Level 1" what=grids
-```
-
-Plain language works: *"kasih dimensi lampu di pantry"*, *"kasih dimension
-receptacle di meeting 2"*, *"kasih dimension hanger cable tray"*.
-
-**With a room**, what gets measured depends on how the devices are mounted.
-
-*Ceiling devices* — downlights, detectors — are chained centre to centre across
-the room and out to the room's own walls at each end, the way a ceiling layout
-is dimensioned on a real drawing.
-
-*Wall-mounted devices* — receptacles, switches — get **one dimension each**, run
-along the wall the device sits on, back to the wall at the nearer end of it.
-That is how an outlet is set out on site: so many millimetres from the corner,
-along its own wall. A chain across the room says how far the sockets are from
-each other, which is not a dimension anybody builds from.
-
-`all` means the lighting there; dimensioning eight categories at once buries the
-layout under seven strings nobody asked for.
-
-**`what=hanger`** measures the cable-tray hangers **one string per tray run**,
-laid alongside the run it measures and offset to the outside of the layout. That
-is the drawing: each line of tray dimensioned along itself, showing the spacing
-between consecutive supports. A single chain over every hanger in the model
-would put one row of numbers across the whole plan, measuring between supports
-on trays that have nothing to do with each other.
-
-It is the one target that works with or without a room, because a tray run
-crosses several. Hangers are found by the family named in the add-in settings,
-so they are dimensioned whatever category the office built them in, and matched
-to their run by the same rule that hung them.
-
-**Without one**, the whole view's grids and walls are measured instead. Grids
-are measured to the grid line, walls to the vertical faces the view actually
-shows, so a wall hidden by the crop or a filter is not measured.
-
-Two strings per run either way: one below the drawing picking up everything
-running north-south, one to its left picking up everything running east-west.
-
-The view is worked out for you: the room's own floor plan, or whatever is open
-in Revit when it is on the right storey. Only plan views — a string laid out in
-plan coordinates means nothing in a section or a 3D view.
-
-Dimensions attach to the reference planes a family publishes. A family authored
-without them cannot be dimensioned to, and comes back as "no dimensionable
-devices" rather than with a string measured to something arbitrary.
-
-**What comes back is what is in the model.** A dimension Revit accepts is not
-yet a dimension that is there: a reference it cannot resolve is dropped when the
-view regenerates, and a string left with fewer than two of them draws nothing.
-So the view is regenerated while the transaction is still open, strings that
-lost their references are deleted, and only what survived is counted. If none
-survived, the command fails and says so rather than reporting strings over an
-empty plan.
-
-Wall faces come from Revit's own host-object references rather than from the
-wall's geometry. A face picked out of geometry carries a reference Revit accepts
-when the dimension is made and rejects when it next regenerates — *"one or more
-dimension references are or have become invalid"*, a modal error over a drawing
-nobody is watching. If Revit rejects a reference anyway, the command takes
-Revit's own resolution instead of waiting for a click, and the reply says a
-string came back short.
-
-**It adds and never removes.** Running it twice draws the strings twice rather
-than replacing them — deciding that an existing dimension was this command's
-rather than yours is a guess, and the wrong guess deletes your work. Undo in
-Revit is one step.
-
-A view with nothing dimensionable in it comes back as a success with zero
-strings and a note saying so, not as an error.
 
 ### `/query [room]`
 

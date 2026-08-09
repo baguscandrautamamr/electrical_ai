@@ -13,7 +13,6 @@ import { escapeHtml } from '../src/lib/telegram.js';
 import type {
   CableTrayResult,
   DeleteResult,
-  DimensionResult,
   ModifyResult,
   EquipRoomResult,
   PlacementResult,
@@ -480,32 +479,6 @@ describe('modify formatting', () => {
     expect(text).toContain('Placed again: 6 units');
     expect(text).toContain('Load: 108 W');
     expect(text).toContain("The family's electrical data in Revit");
-  });
-});
-
-describe('dimension formatting', () => {
-  const dimensioned: DimensionResult = {
-    kind: 'dimension',
-    view: 'Level 1',
-    dimensions_created: 4,
-    references_used: 26,
-    targets: ['dimension.grids', 'dimension.walls'],
-  };
-
-  it('reports the view, the strings and what they picked up', () => {
-    const text = formatResult(dimensioned, EN);
-
-    expect(text).toContain('DIMENSIONS PLACED');
-    expect(text).toContain('View: Level 1');
-    expect(text).toContain('Dimension strings: 4 units');
-    expect(text).toContain('References picked up: 26');
-    expect(text).toContain('Grids, Walls');
-  });
-
-  it('translates a note the add-in sent as a key', () => {
-    const partial: DimensionResult = { ...dimensioned, notes: ['dimension.no_grids'] };
-    expect(formatResult(partial, EN)).toContain('No grids in this view');
-    expect(formatResult(partial, ID)).toContain('Tidak ada grid di view ini');
   });
 });
 
