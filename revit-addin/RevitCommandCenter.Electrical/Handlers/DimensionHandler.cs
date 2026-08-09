@@ -168,8 +168,6 @@ public sealed class DimensionHandler : ICommandHandler
         // back to if Revit refuses a wall face in it.
         var xChain = Chain(alongX.Concat(boundsX));
         var yChain = Chain(alongY.Concat(boundsY));
-        var xWithoutBounds = Chain(alongX);
-        var yWithoutBounds = Chain(alongY);
 
         if (xChain.Count < 2 && yChain.Count < 2 && strands.Count == 0)
         {
@@ -188,202 +186,80 @@ public sealed class DimensionHandler : ICommandHandler
 
         var extents = Extents(alongX.Concat(alongY).Concat(boundsX).Concat(boundsY));
 
-        // How many strings were made, against how many are on the drawing.
-        var attempted = 0;
+        // What survived the commit, which is a different question from what was
+        // made. Revit rolls a transaction back when a failure cannot be
+        // resolved, and Commit() reports that by returning a status rather than
+        // by throwing — so a command that never reads it reports three strings
+        // over a model that has none. That is what "Element ID 702061 is
+        // invalid" meant: the strings were built, checked, counted, and then
+        // rolled back with the transaction that made them.
+        var strings = new List<Strand>();
 
-        var created = 0;
-        var used = 0;
-        var rejected = 0;
-
-        // Kept so the strings can be selected in Revit afterwards, and so the
-        // reply can say where on the drawing they landed.
-        var survivors = new List<ElementId>();
-        XYZ? where = null;
-
-        using var transaction = new Transaction(doc, $"Dimension {view.Name}");
-        transaction.Start();
-
-        // Revit resolves a bad reference by putting a modal error on screen and
-        // waiting. Nobody is sitting at this machine — the command came from
-        // Telegram — so the dialog would hold Revit, and the whole queue behind
-        // it, until somebody walked over and clicked it. Set after the start,
-        // which is when the transaction has options to read.
-        var failures = new ResolveQuietly();
-        var handling = transaction.GetFailureHandlingOptions();
-        handling.SetFailuresPreprocessor(failures);
-        handling.SetClearAfterRollback(true);
-        transaction.SetFailureHandlingOptions(handling);
-
-        try
+        if (xChain.Count >= 2)
         {
-            // A view can be hiding the whole category, and then every string
-            // below is measuring something nobody will ever see. Turned back on
-            // rather than reported, because a dimension command that leaves
-            // dimensions switched off has not done its job.
-            Reveal(view, notes);
-
-            var batch = new List<Dimension>();
-
-            // The X string measures across, so it sits below the drawing; the Y
-            // string measures up, so it sits to the left of it. Guarded on the
-            // chain rather than inside Place, because the dimension line is
-            // built from extents that mean nothing when there are no anchors.
-            if (xChain.Count >= 2)
-            {
-                var x = PlaceWithFallback(
-                    doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
-                if (x is not null) batch.Add(x);
-            }
-
-            if (yChain.Count >= 2)
-            {
-                var y = PlaceWithFallback(
-                    doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
-                if (y is not null) batch.Add(y);
-            }
-
-            // One string per tray run, and one per wall-mounted device, each on
-            // the line it belongs beside.
-            foreach (var strand in strands)
-            {
-                var placed = Place(doc, view, strand.Chain, strand.Line);
-                if (placed is not null) batch.Add(placed);
-            }
-
-            var landed = Tally(batch);
-
-            // The per-device strings came to nothing and the devices are still
-            // undimensioned. A chain across the room is a worse drawing than one
-            // dimension per outlet, and a better one than an empty plan — and it
-            // is the shape this command is known to get onto paper.
-            if (landed == 0 && strands.Count > 0 && (fallbackX.Count >= 2 || fallbackY.Count >= 2))
-            {
-                notes.Add("The per-device strings did not land; measured across the room instead.");
-                Logger.Warn("dimension: per-subject strings drew nothing, falling back to chains.");
-
-                var second = new List<Dimension>();
-                var edges = bounds is null ? new List<Anchor>() : bounds.AlongX;
-                var edgesY = bounds is null ? new List<Anchor>() : bounds.AlongY;
-
-                var chainX = Chain(fallbackX.Concat(edges));
-                var chainY = Chain(fallbackY.Concat(edgesY));
-                var box = Extents(fallbackX.Concat(fallbackY).Concat(edges).Concat(edgesY));
-
-                if (chainX.Count >= 2)
-                {
-                    var x = PlaceWithFallback(
-                        doc, view, chainX, Chain(fallbackX), LineAlongX(box, elevation, offsetFeet));
-                    if (x is not null) second.Add(x);
-                }
-
-                if (chainY.Count >= 2)
-                {
-                    var y = PlaceWithFallback(
-                        doc, view, chainY, Chain(fallbackY), LineAlongY(box, elevation, offsetFeet));
-                    if (y is not null) second.Add(y);
-                }
-
-                Tally(second);
-            }
-
-            transaction.Commit();
-
-            // A dimension Revit accepted is not yet a dimension that is there.
-            // A reference it cannot resolve is dropped when the view
-            // regenerates, and a string left with fewer than two of them draws
-            // nothing at all — which is how this command came back reporting
-            // three strings over a plan with none on it. So: regenerate while
-            // the transaction is still open, and count what is left.
-            int Tally(List<Dimension> batch)
-            {
-                if (batch.Count == 0) return 0;
-
-                attempted += batch.Count;
-                doc.Regenerate();
-
-                // What the view actually draws. A view-scoped collector answers
-                // the only question that matters — is this string on the drawing
-                // — for every reason it might not be: a reference Revit dropped,
-                // a crop region it fell outside of, a view it was never in.
-                var drawn = new HashSet<ElementId>(
-                    new FilteredElementCollector(doc, view.Id)
-                        .OfClass(typeof(Dimension))
-                        .ToElementIds());
-
-                var kept = 0;
-
-                foreach (var dimension in batch)
-                {
-                    if (!dimension.IsValidObject)
-                    {
-                        rejected++;
-                        continue;
-                    }
-
-                    var references = dimension.References?.Size ?? 0;
-
-                    // A string that draws nothing has no extent in the view,
-                    // whatever its references say and whatever the collector
-                    // lists.
-                    var extent = dimension.get_BoundingBox(view);
-
-                    if (references < 2 || !drawn.Contains(dimension.Id) || extent is null)
-                    {
-                        Logger.Warn(
-                            $"Dimension {dimension.Id} is not on the drawing in '{view.Name}': "
-                            + $"{references} reference(s), listed={drawn.Contains(dimension.Id)}, "
-                            + $"extent={(extent is null ? "none" : "yes")}, "
-                            + $"owner {dimension.OwnerViewId}.");
-                        doc.Delete(dimension.Id);
-                        rejected++;
-                        continue;
-                    }
-
-                    created++;
-                    kept++;
-                    used += references;
-                    survivors.Add(dimension.Id);
-
-                    if (where is null)
-                    {
-                        where = new XYZ(
-                            (extent.Min.X + extent.Max.X) / 2,
-                            (extent.Min.Y + extent.Max.Y) / 2,
-                            0);
-                        Diagnose(doc, view, dimension, notes);
-                    }
-                }
-
-                return kept;
-            }
-        }
-        catch (Exception ex)
-        {
-            transaction.RollBack();
-            Logger.Error("dimension rolled back", ex);
-            return CommandResult.FromException(ex);
+            strings.Add(new Strand(
+                xChain, LineAlongX(extents, elevation, offsetFeet), "chain across"));
         }
 
-        if (rejected > 0 || failures.Resolved > 0)
+        if (yChain.Count >= 2)
         {
-            // Said rather than swallowed: a string Revit dropped a reference
-            // from measures something other than what was asked for.
-            notes.Add("dimension.references_dropped");
+            strings.Add(new Strand(
+                yChain, LineAlongY(extents, elevation, offsetFeet), "chain up"));
+        }
+
+        strings.AddRange(strands);
+
+        var attempt = Draw(doc, view, strings, notes, out var status);
+
+        if (attempt.Count == 0 && (fallbackX.Count >= 2 || fallbackY.Count >= 2))
+        {
+            // A chain across the room is a worse drawing than one dimension per
+            // outlet and a better one than an empty plan — and it holds no wall
+            // face references, which are what a rolled-back commit points at.
             Logger.Warn(
-                $"dimension: {rejected} string(s) did not survive regeneration in '{view.Name}', "
-                + $"{failures.Resolved} failure(s) resolved by Revit");
+                $"dimension: nothing survived ({status}); measuring device to device instead.");
+
+            var box = Extents(fallbackX.Concat(fallbackY));
+            var second = new List<Strand>();
+            var chainX = Chain(fallbackX);
+            var chainY = Chain(fallbackY);
+
+            if (chainX.Count >= 2)
+            {
+                second.Add(new Strand(
+                    chainX, LineAlongX(box, elevation, offsetFeet), "device chain, across"));
+            }
+
+            if (chainY.Count >= 2)
+            {
+                second.Add(new Strand(
+                    chainY, LineAlongY(box, elevation, offsetFeet), "device chain, up"));
+            }
+
+            if (second.Count > 0)
+            {
+                attempt = Draw(doc, view, second, notes, out status);
+
+                if (attempt.Count > 0)
+                {
+                    notes.Add(
+                        "The per-device strings did not survive; measured device to device instead.");
+                }
+            }
         }
 
-        // Nothing survived: the command did not do what a tick would say it
-        // did, and the count it would print is the count of things that are not
-        // there.
-        if (created == 0 && attempted > 0)
+        var created = attempt.Count;
+        var used = attempt.Sum(entry => entry.References);
+        var survivors = attempt.Select(entry => entry.Id).ToList();
+        var where = attempt.Count > 0 ? attempt[0].Where : null;
+
+        if (created == 0)
         {
             return CommandResult.Fail(
-                $"All {attempted} dimension string(s) were made and none of them is drawn in "
-                + $"{Describe(view)}. Either the references did not survive a regeneration — the "
-                + "families involved may publish no reference planes to dimension to — or the "
-                + "strings fell outside the view's crop region.",
+                $"Revit did not keep any of the {strings.Count} dimension string(s) in "
+                + $"{Describe(view)} — the transaction came back {status}. The references given to "
+                + "them did not survive it, which usually means the families or wall faces "
+                + "involved publish nothing a dimension can hold on to.",
                 retryable: false);
         }
 
@@ -394,44 +270,11 @@ public sealed class DimensionHandler : ICommandHandler
                 + $"({Describe(openView!)}). Open that view to see them.");
         }
 
-        if (strands.Count > 0)
-        {
-            // What the first string was built to be, beside where it ended up.
-            // One of those two is wrong and they are not distinguishable apart.
-            notes.Add($"First string: {strands[0].Trace}");
-        }
-
-        if (room is not null && room.get_BoundingBox(null) is { } roomBox)
-        {
-            notes.Add($"{room.Name} spans {Mm(roomBox.Min)} to {Mm(roomBox.Max)} mm");
-        }
-
-        if (where is not null)
-        {
-            // Where, in project millimetres. A string drawn a mile off the plan
-            // and a string that was never drawn look identical from the chat,
-            // and this is the number that tells them apart — but only next to
-            // where the thing being measured actually is, so the room's own
-            // centre goes beside it and the comparison is one glance.
-            var at = $"({RevitUnits.FeetToMm(where.X):F0}, {RevitUnits.FeetToMm(where.Y):F0}) mm";
-            var centre = room is null ? null : RevitUtils.RoomCenter(room);
-
-            notes.Add(centre is null
-                ? $"Drawn around {at} in {Describe(view)}"
-                : $"Drawn around {at}; {room!.Name} is centred on "
-                  + $"({RevitUnits.FeetToMm(centre.X):F0}, {RevitUnits.FeetToMm(centre.Y):F0}) mm");
-        }
-
-        if (survivors.Count > 0)
-        {
-            // The id is the one thing that settles "it is not there" against "I
-            // cannot see it": Manage > Select by ID takes it and Revit either
-            // finds the element or says it does not exist.
-            notes.Add(
-                "Element id(s): "
-                + string.Join(", ", survivors.Take(5).Select(id => id.ToString()))
-                + " — Manage > Select by ID finds them.");
-        }
+        // The trace belongs in the log now, not in the reply. It was there to
+        // find a fault that has been found; an engineer reading a drawing
+        // command does not need the arithmetic behind it.
+        if (strands.Count > 0) Logger.Info($"dimension: first string built as {strands[0].Trace}");
+        if (where is not null) Logger.Info($"dimension: first string drawn around {Mm(where)} mm");
 
         // Left selected in Revit: the quickest way to find a dimension is to
         // have Revit already holding it, so Zoom To Fit lands on it.
@@ -451,6 +294,127 @@ public sealed class DimensionHandler : ICommandHandler
             Targets = targets,
             Notes = notes.Count > 0 ? notes : null,
         });
+    }
+
+    /// <summary>One dimension string that Revit kept.</summary>
+    private readonly record struct Placed(ElementId Id, int References, XYZ Where);
+
+    /// <summary>
+    /// Draws a set of strings and returns the ones that are still in the model
+    /// afterwards.
+    ///
+    /// "Afterwards" is the whole point. Everything this handler used to check —
+    /// the references, the view's own list, the extent on the drawing — it
+    /// checked while the transaction was still open, when the strings existed
+    /// by definition. Revit rolls a transaction back when a failure cannot be
+    /// resolved, and it says so by returning a status from Commit rather than
+    /// by throwing. A command that does not read that status reports what it
+    /// built; the model keeps what Revit allowed.
+    /// </summary>
+    private static List<Placed> Draw(
+        Document doc,
+        View view,
+        List<Strand> strings,
+        List<string> notes,
+        out TransactionStatus status)
+    {
+        var kept = new List<Placed>();
+        status = TransactionStatus.Uninitialized;
+
+        if (strings.Count == 0) return kept;
+
+        var made = new List<Dimension>();
+
+        using var transaction = new Transaction(doc, $"Dimension {view.Name}");
+        transaction.Start();
+
+        // Revit resolves a bad reference by putting a modal error on screen and
+        // waiting. Nobody is sitting at this machine — the command came from
+        // Telegram — so the dialog would hold Revit, and the whole queue behind
+        // it, until somebody walked over and clicked it.
+        var failures = new ResolveQuietly();
+        var handling = transaction.GetFailureHandlingOptions();
+        handling.SetFailuresPreprocessor(failures);
+        handling.SetClearAfterRollback(true);
+        transaction.SetFailureHandlingOptions(handling);
+
+        try
+        {
+            // A view can be hiding the whole category, and then every string
+            // below is measuring something nobody will ever see.
+            Reveal(view, notes);
+
+            foreach (var strand in strings)
+            {
+                var placed = Place(doc, view, strand.Chain, strand.Line);
+                if (placed is not null) made.Add(placed);
+            }
+
+            // Drop the ones that draw nothing before committing, so a string
+            // that lost its references cannot take the commit down with it.
+            doc.Regenerate();
+
+            var drawing = new HashSet<ElementId>(
+                new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(Dimension))
+                    .ToElementIds());
+
+            var dead = made
+                .Where(dimension => !dimension.IsValidObject
+                                    || (dimension.References?.Size ?? 0) < 2
+                                    || !drawing.Contains(dimension.Id))
+                .Select(dimension => dimension.Id)
+                .ToList();
+
+            if (dead.Count > 0)
+            {
+                Logger.Warn($"dimension: {dead.Count} string(s) drew nothing; removing before commit.");
+                doc.Delete(dead);
+            }
+
+            status = transaction.Commit();
+        }
+        catch (Exception ex)
+        {
+            if (transaction.HasStarted()) transaction.RollBack();
+            Logger.Error("dimension rolled back", ex);
+            status = TransactionStatus.RolledBack;
+            return kept;
+        }
+
+        if (status != TransactionStatus.Committed)
+        {
+            Logger.Error($"dimension: Revit returned {status} from the commit; nothing was kept.");
+            return kept;
+        }
+
+        if (failures.Resolved > 0)
+        {
+            notes.Add("dimension.references_dropped");
+            Logger.Warn($"dimension: Revit resolved {failures.Resolved} failure(s) at commit.");
+        }
+
+        // The document has the last word. An id that no longer resolves is a
+        // string that did not make it, whatever the transaction reported.
+        foreach (var dimension in made)
+        {
+            if (doc.GetElement(dimension.Id) is not Dimension alive || !alive.IsValidObject) continue;
+
+            var extent = alive.get_BoundingBox(view);
+            if (extent is null) continue;
+
+            var centre = new XYZ(
+                (extent.Min.X + extent.Max.X) / 2,
+                (extent.Min.Y + extent.Max.Y) / 2,
+                0);
+
+            if (kept.Count == 0) Diagnose(doc, view, alive, notes);
+
+            kept.Add(new Placed(alive.Id, alive.References?.Size ?? 0, centre));
+        }
+
+        Logger.Info($"dimension: {kept.Count}/{strings.Count} string(s) kept in '{view.Name}'.");
+        return kept;
     }
 
     /// <summary>
@@ -540,14 +504,22 @@ public sealed class DimensionHandler : ICommandHandler
         // How big the string is, and how big Revit drew it. A dimension of a few
         // millimetres is on the drawing and invisible at any plan scale, which
         // is indistinguishable from absent without the number.
+        // Only when it is small enough to be invisible at any plan scale. A
+        // string of a few millimetres is on the drawing and cannot be seen,
+        // which from a chat is indistinguishable from one that is not there.
         Ask("size", () =>
         {
-            var box = dimension.get_BoundingBox(view);
-            var span = dimension.Value is { } value ? $"{RevitUnits.FeetToMm(value):F0} mm" : "multi-segment";
+            if (dimension.Value is not { } value) return;
 
-            notes.Add(box is null
-                ? $"First string measures {span}, and has no extent in {view.Name}."
-                : $"First string measures {span}, drawn from {Mm(box.Min)} to {Mm(box.Max)} mm.");
+            var span = RevitUnits.FeetToMm(value);
+            Logger.Info($"dimension: first string measures {span:F0} mm");
+
+            if (span < 100)
+            {
+                notes.Add(
+                    $"The first string measures only {span:F0} mm — on the drawing, but too small "
+                    + "to see at plan scale.");
+            }
         });
 
         Ask("hidden", () =>
@@ -1504,35 +1476,6 @@ public sealed class DimensionHandler : ICommandHandler
         var start = new XYZ(x, box.MinY, elevation);
         var end = new XYZ(x, box.MaxY <= box.MinY ? box.MinY + 1 : box.MaxY, elevation);
         return Line.CreateBound(start, end);
-    }
-
-    /// <summary>
-    /// Places the full string, falling back to the devices alone if Revit
-    /// refuses it. Returns how many references the string that landed used.
-    /// </summary>
-    /// <remarks>
-    /// A wall face is the reference most likely to be rejected — it belongs to
-    /// a linked model, or the wall is joined to another and the face the solid
-    /// published no longer exists. Losing the whole string over one of those
-    /// would be a worse drawing than the device-to-device one this add-in drew
-    /// before walls were ever in it.
-    /// </remarks>
-    private static Dimension? PlaceWithFallback(
-        Document doc,
-        View view,
-        List<Anchor> full,
-        List<Anchor> fallback,
-        Line line)
-    {
-        var dimension = Place(doc, view, full, line);
-        if (dimension is not null) return dimension;
-
-        if (fallback.Count < 2 || fallback.Count >= full.Count) return null;
-
-        dimension = Place(doc, view, fallback, line);
-        if (dimension is not null) Logger.Info("Dimension string placed without its wall references.");
-
-        return dimension;
     }
 
     /// <summary>
