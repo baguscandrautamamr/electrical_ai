@@ -422,6 +422,17 @@ public sealed class DimensionHandler : ICommandHandler
                   + $"({RevitUnits.FeetToMm(centre.X):F0}, {RevitUnits.FeetToMm(centre.Y):F0}) mm");
         }
 
+        if (survivors.Count > 0)
+        {
+            // The id is the one thing that settles "it is not there" against "I
+            // cannot see it": Manage > Select by ID takes it and Revit either
+            // finds the element or says it does not exist.
+            notes.Add(
+                "Element id(s): "
+                + string.Join(", ", survivors.Take(5).Select(id => id.ToString()))
+                + " — Manage > Select by ID finds them.");
+        }
+
         // Left selected in Revit: the quickest way to find a dimension is to
         // have Revit already holding it, so Zoom To Fit lands on it.
         Select(context, doc, survivors);
@@ -452,23 +463,64 @@ public sealed class DimensionHandler : ICommandHandler
     /// </summary>
     private static void Reveal(View view, List<string> notes)
     {
-        var dimensions = new ElementId(BuiltInCategory.OST_Dimensions);
+        // Three switches, any one of which hides every dimension in the view
+        // while the other two read as fine. The category's own switch is the
+        // obvious one; the master annotation switch above it and a view filter
+        // beside it are the two that look like nothing is wrong.
+        Flip(
+            "the Dimensions category",
+            () => view.GetCategoryHidden(new ElementId(BuiltInCategory.OST_Dimensions)),
+            () => view.SetCategoryHidden(new ElementId(BuiltInCategory.OST_Dimensions), false));
+
+        Flip(
+            "every annotation category",
+            () => view.AreAnnotationCategoriesHidden,
+            () => view.AreAnnotationCategoriesHidden = false);
 
         try
         {
-            if (!view.GetCategoryHidden(dimensions)) return;
+            foreach (var id in view.GetFilters())
+            {
+                if (view.GetFilterVisibility(id)) continue;
+                if (view.Document.GetElement(id) is not ParameterFilterElement filter) continue;
 
-            view.SetCategoryHidden(dimensions, false);
-            notes.Add($"Dimensions were switched off in {view.Name}; turned back on.");
-            Logger.Warn($"Dimensions category was hidden in '{view.Name}'; re-enabled.");
+                var categories = filter.GetCategories();
+                if (!categories.Any(category => category.Value == (int)BuiltInCategory.OST_Dimensions))
+                {
+                    continue;
+                }
+
+                // Not flipped: a filter is somebody's deliberate rule about this
+                // view, and turning it off would change more than dimensions.
+                notes.Add(
+                    $"View filter '{filter.Name}' hides dimensions in {view.Name}. "
+                    + "Nothing this command draws will show until it is switched on.");
+                Logger.Warn($"Filter '{filter.Name}' hides dimensions in '{view.Name}'.");
+            }
         }
         catch (Exception ex)
         {
-            // A view template owns the setting, and only a person can change it.
-            notes.Add(
-                $"Dimensions are switched off in {view.Name} and a view template controls it — "
-                + "turn the Dimensions category on in Visibility/Graphics for that template.");
-            Logger.Warn($"Could not re-enable dimensions in '{view.Name}': {ex.Message}");
+            Logger.Debug($"Could not read the filters on '{view.Name}': {ex.Message}");
+        }
+
+        void Flip(string what, Func<bool> hidden, Action show)
+        {
+            try
+            {
+                if (!hidden()) return;
+
+                show();
+                notes.Add($"{what} was switched off in {view.Name}; turned back on.");
+                Logger.Warn($"{what} was hidden in '{view.Name}'; re-enabled.");
+            }
+            catch (Exception ex)
+            {
+                // A view template owns the setting, and only a person can change it.
+                notes.Add(
+                    $"{what} is switched off in {view.Name} and a view template controls it — "
+                    + "turn it on in Visibility/Graphics for that template.");
+                Logger.Warn($"Could not re-enable {what} in '{view.Name}': {ex.Message}");
+            }
         }
     }
 
