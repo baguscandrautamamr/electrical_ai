@@ -109,9 +109,17 @@ public sealed class DimensionHandler : ICommandHandler
 
         if (deviceKeys.Count > 0 && targets.Count == 0) notes.Add("dimension.no_devices");
 
+        // Hangers get a string per tray run rather than joining the plan-wide
+        // chains. One chain across the whole model reads every run's supports as
+        // one row of numbers, which is not a dimension of anything: the drawing
+        // an engineer wants is each line of tray measured along itself.
+        var hangerRuns = wantsHangers
+            ? CollectHangerRuns(context, view, room, offsetFeet)
+            : new List<HangerRun>();
+
         if (wantsHangers)
         {
-            if (CollectHangers(context, view, room, alongX, alongY) > 0) targets.Add("dimension.hangers");
+            if (hangerRuns.Count > 0) targets.Add("dimension.hangers");
             else notes.Add("dimension.no_hangers");
         }
 
@@ -122,7 +130,7 @@ public sealed class DimensionHandler : ICommandHandler
         // reference Revit will not take cannot cost the whole string.
         var bounds = new List<Anchor>();
         var boundsY = new List<Anchor>();
-        if (room is not null && (deviceKeys.Count > 0 || wantsHangers))
+        if (room is not null && deviceKeys.Count > 0)
         {
             CollectRoomBounds(doc, view, room, bounds, boundsY);
         }
@@ -146,7 +154,7 @@ public sealed class DimensionHandler : ICommandHandler
         var xWithoutBounds = Chain(alongX);
         var yWithoutBounds = Chain(alongY);
 
-        if (xChain.Count < 2 && yChain.Count < 2)
+        if (xChain.Count < 2 && yChain.Count < 2 && hangerRuns.Count == 0)
         {
             // Not a failure: the command ran, the view simply had nothing in it
             // worth a dimension. Saying so beats a red cross over an empty plan.
@@ -173,21 +181,38 @@ public sealed class DimensionHandler : ICommandHandler
         try
         {
             // The X string measures across, so it sits below the drawing; the Y
-            // string measures up, so it sits to the left of it.
-            var x = PlaceWithFallback(
-                doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
-            if (x > 0)
+            // string measures up, so it sits to the left of it. Guarded on the
+            // chain rather than inside Place, because the dimension line is
+            // built from extents that mean nothing when there are no anchors.
+            if (xChain.Count >= 2)
             {
-                created++;
-                used += x;
+                var x = PlaceWithFallback(
+                    doc, view, xChain, xWithoutBounds, LineAlongX(extents, elevation, offsetFeet));
+                if (x > 0)
+                {
+                    created++;
+                    used += x;
+                }
             }
 
-            var y = PlaceWithFallback(
-                doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
-            if (y > 0)
+            if (yChain.Count >= 2)
             {
+                var y = PlaceWithFallback(
+                    doc, view, yChain, yWithoutBounds, LineAlongY(extents, elevation, offsetFeet));
+                if (y > 0)
+                {
+                    created++;
+                    used += y;
+                }
+            }
+
+            // One string per tray run, laid alongside the run it measures.
+            foreach (var run in hangerRuns)
+            {
+                if (!Place(doc, view, run.Chain, run.Line)) continue;
+
                 created++;
-                used += y;
+                used += run.Chain.Count;
             }
 
             transaction.Commit();
@@ -368,81 +393,187 @@ public sealed class DimensionHandler : ICommandHandler
         }
     }
 
-    /// <summary>
-    /// Cable-tray hangers visible in the view, as dimension references.
-    ///
-    /// Hangers are matched by family name rather than category — the family is
-    /// whatever the office's content calls it, and the category it was built in
-    /// varies with it — so they cannot go through the category table the device
-    /// targets use.
-    ///
-    /// The string that comes out is the one an engineer sets out by hand: the
-    /// spacing between consecutive supports along the run, with the odd first
-    /// and last bay that the run's ends produce.
-    /// </summary>
-    private static int CollectHangers(
-        HandlerContext context,
-        View view,
-        Room? room,
-        List<Anchor> alongX,
-        List<Anchor> alongY)
-    {
-        var family = context.Config.HangerFamilyName;
+    /// <summary>One tray run's hangers, ordered, with the line to measure them on.</summary>
+    private readonly record struct HangerRun(List<Anchor> Chain, Line Line);
 
-        var hangers = new FilteredElementCollector(context.Doc, view.Id)
-            .OfClass(typeof(FamilyInstance))
-            .Cast<FamilyInstance>()
-            .Where(instance => SmartHangers.HangerTypeDetector.IsHangerFamily(instance, family))
-            .Where(instance => room is null || DeleteDevicesHandler.InRoom(instance, room))
+    /// <summary>
+    /// The hangers on each cable tray run, one dimensionable string per run.
+    ///
+    /// Per run, because that is the drawing. A single chain over every hanger in
+    /// the model puts one row of numbers across the whole plan, mixing runs that
+    /// have nothing to do with each other and measuring between supports on
+    /// different trays — which is what "berantakan" meant. Each line of tray is
+    /// measured along itself, with the string laid outside it.
+    ///
+    /// Hangers are matched by family name rather than category: the family is
+    /// whatever the office's content calls it, and the category it was built in
+    /// varies with it, so they cannot go through the category table the device
+    /// targets use.
+    /// </summary>
+    private static List<HangerRun> CollectHangerRuns(
+        HandlerContext context,
+        ViewPlan view,
+        Room? room,
+        double offsetFeet)
+    {
+        var doc = context.Doc;
+        var family = context.Config.HangerFamilyName;
+        var runs = new List<HangerRun>();
+
+        var segments = RevitUtils.AllTraySegments(doc)
+            .Where(segment => segment.IsHorizontal && segment.LengthMm > 0)
             .ToList();
 
-        if (hangers.Count == 0)
+        if (segments.Count == 0)
         {
-            Logger.Info($"No hangers of family '{family}' in view '{view.Name}' to dimension.");
-            return 0;
+            Logger.Info("No horizontal cable tray in the model to dimension hangers along.");
+            return runs;
         }
 
+        // The same matcher the placement uses, so a hanger belongs to the run it
+        // was hung on whether or not it is hosted by it.
+        var byRun = new SmartHangers.SmartHangerPlacement(doc, family).FindExistingHangers(segments);
+
+        // Only what the view actually shows: Revit refuses a dimension to
+        // anything it is not drawing.
+        var visible = new HashSet<ElementId>(
+            new FilteredElementCollector(doc, view.Id)
+                .OfClass(typeof(FamilyInstance))
+                .ToElementIds());
+
+        var elevation = view.GenLevel?.Elevation ?? 0;
         var options = new Options { ComputeReferences = true, View = view };
-        var found = 0;
 
-        foreach (var hanger in hangers)
+        // Dimensions go on the outside of the run, which means away from the
+        // middle of the tray layout rather than a fixed side.
+        var centre = Centre(segments);
+
+        foreach (var segment in segments)
         {
-            if (hanger.Location is not LocationPoint location) continue;
-            var point = location.Point;
+            if (!byRun.TryGetValue(segment.Element.Id, out var hangers) || hangers.Count < 2) continue;
 
-            // A support family published by the office may carry centre planes;
-            // most do not, and then the string measures to the nearest face of
-            // the hanger instead, which is where a tape measure would go.
-            var across = CentreReference(hanger, FamilyInstanceReferenceType.CenterLeftRight)
-                         ?? NearestFace(hanger, options, point, alongAxis: true);
-            var up = CentreReference(hanger, FamilyInstanceReferenceType.CenterFrontBack)
-                     ?? NearestFace(hanger, options, point, alongAxis: false);
+            var direction = Flatten(segment.End - segment.Start);
+            if (direction is null) continue;
 
-            if (across is not null)
+            var anchors = new List<Anchor>();
+
+            foreach (var hanger in hangers.OrderBy(entry => entry.AlongMm))
             {
-                alongX.Add(new Anchor(across, point.X, point));
-                found++;
+                if (!visible.Contains(hanger.Id)) continue;
+                if (doc.GetElement(hanger.Id) is not FamilyInstance instance) continue;
+                if (instance.Location is not LocationPoint location) continue;
+                if (room is not null && !DeleteDevicesHandler.InRoom(instance, room)) continue;
+
+                var reference = CentreReferenceAlong(instance, direction)
+                                ?? FaceAlong(instance, options, location.Point, direction);
+                if (reference is null) continue;
+
+                // In feet like every other anchor's position: Chain's
+                // coincidence tolerance is a length, not a number.
+                anchors.Add(new Anchor(reference, RevitUnits.MmToFeet(hanger.AlongMm), location.Point));
             }
 
-            if (up is not null)
-            {
-                alongY.Add(new Anchor(up, point.Y, point));
-                found++;
-            }
+            var chain = Chain(anchors);
+            if (chain.Count < 2) continue;
+
+            var normal = Outward(direction, chain, centre);
+            var offset = normal.Multiply(offsetFeet);
+
+            var start = new XYZ(chain[0].Point.X, chain[0].Point.Y, elevation) + offset;
+            var end = new XYZ(chain[^1].Point.X, chain[^1].Point.Y, elevation) + offset;
+            if (start.DistanceTo(end) < CoincidentToleranceFeet) continue;
+
+            runs.Add(new HangerRun(chain, Line.CreateBound(start, end)));
         }
 
-        return found;
+        Logger.Info($"dimension: {runs.Count} hanger run(s) to measure in '{view.Name}'.");
+        return runs;
+    }
+
+    /// <summary>A vector's direction in plan, or null when it has none.</summary>
+    private static XYZ? Flatten(XYZ vector)
+    {
+        var flat = new XYZ(vector.X, vector.Y, 0);
+        return flat.GetLength() < CoincidentToleranceFeet ? null : flat.Normalize();
+    }
+
+    /// <summary>The middle of the tray layout in plan.</summary>
+    private static XYZ Centre(List<Models.TraySegment> segments)
+    {
+        double x = 0, y = 0;
+        foreach (var segment in segments)
+        {
+            x += (segment.Start.X + segment.End.X) / 2;
+            y += (segment.Start.Y + segment.End.Y) / 2;
+        }
+
+        return new XYZ(x / segments.Count, y / segments.Count, 0);
     }
 
     /// <summary>
-    /// The instance's own planar face nearest its insertion point, facing along
-    /// the axis being measured. Null when its geometry publishes none.
+    /// The perpendicular to a run that points away from the layout, so the
+    /// string lands outside the trays rather than across the drawing.
     /// </summary>
-    private static Reference? NearestFace(
+    private static XYZ Outward(XYZ direction, List<Anchor> chain, XYZ centre)
+    {
+        var normal = new XYZ(-direction.Y, direction.X, 0);
+        var middle = (chain[0].Point + chain[^1].Point).Multiply(0.5);
+        var away = new XYZ(middle.X - centre.X, middle.Y - centre.Y, 0);
+
+        return away.DotProduct(normal) < 0 ? normal.Negate() : normal;
+    }
+
+    /// <summary>
+    /// The instance's centre plane perpendicular to the run, whichever of the
+    /// family's two axes that turned out to be.
+    /// </summary>
+    /// <remarks>
+    /// Named after the family's own axes, so which one is wanted depends on how
+    /// the instance was turned: a hanger rotated across an east-west run
+    /// publishes its left-right centre facing north. Asking for the wrong one is
+    /// how a 1500 spacing came back as 823 and 677 alternating — the string was
+    /// measuring to a different plane on every other hanger.
+    /// </remarks>
+    private static Reference? CentreReferenceAlong(FamilyInstance instance, XYZ direction)
+    {
+        Transform transform;
+        try
+        {
+            transform = instance.GetTransform();
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"No transform on {instance.Id}: {ex.Message}");
+            return null;
+        }
+
+        if (Math.Abs(transform.BasisX.DotProduct(direction)) > AxisTolerance)
+        {
+            return CentreReference(instance, FamilyInstanceReferenceType.CenterLeftRight);
+        }
+
+        if (Math.Abs(transform.BasisY.DotProduct(direction)) > AxisTolerance)
+        {
+            return CentreReference(instance, FamilyInstanceReferenceType.CenterFrontBack);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A face of the instance square to the run, for a family that publishes no
+    /// centre planes.
+    ///
+    /// The face furthest back along the run rather than the nearest one: the
+    /// nearest is whichever side the family happens to be turned to, so it
+    /// alternates from hanger to hanger and the string measures a sawtooth
+    /// instead of the spacing.
+    /// </summary>
+    private static Reference? FaceAlong(
         FamilyInstance instance,
         Options options,
         XYZ point,
-        bool alongAxis)
+        XYZ direction)
     {
         GeometryElement? geometry;
         try
@@ -458,10 +589,11 @@ public sealed class DimensionHandler : ICommandHandler
         if (geometry is null) return null;
 
         Reference? best = null;
-        var bestDistance = double.MaxValue;
+        var bestOffset = double.MaxValue;
 
         // A family instance's geometry arrives wrapped in its own transform, so
-        // the solids hang off the instance geometry rather than sitting in it.
+        // the solids hang off a nested GeometryInstance rather than sitting in
+        // the element's own geometry.
         foreach (var item in geometry)
         {
             var solids = item switch
@@ -476,20 +608,12 @@ public sealed class DimensionHandler : ICommandHandler
                 foreach (Face face in solid.Faces)
                 {
                     if (face is not PlanarFace planar || planar.Reference is null) continue;
+                    if (Math.Abs(planar.FaceNormal.DotProduct(direction)) < AxisTolerance) continue;
 
-                    var normal = planar.FaceNormal;
-                    var facingAxis = alongAxis
-                        ? Math.Abs(normal.X) > AxisTolerance
-                        : Math.Abs(normal.Y) > AxisTolerance;
-                    if (!facingAxis) continue;
+                    var offset = (planar.Origin - point).DotProduct(direction);
+                    if (offset >= bestOffset) continue;
 
-                    var distance = alongAxis
-                        ? Math.Abs(planar.Origin.X - point.X)
-                        : Math.Abs(planar.Origin.Y - point.Y);
-
-                    if (distance >= bestDistance) continue;
-
-                    bestDistance = distance;
+                    bestOffset = offset;
                     best = planar.Reference;
                 }
             }
