@@ -54,6 +54,21 @@ public sealed class AddinConfig
     [JsonProperty("export_base_url")]
     public string ExportBaseUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Upload exports to Supabase Storage so Telegram can deliver them as files.
+    ///
+    /// On by default: without it a printed drawing reaches the chat as a path on
+    /// a Windows machine nobody reading the message is sitting at. Turn it off
+    /// for a site that will not have drawings leave the building, and the reply
+    /// falls back to ExportBaseUrl and then to the local path.
+    /// </summary>
+    [JsonProperty("upload_exports")]
+    public bool UploadExports { get; set; } = true;
+
+    /// <summary>Storage bucket the exports go into. Must exist and be public.</summary>
+    [JsonProperty("storage_bucket")]
+    public string StorageBucket { get; set; } = "exports";
+
     [JsonProperty("language")]
     public string Language { get; set; } = "id";
 

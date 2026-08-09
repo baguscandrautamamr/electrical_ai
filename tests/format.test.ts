@@ -579,3 +579,44 @@ describe('HTML safety', () => {
     expect(text).toContain('&lt;script&gt;');
   });
 });
+
+describe('file delivery', () => {
+  it('pushes only URLs Telegram can fetch', async () => {
+    // A print run on a machine without Storage configured reports a Windows
+    // path. Handing that to sendDocument produces a Telegram error per file
+    // and no document, so it must never reach the call.
+    const { fetchableFiles } = await import('../src/services/delivery.js');
+
+    expect(
+      fetchableFiles({
+        kind: 'print',
+        sheets: [],
+        files: ['C:\\Users\\bagus\\exports\\sheets.pdf', 'https://x.test/sheets.pdf'],
+      }),
+    ).toEqual(['https://x.test/sheets.pdf']);
+
+    expect(
+      fetchableFiles({
+        kind: 'export',
+        exports: { schedule_excel: 'https://x.test/s.xlsx', pdf_report: '/var/tmp/r.pdf' },
+      }),
+    ).toEqual(['https://x.test/s.xlsx']);
+
+    // A placement result carries no files at all.
+    expect(
+      fetchableFiles({ kind: 'lighting', room: 'A', devices_placed: 1, device_ids: [] }),
+    ).toEqual([]);
+  });
+
+  it('sends one combined file once, not once per sheet that shares it', async () => {
+    const { fetchableFiles } = await import('../src/services/delivery.js');
+
+    expect(
+      fetchableFiles({
+        kind: 'print',
+        sheets: [],
+        files: ['https://x.test/a.pdf', 'https://x.test/a.pdf', 'https://x.test/b.pdf'],
+      }),
+    ).toEqual(['https://x.test/a.pdf', 'https://x.test/b.pdf']);
+  });
+});

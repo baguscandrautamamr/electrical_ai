@@ -70,6 +70,13 @@ export interface SendMessageOptions {
 }
 
 /** getWebhookInfo. `last_error_message` is where a 403 or a crash surfaces. */
+export interface SendDocumentOptions {
+  caption?: string;
+  replyToMessageId?: number;
+  /** Deliver without a notification sound. Defaults to true. */
+  silent?: boolean;
+}
+
 export interface WebhookInfo {
   url: string;
   pending_update_count?: number;
@@ -127,6 +134,31 @@ export class TelegramClient {
       disable_web_page_preview: options.disableWebPagePreview ?? true,
       ...(options.replyToMessageId ? { reply_to_message_id: options.replyToMessageId } : {}),
       ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+    });
+  }
+
+  /**
+   * Sends a file by URL.
+   *
+   * Telegram fetches the URL itself, which is the only way a drawing written on
+   * the machine running Revit reaches a phone — this process never sees the
+   * bytes. It caps a document fetched this way at 20 MB and gives up after a
+   * few seconds, so the URL has to be public and quick; Supabase Storage is
+   * both, and is where the add-in puts them.
+   */
+  async sendDocument(
+    chatId: number,
+    documentUrl: string,
+    options: SendDocumentOptions = {},
+  ): Promise<TelegramMessage> {
+    return this.call<TelegramMessage>('sendDocument', {
+      chat_id: chatId,
+      document: documentUrl,
+      ...(options.caption ? { caption: options.caption, parse_mode: 'HTML' } : {}),
+      ...(options.replyToMessageId ? { reply_to_message_id: options.replyToMessageId } : {}),
+      // The reply that names the sheets has already arrived; a second
+      // notification per file turns one print into a buzzing phone.
+      disable_notification: options.silent ?? true,
     });
   }
 

@@ -71,7 +71,24 @@ export async function GET(request: Request): Promise<Response> {
     }
     report.archived = archived;
 
-    // 3. Expired model cache.
+    // 3. Confirmations nobody answered.
+    //
+    // A destructive command parked awaiting_confirmation is invisible to the
+    // add-in, so leaving it costs nothing in Revit — but a Yes tapped tomorrow
+    // on yesterday's question would delete against a drawing that has moved on.
+    // Expiring them makes the button say so instead.
+    const confirmationCutoff = new Date(Date.now() - 86_400_000).toISOString();
+    const expired = await supabase().update<QueuedCommand>(
+      'commands_queue',
+      { status: 'cancelled', completed_at: new Date().toISOString() },
+      {
+        eq: { status: 'awaiting_confirmation' },
+        filters: [`queued_at=lt.${confirmationCutoff}`],
+      },
+    );
+    report.confirmations_expired = expired.length;
+
+    // 4. Expired model cache.
     await supabase().delete('model_cache_mep', {
       filters: [`expires_at=lt.${new Date().toISOString()}`],
     });

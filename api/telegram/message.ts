@@ -19,7 +19,15 @@ import { parseMessage } from '../../src/parser/index.js';
 import { specFor } from '../../src/parser/schema.js';
 import { validateParams } from '../../src/parser/validate.js';
 import { handleAdminCommand, PROJECT_CALLBACK } from '../../src/services/admin.js';
-import { attachAckMessage, enqueueCommand, getCommand } from '../../src/services/queue.js';
+import {
+  attachAckMessage,
+  cancelCommand,
+  confirmCommand,
+  enqueueCommand,
+  findLastPlacement,
+  getCommand,
+  placementOf,
+} from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
 import {
   accessForProjectOrAdmin,
@@ -37,16 +45,187 @@ import {
 } from '../../src/format/index.js';
 import { translator } from '../../src/i18n/index.js';
 import { MessageBuilder } from '../../src/format/message.js';
+import type { ParsedCommand, User } from '../../src/types/index.js';
 
 /** How long the webhook waits inline before handing off to the sweeper. */
 const INLINE_WAIT_MS = 40_000;
 const POLL_INTERVAL_MS = 1_500;
+
+/**
+ * Commands that take work out of the drawing, and so get asked about first.
+ *
+ * The add-in cannot ask: it polls a queue and never sees the person who typed
+ * the command. So the question happens here, before the row becomes visible to
+ * Revit at all.
+ */
+const NEEDS_CONFIRMATION = new Set(['delete_devices', 'modify_devices']);
+
+const CONFIRM_CALLBACK = 'cfm:';
+const CANCEL_CALLBACK = 'cxl:';
 
 function ok(body: Record<string, unknown> = { ok: true }): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+/**
+ * Waits for a queued command and delivers it, editing `ackMessageId` in place.
+ *
+ * Shared by the two ways a command reaches the queue — typed straight in, or
+ * released by a confirmation tap — so both feel the same: a single message that
+ * turns from "queued" into the result.
+ */
+async function awaitAndDeliver(
+  ctx: FormatContext,
+  chatId: number,
+  commandId: string,
+  ackMessageId: number,
+): Promise<boolean> {
+  await attachAckMessage(commandId, ackMessageId);
+
+  const finished = await waitForCommand(commandId, {
+    timeoutMs: INLINE_WAIT_MS,
+    intervalMs: POLL_INTERVAL_MS,
+  });
+
+  if (finished) {
+    // waitForCommand already returned the fresh row, but ack_message_id was
+    // written after enqueue so patch it in.
+    await deliverCommandResult({ ...finished, ack_message_id: ackMessageId });
+    return true;
+  }
+
+  // Still 'pending' after the inline wait means no add-in claimed it in ten
+  // poll intervals — Revit is closed or not polling. Saying so now beats
+  // leaving the user on "waiting for the add-in" until the next sweep.
+  const current = await getCommand(commandId);
+  if (current?.status === 'pending') {
+    await telegram().sendMessage(
+      chatId,
+      formatError(ctx, 'errors.addin_not_polling', {
+        seconds: Math.round(INLINE_WAIT_MS / 1000),
+        poll: env.pollingIntervalSeconds,
+      }),
+    );
+  }
+  // Processing, or finished late: /api/telegram/callback delivers it.
+
+  return false;
+}
+
+/**
+ * A tap on a confirm or cancel button.
+ *
+ * Both outcomes are single-shot at the database, scoped to the asking user and
+ * to the awaiting state, because a button stays tappable in chat history for as
+ * long as the message exists.
+ */
+async function handleConfirmation(
+  query: CallbackQuery,
+  confirmed: boolean,
+): Promise<Response> {
+  const chatId = query.message?.chat.id;
+  const done = (notice?: string) =>
+    telegram()
+      .answerCallbackQuery(query.id, notice)
+      .catch((error) => console.error('[webhook] answerCallbackQuery failed', error));
+
+  const user = await findUserByTelegramId(query.from.id);
+  if (!user || chatId === undefined) {
+    await done();
+    return ok({ ok: true, ignored: 'unregistered' });
+  }
+
+  const ctx: FormatContext = { language: user.language, theme: user.theme };
+  const t = translator(ctx.language);
+  const prefix = confirmed ? CONFIRM_CALLBACK : CANCEL_CALLBACK;
+  const commandId = (query.data ?? '').slice(prefix.length);
+
+  const command = confirmed
+    ? await confirmCommand(commandId, user.id)
+    : await cancelCommand(commandId, user.id);
+
+  if (!command) {
+    // Already answered, expired, or someone else's button.
+    await done(t('confirm.expired'));
+    return ok({ ok: true, ignored: 'not awaiting confirmation' });
+  }
+
+  if (!confirmed) {
+    await done(t('confirm.cancelled'));
+    if (query.message) {
+      await telegram()
+        .editMessageText(chatId, query.message.message_id, formatCancelled(ctx, command.command_type))
+        .catch(() => undefined);
+    }
+    return ok({ ok: true, cancelled: commandId });
+  }
+
+  await done(t('confirm.confirmed'));
+
+  // The confirmation bubble becomes the acknowledgement, and then the result,
+  // so the whole exchange stays in one message.
+  const ack = formatAck(ctx, {
+    commandType: command.command_type,
+    pollSeconds: env.pollingIntervalSeconds,
+  });
+
+  let ackMessageId = query.message?.message_id;
+  if (ackMessageId) {
+    await telegram().editMessageText(chatId, ackMessageId, ack).catch(() => undefined);
+  } else {
+    ackMessageId = (await telegram().sendMessage(chatId, ack)).message_id;
+  }
+
+  await awaitAndDeliver(ctx, chatId, command.id, ackMessageId);
+  return ok({ ok: true, confirmed: commandId });
+}
+
+/**
+ * Turns /undo into the delete that reverses the last placement.
+ *
+ * Aimed at marks rather than at a room and a category, so an undo takes back
+ * what that command placed and leaves alone anything a colleague added to the
+ * same room in between.
+ */
+async function resolveUndo(
+  user: User,
+  ctx: FormatContext,
+): Promise<{ command: ParsedCommand } | { error: string }> {
+  const access = await resolveActiveProject(user);
+  if (!access) return { error: formatError(ctx, 'errors.no_active_project') };
+
+  const last = await findLastPlacement(user.id, access.project.id);
+  const placement = last ? placementOf(last) : null;
+
+  if (!last || !placement) {
+    return { error: formatError(ctx, 'errors.nothing_to_undo') };
+  }
+
+  return {
+    command: {
+      type: 'delete_devices',
+      subject: placement.room,
+      params: {
+        what: placement.kind,
+        marks: placement.deviceIds.join(','),
+      },
+      source: 'grammar',
+      raw: `/undo → ${placement.kind} ${placement.deviceIds.join(',')}`,
+    },
+  };
+}
+
+/** The "you cancelled it" message, so nobody wonders whether it half-ran. */
+function formatCancelled(ctx: FormatContext, commandType: string): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+  b.title(t('common.warning'), t('confirm.cancelled_title'));
+  b.tree([{ label: t('ack.command'), value: commandType }]);
+  b.blank().text(t('confirm.cancelled_detail'));
+  return b.build();
 }
 
 /**
@@ -134,6 +313,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (update.callback_query) {
+    const data = update.callback_query.data ?? '';
+    if (data.startsWith(CONFIRM_CALLBACK)) {
+      return handleConfirmation(update.callback_query, true);
+    }
+    if (data.startsWith(CANCEL_CALLBACK)) {
+      return handleConfirmation(update.callback_query, false);
+    }
     return handleCallbackQuery(update.callback_query);
   }
 
@@ -221,7 +407,21 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // --- 4b. Device commands --------------------------------------------------
-  const command = outcome.command;
+  let command = outcome.command;
+
+  // /undo is not a command the add-in knows. It is a delete aimed at exactly
+  // the marks the last placement reported, resolved here where the queue
+  // history lives, and then run through everything below — role check,
+  // validation, confirmation — like any other delete.
+  if (command.type === 'undo') {
+    const resolved = await resolveUndo(user, ctx);
+    if ('error' in resolved) {
+      await telegram().sendMessage(chatId, resolved.error);
+      return ok({ ok: true, ignored: 'nothing to undo' });
+    }
+    command = resolved.command;
+  }
+
   const spec = specFor(command.type);
   if (!spec) {
     await telegram().sendMessage(
@@ -255,6 +455,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // --- 5. Enqueue, ack, and wait -------------------------------------------
+  const needsConfirmation = NEEDS_CONFIRMATION.has(command.type);
+
   let enqueued;
   try {
     enqueued = await enqueueCommand({
@@ -265,6 +467,7 @@ export async function POST(request: Request): Promise<Response> {
       commandType: command.type,
       commandText: command.raw,
       params: validation.normalized,
+      ...(needsConfirmation ? { status: 'awaiting_confirmation' as const } : {}),
     });
   } catch (error) {
     console.error('[webhook] enqueue failed', error);
@@ -273,6 +476,27 @@ export async function POST(request: Request): Promise<Response> {
       formatError(ctx, 'common.unknown_error', {}, String(error)),
     );
     return ok();
+  }
+
+  // A destructive command stops here and asks. The row exists but the add-in
+  // cannot see it, so nothing happens in Revit unless the button is tapped.
+  if (needsConfirmation) {
+    await telegram().sendMessage(
+      chatId,
+      formatConfirmation(ctx, command.type, validation.normalized),
+      {
+        replyToMessageId: message.message_id,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: translator(ctx.language)('confirm.yes'), callback_data: `${CONFIRM_CALLBACK}${enqueued.command.id}` },
+              { text: translator(ctx.language)('confirm.no'), callback_data: `${CANCEL_CALLBACK}${enqueued.command.id}` },
+            ],
+          ],
+        },
+      },
+    );
+    return ok({ ok: true, command_id: enqueued.command.id, awaiting_confirmation: true });
   }
 
   const ack = await telegram().sendMessage(
@@ -284,36 +508,48 @@ export async function POST(request: Request): Promise<Response> {
     }),
     { replyToMessageId: message.message_id },
   );
-  await attachAckMessage(enqueued.command.id, ack.message_id);
 
-  const finished = await waitForCommand(enqueued.command.id, {
-    timeoutMs: INLINE_WAIT_MS,
-    intervalMs: POLL_INTERVAL_MS,
-  });
+  const delivered = await awaitAndDeliver(ctx, chatId, enqueued.command.id, ack.message_id);
+  return ok({ ok: true, command_id: enqueued.command.id, delivered });
+}
 
-  if (finished) {
-    // Re-read is unnecessary; waitForCommand already returned the fresh row,
-    // but ack_message_id was written after enqueue so patch it in.
-    await deliverCommandResult({ ...finished, ack_message_id: ack.message_id });
-    return ok({ ok: true, command_id: enqueued.command.id, delivered: true });
+/**
+ * The question asked before a destructive command runs.
+ *
+ * States the room and the category back, because the failure this is guarding
+ * against is a room name that resolved to the wrong room — and the only person
+ * who can catch that is the one who typed it.
+ */
+function formatConfirmation(
+  ctx: FormatContext,
+  commandType: string,
+  params: Record<string, string | number | boolean>,
+): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title(t('common.warning'), t(`confirm.${commandType}`));
+
+  const rows = [{ label: t('ack.command'), value: commandType }];
+  if (params.room) rows.push({ label: t('common.room'), value: String(params.room) });
+  if (params.what) rows.push({ label: t('confirm.what'), value: String(params.what) });
+  if (params.grid) rows.push({ label: t('lighting.grid'), value: String(params.grid) });
+  else if (params.count) rows.push({ label: t('confirm.count'), value: String(params.count) });
+
+  // /undo names the marks it will remove: the whole point is that it takes back
+  // exactly those and nothing else, and that is checkable at a glance.
+  if (typeof params.marks === 'string' && params.marks !== '') {
+    const marks = params.marks.split(',');
+    rows.push({
+      label: t('confirm.marks'),
+      value: marks.slice(0, 12).join(', ') + (marks.length > 12 ? ` (+${marks.length - 12})` : ''),
+    });
   }
 
-  // Still 'pending' after the inline wait means no add-in claimed it in ten
-  // poll intervals — Revit is closed or not polling. Saying so now beats
-  // leaving the user on "waiting for the add-in" until the next sweep.
-  const current = await getCommand(enqueued.command.id);
-  if (current?.status === 'pending') {
-    await telegram().sendMessage(
-      chatId,
-      formatError(ctx, 'errors.addin_not_polling', {
-        seconds: Math.round(INLINE_WAIT_MS / 1000),
-        poll: env.pollingIntervalSeconds,
-      }),
-    );
-  }
-  // Processing, or finished late: /api/telegram/callback delivers it.
+  b.tree(rows);
+  b.blank().text(t('confirm.prompt'));
 
-  return ok({ ok: true, command_id: enqueued.command.id, delivered: false });
+  return b.build();
 }
 
 /** Health probe for the webhook URL itself. */

@@ -63,6 +63,9 @@ public sealed class CommandQueueWorker : IExternalEventHandler
     {
         public required CommandResult Result { get; init; }
         public required List<(string Table, object Row)> PendingRows { get; init; }
+
+        /// <summary>Files the handler wrote and wants uploaded. See HandlerContext.Share.</summary>
+        public required List<HandlerContext.PendingUpload> PendingUploads { get; init; }
     }
 
     /// <summary>
@@ -114,6 +117,7 @@ public sealed class CommandQueueWorker : IExternalEventHandler
                         "No document is open in Revit. Open the project model and retry.",
                         retryable: true),
                     PendingRows = new List<(string, object)>(),
+                    PendingUploads = new List<HandlerContext.PendingUpload>(),
                 });
                 return;
             }
@@ -132,6 +136,7 @@ public sealed class CommandQueueWorker : IExternalEventHandler
             {
                 Result = result,
                 PendingRows = context.PendingRows,
+                PendingUploads = context.PendingUploads,
             });
         }
         catch (Exception ex)
@@ -143,6 +148,7 @@ public sealed class CommandQueueWorker : IExternalEventHandler
             {
                 Result = CommandResult.FromException(ex),
                 PendingRows = new List<(string, object)>(),
+                PendingUploads = new List<HandlerContext.PendingUpload>(),
             });
         }
     }

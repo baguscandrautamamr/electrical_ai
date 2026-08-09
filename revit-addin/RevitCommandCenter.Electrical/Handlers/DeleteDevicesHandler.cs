@@ -74,7 +74,12 @@ public sealed class DeleteDevicesHandler : ICommandHandler
                 retryable: false);
         }
 
-        var removed = Delete(context, lookup.Room, categories, out var byCategory);
+        // /undo names the marks its placement reported. Deleting by mark rather
+        // than by room takes back exactly what that command made, and leaves
+        // whatever a colleague added to the same room in the meantime.
+        var marks = ParseMarks(command.GetString("marks"));
+
+        var removed = Delete(context, lookup.Room, categories, marks, out var byCategory);
         if (removed.Failed is { } failure) return failure;
 
         return CommandResult.Ok(new DeleteResultDto
@@ -98,10 +103,25 @@ public sealed class DeleteDevicesHandler : ICommandHandler
     /// Deletes in one transaction, so a failure part-way leaves the drawing as
     /// it was rather than half-stripped.
     /// </summary>
+    /// <summary>The mark list from an undo, or null when the whole room is meant.</summary>
+    private static HashSet<string>? ParseMarks(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var marks = raw
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(mark => mark.Trim())
+            .Where(mark => mark.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return marks.Count > 0 ? marks : null;
+    }
+
     private static Outcome Delete(
         HandlerContext context,
         Room room,
         List<string> categories,
+        HashSet<string>? onlyMarks,
         out List<QueryGroupDto> groups)
     {
         var doc = context.Doc;
@@ -117,7 +137,12 @@ public sealed class DeleteDevicesHandler : ICommandHandler
                 .OfCategory(Categories[key])
                 .WhereElementIsNotElementType()
                 .ToElements()
-                .Where(element => InRoom(element, room))
+                // An undo is scoped by mark rather than by room: a fixture that
+                // has since been dragged into the corridor is still one this
+                // command placed, and still one the engineer means to take back.
+                .Where(element => onlyMarks is null
+                    ? InRoom(element, room)
+                    : onlyMarks.Contains(ParameterMapper.GetStringParameter(element, "Mark")))
                 .ToList();
 
             if (found.Count == 0) continue;

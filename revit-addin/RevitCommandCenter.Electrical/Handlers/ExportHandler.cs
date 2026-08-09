@@ -33,7 +33,7 @@ public sealed class ExportHandler : ICommandHandler
             switch (format.ToLowerInvariant())
             {
                 case "excel":
-                    links.ScheduleExcel = ToUrl(context, WriteWorkbook(context, exportType, directory, stamp));
+                    links.ScheduleExcel = context.Share(WriteWorkbook(context, exportType, directory, stamp));
                     if (exportType is "all" or "hanger_schedule")
                     {
                         links.HangerSchedule = links.ScheduleExcel;
@@ -41,16 +41,16 @@ public sealed class ExportHandler : ICommandHandler
                     break;
 
                 case "pdf":
-                    links.PdfReport = ToUrl(context, WriteComplianceReport(context, directory, stamp));
+                    links.PdfReport = context.Share(WriteComplianceReport(context, directory, stamp));
                     break;
 
                 case "dwg":
                 case "dxf":
-                    links.Dwg = ToUrl(context, ExportCad(context, directory, stamp, format));
+                    links.Dwg = context.Share(ExportCad(context, directory, stamp, format));
                     break;
 
                 case "ifc":
-                    links.Ifc = ToUrl(context, ExportIfc(context, directory, stamp));
+                    links.Ifc = context.Share(ExportIfc(context, directory, stamp));
                     break;
 
                 default:
@@ -338,16 +338,4 @@ public sealed class ExportHandler : ICommandHandler
         return Path.Combine(directory, name);
     }
 
-    /// <summary>
-    /// Maps a written file onto a public URL when one is configured, so the
-    /// Telegram reply can link it. Falls back to the local path.
-    /// </summary>
-    private static string ToUrl(HandlerContext context, string path)
-    {
-        var baseUrl = context.Config.ExportBaseUrl;
-        if (string.IsNullOrWhiteSpace(baseUrl)) return path;
-
-        var fileName = Path.GetFileName(path);
-        return $"{baseUrl.TrimEnd('/')}/{Uri.EscapeDataString(fileName)}";
-    }
 }

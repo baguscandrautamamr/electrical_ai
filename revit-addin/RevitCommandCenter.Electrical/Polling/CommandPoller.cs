@@ -136,8 +136,11 @@ public sealed class CommandPoller : IDisposable
             var outcome = await pending.ConfigureAwait(false);
 
             // Persist device rows first so a Telegram reply never describes
-            // state the database does not have.
+            // state the database does not have, and upload the files before the
+            // reply carrying their links goes out — a link that 404s for the
+            // first few seconds is worse than one that arrives a moment later.
             await FlushPendingRowsAsync(outcome.PendingRows, token).ConfigureAwait(false);
+            await FlushPendingUploadsAsync(outcome.PendingUploads, token).ConfigureAwait(false);
             await _repository.ReportAsync(command, outcome.Result, token).ConfigureAwait(false);
 
             if (outcome.Result.Success) CommandsProcessed++;
@@ -163,6 +166,56 @@ public sealed class CommandPoller : IDisposable
                     Math.Min(300, _config.PollingIntervalSeconds * Math.Pow(2, _consecutiveFailures - 4)));
                 Logger.Warn($"Backing off polling to {backoff.TotalSeconds:F0}s");
                 _timer.Change(backoff, TimeSpan.FromSeconds(_config.PollingIntervalSeconds));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Uploads the files a handler wrote, off Revit's thread.
+    ///
+    /// A failure here is logged and not raised: the file is still on the disk of
+    /// the machine running Revit, and losing the chat delivery is not worth
+    /// failing a print that succeeded. The reply's link will 404, which is the
+    /// symptom that sends someone to this log line.
+    /// </summary>
+    private async Task FlushPendingUploadsAsync(
+        List<Handlers.HandlerContext.PendingUpload> uploads,
+        CancellationToken token)
+    {
+        if (uploads.Count == 0) return;
+
+        foreach (var upload in uploads)
+        {
+            try
+            {
+                if (!File.Exists(upload.LocalPath))
+                {
+                    Logger.Warn($"Nothing to upload at {upload.LocalPath}");
+                    continue;
+                }
+
+                var bytes = await File.ReadAllBytesAsync(upload.LocalPath, token).ConfigureAwait(false);
+
+                // Telegram will not fetch a document larger than this, so the
+                // upload would only produce a link that fails later, further from
+                // the cause.
+                const int telegramLimitBytes = 20 * 1024 * 1024;
+                if (bytes.Length > telegramLimitBytes)
+                {
+                    Logger.Warn(
+                        $"{Path.GetFileName(upload.LocalPath)} is {bytes.Length / 1024 / 1024} MB; "
+                        + "Telegram will not deliver a file over 20 MB. Print fewer sheets per file.");
+                }
+
+                await _supabase
+                    .UploadAsync(_config.StorageBucket, upload.Key, bytes, upload.ContentType, token)
+                    .ConfigureAwait(false);
+
+                Logger.Info($"Uploaded {upload.Key} ({bytes.Length / 1024} KB)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Could not upload {upload.LocalPath}", ex);
             }
         }
     }
