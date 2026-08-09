@@ -237,7 +237,7 @@ algorithm.
 /create_cable_tray CT-A1 from=PA-01 to=Zone_A cable_type=power size=auto material=aluminum installation=ceiling hanger_spacing=1500 fill_target=50 preserve_existing=true
 ```
 
-### `/add_hangers <tray_id>`
+### `/add_hangers [tray_id]`
 
 Hangs a tray that already exists. Same engine, no routing.
 
@@ -248,7 +248,10 @@ Hangs a tray that already exists. Same engine, no routing.
 | `hanger_family` | string | Hanger |
 
 ```
-/add_hangers CT-A1 spacing=1500 preserve_existing=true
+/add_hangers
+/add_hangers ladder
+/add_hangers CT-A1 spacing=1500
+/add_hangers mode=replace
 ```
 
 ### `/place_fire_alarm <room>`

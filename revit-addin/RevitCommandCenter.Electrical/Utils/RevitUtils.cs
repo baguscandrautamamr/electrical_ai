@@ -617,6 +617,21 @@ public static class RevitUtils
     }
 
     /// <summary>Every straight tray in the model whose name matches a prefix.</summary>
+    /// <summary>
+    /// Every cable tray in the model, as segments.
+    ///
+    /// What "pasang hanger di cable tray" means: the engineer is not naming a
+    /// run, they are naming the thing the command is about.
+    /// </summary>
+    public static List<TraySegment> AllTraySegments(Document doc) =>
+        new FilteredElementCollector(doc)
+            .OfClass(typeof(CableTray))
+            .Cast<CableTray>()
+            .Select(ToSegment)
+            .Where(segment => segment is not null)
+            .Select(segment => segment!)
+            .ToList();
+
     public static List<TraySegment> FindTraySegmentsByName(Document doc, string trayId)
     {
         var trays = new FilteredElementCollector(doc)
