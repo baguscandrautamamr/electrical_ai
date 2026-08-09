@@ -437,46 +437,12 @@ public sealed class DimensionHandler : ICommandHandler
                 return kept;
             }
 
-            // Drop the ones that draw nothing before committing, so a string
-            // that lost its references cannot take the commit down with it.
-            // The regenerate is where a bad reference surfaces, and it can
-            // throw rather than fail politely — so it gets its own handling,
-            // and what it says goes on the reply.
-            try
-            {
-                doc.Regenerate();
-            }
-            catch (Exception ex)
-            {
-                Blame("Revit could not regenerate the view with these strings", ex, notes);
-                doc.Delete(ids);
-                ids.Clear();
-                made.Clear();
-                doc.Regenerate();
-            }
-
-            if (made.Count > 0)
-            {
-                var drawing = new HashSet<ElementId>(
-                    new FilteredElementCollector(doc, view.Id)
-                        .OfClass(typeof(Dimension))
-                        .ToElementIds());
-
-                var dead = made
-                    .Where(dimension => !dimension.IsValidObject
-                                        || (dimension.References?.Size ?? 0) < 2
-                                        || !drawing.Contains(dimension.Id))
-                    .Select(dimension => dimension.Id)
-                    .ToList();
-
-                if (dead.Count > 0)
-                {
-                    Logger.Warn(
-                        $"dimension: {dead.Count} string(s) drew nothing; removing before commit.");
-                    doc.Delete(dead);
-                }
-            }
-
+            // Straight to the commit. Regenerating here, and weeding out the
+            // strings that drew nothing, is work this handler did not do on the
+            // day it worked — and it is work that forces a bad reference to
+            // surface early, where Revit's answer is to take the transaction
+            // down rather than to fix the string. Let the commit run, then ask
+            // the document what it kept.
             status = transaction.Commit();
         }
         catch (Exception ex)
@@ -513,13 +479,17 @@ public sealed class DimensionHandler : ICommandHandler
         {
             if (doc.GetElement(dimension.Id) is not Dimension alive || !alive.IsValidObject) continue;
 
+            // Its extent is used to say where it landed, not to decide whether
+            // it counts. A string in the model that this cannot measure is
+            // still a string in the model, and refusing to count it would put
+            // the handler back to reporting something other than the truth.
             var extent = alive.get_BoundingBox(view);
-            if (extent is null) continue;
-
-            var centre = new XYZ(
-                (extent.Min.X + extent.Max.X) / 2,
-                (extent.Min.Y + extent.Max.Y) / 2,
-                0);
+            var centre = extent is null
+                ? XYZ.Zero
+                : new XYZ(
+                    (extent.Min.X + extent.Max.X) / 2,
+                    (extent.Min.Y + extent.Max.Y) / 2,
+                    0);
 
             if (kept.Count == 0) Diagnose(doc, view, alive, notes);
 
@@ -763,27 +733,54 @@ public sealed class DimensionHandler : ICommandHandler
                 var text = Describe(failure);
                 if (!Reasons.Contains(text)) Reasons.Add(text);
 
-                var failing = failure.GetFailingElementIds();
-                if (failing.Count > 0)
-                {
-                    accessor.DeleteElements(failing.ToList());
-                    continue;
-                }
+                // The resolution a person would pick. When Revit put this
+                // failure on screen, the button an engineer pressed was "Remove
+                // Reference(s)" — the string stays, the reference Revit cannot
+                // resolve comes off it, and the drawing survives. Deleting the
+                // failing elements is also on offer and is the opposite of
+                // that: it takes the dimension away.
+                var offered = Applicable(failure);
+                var keepIt = offered.FirstOrDefault(type => type != FailureResolutionType.DeleteElements);
 
-                if (failure.HasResolutions())
+                if (offered.Count > 0)
                 {
-                    accessor.ResolveFailure(failure);
-                    continue;
+                    try
+                    {
+                        if (keepIt != default) failure.SetCurrentResolutionType(keepIt);
+
+                        accessor.ResolveFailure(failure);
+                        Logger.Info($"dimension: resolved '{text}' as {failure.GetCurrentResolutionType()}.");
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"Could not apply Revit's own resolution: {ex.Message}");
+                    }
                 }
 
                 // Nothing Revit offers will clear it, and an unresolved error
                 // takes the whole transaction down — including work that was
                 // fine. Our own strings come out instead, so the commit stands
                 // and the reply can say what happened.
-                if (_ours.Count > 0) accessor.DeleteElements(_ours);
+                var failing = failure.GetFailingElementIds();
+                if (failing.Count > 0) accessor.DeleteElements(failing.ToList());
+                else if (_ours.Count > 0) accessor.DeleteElements(_ours);
             }
 
             return FailureProcessingResult.ProceedWithCommit;
+        }
+
+        private static IList<FailureResolutionType> Applicable(FailureMessageAccessor failure)
+        {
+            try
+            {
+                return failure.GetApplicableResolutionTypes();
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Could not read the resolutions on offer: {ex.Message}");
+                return Array.Empty<FailureResolutionType>();
+            }
         }
 
         private static string Describe(FailureMessageAccessor failure)
