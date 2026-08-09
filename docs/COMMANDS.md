@@ -476,9 +476,18 @@ how a drawing set goes out one sheet short.
 Placeholder sheets are left out: they have no drawing on them, and Revit rejects
 a whole batch that contains one.
 
-Files land in the add-in's export directory, and come back as links when
-`export_base_url` is configured. A viewer may run this — it reads the model and
-writes a file, and changes neither.
+**The PDF arrives in the chat as a file.** The add-in uploads it to Telegram
+directly, so there is nothing to configure beyond the bot token in the add-in's
+settings, and the drawing goes only to the chat that asked for it. Telegram
+accepts up to 50 MB per document; a set larger than that needs `combine=false`
+or fewer sheets per run.
+
+The file also stays in the add-in's export directory, and the reply names that
+path. Set `export_base_url` if that folder is served over the web and you would
+rather have a link.
+
+A viewer may run this — it reads the model and writes a file, and changes
+neither.
 
 ### `/dimension [room]`
 

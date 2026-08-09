@@ -363,6 +363,22 @@ describe('print formatting', () => {
     expect(text).toContain('sheets-20260808.pdf');
   });
 
+  it('shows a local path as a path, not as a link that does nothing', () => {
+    // The PDFs arrive as documents; what is left to say is where they also sit
+    // on the machine that made them. Wrapping C:\... in an anchor looks
+    // tappable and is not.
+    const local: PrintResult = {
+      ...printed,
+      files: ['C:\\Users\\bagus\\exports\\sheets-20260808.pdf'],
+    };
+
+    const text = formatResult(local, EN);
+
+    expect(text).toContain('Saved at');
+    expect(text).toContain('sheets-20260808.pdf');
+    expect(text).not.toContain('<a href="C:');
+  });
+
   it('says which sheet numbers matched nothing', () => {
     // Printing four of the five sheets asked for, silently, is how a drawing
     // set goes out incomplete.

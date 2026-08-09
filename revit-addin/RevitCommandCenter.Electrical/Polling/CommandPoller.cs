@@ -136,12 +136,13 @@ public sealed class CommandPoller : IDisposable
             var outcome = await pending.ConfigureAwait(false);
 
             // Persist device rows first so a Telegram reply never describes
-            // state the database does not have, and upload the files before the
-            // reply carrying their links goes out — a link that 404s for the
-            // first few seconds is worse than one that arrives a moment later.
+            // state the database does not have.
             await FlushPendingRowsAsync(outcome.PendingRows, token).ConfigureAwait(false);
-            await FlushPendingUploadsAsync(outcome.PendingUploads, token).ConfigureAwait(false);
             await _repository.ReportAsync(command, outcome.Result, token).ConfigureAwait(false);
+
+            // Files go after the result, so the chat reads "printed E-101" and
+            // then the drawing, rather than a document arriving out of nowhere.
+            await SendFilesAsync(command, outcome.PendingUploads, token).ConfigureAwait(false);
 
             if (outcome.Result.Success) CommandsProcessed++;
             else CommandsFailed++;
@@ -171,52 +172,32 @@ public sealed class CommandPoller : IDisposable
     }
 
     /// <summary>
-    /// Uploads the files a handler wrote, off Revit's thread.
+    /// Sends the files a handler wrote to the chat that asked for them.
     ///
-    /// A failure here is logged and not raised: the file is still on the disk of
-    /// the machine running Revit, and losing the chat delivery is not worth
-    /// failing a print that succeeded. The reply's link will 404, which is the
-    /// symptom that sends someone to this log line.
+    /// A failure is logged and not raised: the file is on the disk of the
+    /// machine running Revit either way, and losing the delivery is not worth
+    /// failing a print that succeeded. The reply already said what was printed,
+    /// and this log line says why it did not arrive.
     /// </summary>
-    private async Task FlushPendingUploadsAsync(
+    private async Task SendFilesAsync(
+        CommandModel command,
         List<Handlers.HandlerContext.PendingUpload> uploads,
         CancellationToken token)
     {
-        if (uploads.Count == 0) return;
+        if (uploads.Count == 0 || !_config.SendFilesToTelegram) return;
+
+        if (command.ChatId is not { } chatId)
+        {
+            Logger.Warn("Command carries no chat_id; the generated files stay on this machine.");
+            return;
+        }
 
         foreach (var upload in uploads)
         {
-            try
-            {
-                if (!File.Exists(upload.LocalPath))
-                {
-                    Logger.Warn($"Nothing to upload at {upload.LocalPath}");
-                    continue;
-                }
-
-                var bytes = await File.ReadAllBytesAsync(upload.LocalPath, token).ConfigureAwait(false);
-
-                // Telegram will not fetch a document larger than this, so the
-                // upload would only produce a link that fails later, further from
-                // the cause.
-                const int telegramLimitBytes = 20 * 1024 * 1024;
-                if (bytes.Length > telegramLimitBytes)
-                {
-                    Logger.Warn(
-                        $"{Path.GetFileName(upload.LocalPath)} is {bytes.Length / 1024 / 1024} MB; "
-                        + "Telegram will not deliver a file over 20 MB. Print fewer sheets per file.");
-                }
-
-                await _supabase
-                    .UploadAsync(_config.StorageBucket, upload.Key, bytes, upload.ContentType, token)
-                    .ConfigureAwait(false);
-
-                Logger.Info($"Uploaded {upload.Key} ({bytes.Length / 1024} KB)");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"Could not upload {upload.LocalPath}", ex);
-            }
+            await TelegramUploader
+                .SendDocumentAsync(
+                    _config.TelegramBotToken, chatId, upload.LocalPath, upload.ContentType, token)
+                .ConfigureAwait(false);
         }
     }
 

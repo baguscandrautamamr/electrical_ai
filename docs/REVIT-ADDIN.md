@@ -4,6 +4,30 @@ Requires **Windows** and the **.NET 8 SDK**. A **Revit 2025** install is used
 when present but is not required to compile — see [Where the Revit API comes
 from](#where-the-revit-api-comes-from).
 
+## Sending files to Telegram
+
+`/print_pdf` and `/export` write to the add-in's export folder, on the machine
+running Revit. That machine is the only one that has the file, so the add-in
+uploads it to the chat itself.
+
+Set **Telegram bot token** in the settings window — the same token the webhook
+uses. Without it the file is written and stays on disk, and the reply says where.
+
+Uploading happens in the poller, after the result is reported, never inside a
+handler: a handler runs on Revit's API thread inside the external event, and a
+network round trip there freezes the UI for as long as the file takes to travel.
+
+Limits and trade-offs worth knowing:
+
+- Telegram accepts up to **50 MB** per document from a bot. A larger set needs
+  `combine=false`, or fewer sheets per run.
+- The file goes only to the chat that asked for it. There is no public URL and
+  no bucket to provision.
+- The machine holds the bot token. It already holds a Supabase key that reaches
+  every project's data, so this is not a new class of secret there — but a
+  leaked token lets someone post as the bot. Clear the checkbox to turn the
+  whole path off.
+
 ## Build in CI
 
 The `Revit add-in` workflow builds this project on every push that touches

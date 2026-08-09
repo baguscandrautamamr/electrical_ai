@@ -186,6 +186,7 @@
     "sheets": "Sheet",
     "printed": "Sheet yang dicetak",
     "files": "Berkas",
+    "saved_at": "Tersimpan di",
     "not_found": "Tidak ada sheet yang cocok dengan: {sheets}"
   },
   "dimension": {

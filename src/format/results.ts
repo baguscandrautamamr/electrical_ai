@@ -50,15 +50,39 @@ const COUNT_LABEL: Record<PlacementResult['kind'], string> = {
   communication: 'devices',
 };
 
+/**
+ * Whether a location is something a phone can open.
+ *
+ * The add-in reports where it wrote a file, and that is usually a path on the
+ * machine running Revit — the file itself arrives in the chat as a document.
+ * Wrapping `C:\exports\sheets.pdf` in an anchor produces a link that looks
+ * tappable and does nothing.
+ */
+function isLink(location: string | undefined): boolean {
+  return /^https?:\/\//i.test(location ?? '');
+}
+
 function exportRows(t: Translate, exports: ExportLinks | undefined): Array<[string, string | undefined]> {
   if (!exports) return [];
-  return [
-    [t('export.excel'), exports.schedule_excel],
-    [t('export.hanger_schedule'), exports.hanger_schedule],
-    [t('export.pdf'), exports.pdf_report],
-    [t('export.dwg'), exports.dwg],
-    [t('export.ifc'), exports.ifc],
-  ];
+  return (
+    [
+      [t('export.excel'), exports.schedule_excel],
+      [t('export.hanger_schedule'), exports.hanger_schedule],
+      [t('export.pdf'), exports.pdf_report],
+      [t('export.dwg'), exports.dwg],
+      [t('export.ifc'), exports.ifc],
+    ] as Array<[string, string | undefined]>
+  ).filter(([, location]) => isLink(location));
+}
+
+/**
+ * Where the files were written, for the reader sitting at the Revit machine.
+ *
+ * Shown as text rather than as links, and only when there is nothing linkable —
+ * once the files are in the chat, the path is a footnote, not the answer.
+ */
+function pathRows(locations: Array<string | undefined>): string[] {
+  return locations.filter((location): location is string => Boolean(location) && !isLink(location));
 }
 
 /**
@@ -262,7 +286,21 @@ export function formatExport(result: ExportResult, ctx: FormatContext): string {
   const t = translator(ctx.language);
   const b = new MessageBuilder(ctx.theme);
   b.title(t('common.success'), t('export.created'));
-  b.links(exportRows(t, result.exports));
+
+  const links = exportRows(t, result.exports);
+  if (links.length > 0) {
+    b.links(links);
+    return b.build();
+  }
+
+  // No linkable location: the files arrive as documents, and the path is where
+  // they also sit on the machine that made them.
+  const paths = pathRows(Object.values(result.exports ?? {}));
+  if (paths.length > 0) {
+    b.section(t('print.saved_at'));
+    for (const path of paths.slice(0, 5)) b.code(path);
+  }
+
   return b.build();
 }
 
@@ -282,17 +320,24 @@ export function formatPrint(result: PrintResult, ctx: FormatContext): string {
     b.bullets(result.sheets.map((sheet) => `${sheet.number} — ${sheet.name}`));
   }
 
-  // The file is the point of the command, so it goes last, where a link is
-  // easiest to tap.
+  // The PDFs themselves arrive as documents right after this message. What is
+  // left to say is where they also are: a link when the export folder is served
+  // over the web, otherwise the path on the machine running Revit.
   const files = result.files ?? [];
-  if (files.length > 0) {
+  const links = files.filter(isLink);
+  const paths = pathRows(files);
+
+  if (links.length > 0) {
     b.section(t('print.files'));
     b.links(
-      files.map((file, index) => [
-        files.length === 1 ? t('export.pdf') : `${t('export.pdf')} ${index + 1}`,
+      links.map((file, index) => [
+        links.length === 1 ? t('export.pdf') : `${t('export.pdf')} ${index + 1}`,
         file,
       ]),
     );
+  } else if (paths.length > 0) {
+    b.section(t('print.saved_at'));
+    for (const path of paths.slice(0, 5)) b.code(path);
   }
 
   const missing = result.not_found ?? [];

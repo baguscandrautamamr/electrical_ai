@@ -22,37 +22,31 @@ public sealed class HandlerContext
 
     public void Persist(string table, object row) => PendingRows.Add((table, row));
 
-    /// <summary>A file to put in Storage once the handler is off Revit's thread.</summary>
-    public sealed record PendingUpload(string LocalPath, string Key, string ContentType);
+    /// <summary>A file to send to the chat once the handler is off Revit's thread.</summary>
+    public sealed record PendingUpload(string LocalPath, string ContentType);
 
-    /// <summary>Files to upload after the command finishes. See <see cref="Share"/>.</summary>
+    /// <summary>Files to deliver after the command finishes. See <see cref="Share"/>.</summary>
     public List<PendingUpload> PendingUploads { get; } = new();
 
     /// <summary>
-    /// Makes a written file reachable from Telegram, and returns the link.
+    /// Queues a written file for delivery to the chat, and returns what the
+    /// reply should say about where it is.
     ///
-    /// The upload itself is deferred: this runs inside Revit's external event,
-    /// where a network round trip would block the UI thread for as long as the
-    /// file takes to travel. The poller performs it before it reports the
-    /// result, so the link in the reply is live by the time it is delivered.
+    /// The upload is deferred because this runs inside Revit's external event,
+    /// where a network round trip would freeze the UI for as long as the file
+    /// takes to travel. The poller sends it once the command is reported.
     ///
-    /// Falls back to the configured public folder, and then to the local path,
-    /// so a deployment without Storage behaves exactly as it did before.
+    /// What comes back is the file's own location, not a delivery link: the
+    /// file arrives in the chat as a file. A site serving its export folder
+    /// over the web still gets a URL, which is the one case a link is useful.
     /// </summary>
     public string Share(string localPath)
     {
         var fileName = Path.GetFileName(localPath);
 
-        if (Config.UploadExports && !string.IsNullOrWhiteSpace(Config.StorageBucket))
+        if (Config.SendFilesToTelegram)
         {
-            // Keyed by project so two projects sharing a Supabase instance
-            // cannot overwrite each other's drawings.
-            var key = string.IsNullOrWhiteSpace(Config.ProjectId)
-                ? fileName
-                : $"{Config.ProjectId}/{fileName}";
-
-            PendingUploads.Add(new PendingUpload(localPath, key, ContentTypeOf(fileName)));
-            return Repository.Supabase.PublicUrl(Config.StorageBucket, key);
+            PendingUploads.Add(new PendingUpload(localPath, ContentTypeOf(fileName)));
         }
 
         if (!string.IsNullOrWhiteSpace(Config.ExportBaseUrl))
