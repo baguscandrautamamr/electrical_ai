@@ -26,6 +26,7 @@ import {
   enqueueCommand,
   findLastPlacement,
   getCommand,
+  MigrationRequiredError,
   placementOf,
 } from '../../src/services/queue.js';
 import { deliverCommandResult, waitForCommand } from '../../src/services/delivery.js';
@@ -49,7 +50,15 @@ import type { ParsedCommand, User } from '../../src/types/index.js';
 
 /** How long the webhook waits inline before handing off to the sweeper. */
 const INLINE_WAIT_MS = 40_000;
-const POLL_INTERVAL_MS = 1_500;
+/**
+ * How often the webhook re-reads the command it is waiting on.
+ *
+ * 1500 ms added up to most of a second of dead time on a command Revit had
+ * already finished. The read is one indexed lookup by primary key, so polling
+ * it harder costs little; the add-in's own poll interval is what actually sets
+ * how long a command waits.
+ */
+const POLL_INTERVAL_MS = 500;
 
 /**
  * Commands that take work out of the drawing, and so get asked about first.
@@ -57,8 +66,13 @@ const POLL_INTERVAL_MS = 1_500;
  * The add-in cannot ask: it polls a queue and never sees the person who typed
  * the command. So the question happens here, before the row becomes visible to
  * Revit at all.
+ *
+ * Only deletion. /modify_devices was in here too, and it was the wrong call: it
+ * puts a layout back where it took one from, its reply says how many it
+ * removed, and /undo reverses it. Asking twice about a command someone runs
+ * every few minutes is a tax on the common case to guard the rare one.
  */
-const NEEDS_CONFIRMATION = new Set(['delete_devices', 'modify_devices']);
+const NEEDS_CONFIRMATION = new Set(['delete_devices']);
 
 const CONFIRM_CALLBACK = 'cfm:';
 const CANCEL_CALLBACK = 'cxl:';
@@ -83,7 +97,11 @@ async function awaitAndDeliver(
   commandId: string,
   ackMessageId: number,
 ): Promise<boolean> {
-  await attachAckMessage(commandId, ackMessageId);
+  // Not awaited: this row is only read by the sweeper, on the path where the
+  // inline wait gave up. The inline path patches the id in directly below.
+  void attachAckMessage(commandId, ackMessageId).catch((error) =>
+    console.error('[webhook] attachAckMessage failed', error),
+  );
 
   const finished = await waitForCommand(commandId, {
     timeoutMs: INLINE_WAIT_MS,
@@ -93,7 +111,7 @@ async function awaitAndDeliver(
   if (finished) {
     // waitForCommand already returned the fresh row, but ack_message_id was
     // written after enqueue so patch it in.
-    await deliverCommandResult({ ...finished, ack_message_id: ackMessageId });
+    await deliverCommandResult({ ...finished, ack_message_id: ackMessageId }, ctx);
     return true;
   }
 
@@ -349,7 +367,9 @@ export async function POST(request: Request): Promise<Response> {
     return ok();
   }
 
-  user = await touchUser(user, from);
+  // Not awaited: it records last-seen details, and nothing in this request
+  // reads them back. Awaiting it put a database write in front of every reply.
+  void touchUser(user, from).catch((error) => console.error('[webhook] touchUser failed', error));
 
   let ctx: FormatContext = { language: user.language, theme: user.theme };
 
@@ -471,9 +491,22 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch (error) {
     console.error('[webhook] enqueue failed', error);
+
+    // A schema this deployment has not caught up with reaches Telegram as a
+    // page of UUIDs from PostgREST. Name the file to run instead.
+    const detail =
+      error instanceof MigrationRequiredError
+        ? `supabase/migrations/${error.migration}`
+        : String(error);
+
     await telegram().sendMessage(
       chatId,
-      formatError(ctx, 'common.unknown_error', {}, String(error)),
+      formatError(
+        ctx,
+        error instanceof MigrationRequiredError ? 'errors.migration_required' : 'common.unknown_error',
+        {},
+        detail,
+      ),
     );
     return ok();
   }

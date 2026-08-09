@@ -49,7 +49,18 @@ export function renderCommandOutcome(command: QueuedCommand, ctx: FormatContext)
  * message is a worse outcome for the user than a rare lost one, and the result
  * stays queryable via /status either way.
  */
-export async function deliverCommandResult(command: QueuedCommand): Promise<boolean> {
+export async function deliverCommandResult(
+  command: QueuedCommand,
+  /**
+   * The sender's language and theme, when the caller already knows them.
+   *
+   * The webhook does — it loaded the user to authorise the command a moment
+   * ago. Re-reading the row here put a database round trip between Revit
+   * finishing and the answer appearing. The sweeper has no user in hand and
+   * still pays for one.
+   */
+  known?: FormatContext,
+): Promise<boolean> {
   if (command.webhook_sent) return false;
   if (command.status !== 'completed' && command.status !== 'failed') return false;
   if (!command.chat_id) {
@@ -59,7 +70,7 @@ export async function deliverCommandResult(command: QueuedCommand): Promise<bool
 
   await markDelivered(command.id);
 
-  const ctx = await contextForCommand(command);
+  const ctx = known ?? (await contextForCommand(command));
   const text = renderCommandOutcome(command, ctx);
 
   try {

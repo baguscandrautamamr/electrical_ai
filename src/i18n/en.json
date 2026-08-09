@@ -31,6 +31,7 @@
     "no_project_access": "You do not have access to this project.",
     "insufficient_role": "This command requires the {required} role; yours is {actual}.",
     "unknown_command": "Unknown command: {command}. Type /help for the list.",
+    "migration_required": "The database has not been updated for this build. Run this migration in Supabase (SQL Editor), then send the command again:",
     "parse_failed": "Could not understand that command. Type /help for examples.",
     "validation_failed": "Invalid parameters",
     "execution_failed": "Command execution failed",
