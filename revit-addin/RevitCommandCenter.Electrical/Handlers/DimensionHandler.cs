@@ -74,6 +74,14 @@ public sealed class DimensionHandler : ICommandHandler
                 retryable: false);
         }
 
+        // The view an engineer means is the one on their screen. When it is not
+        // the one that got dimensioned — because the open view is a 3D view, or
+        // a plan on another storey from the room — that is the difference
+        // between "the dimensions are wrong" and "the dimensions are elsewhere",
+        // and only the reply can say which.
+        var openView = doc.ActiveView;
+        var drewElsewhere = openView is not null && openView.Id != view.Id;
+
         var target = command.GetString("what", "all").ToLowerInvariant();
         var offsetFeet = RevitUnits.MmToFeet(command.GetDouble("offset", 1000));
 
@@ -183,6 +191,11 @@ public sealed class DimensionHandler : ICommandHandler
         var used = 0;
         var rejected = 0;
 
+        // Kept so the strings can be selected in Revit afterwards, and so the
+        // reply can say where on the drawing they landed.
+        var survivors = new List<ElementId>();
+        XYZ? where = null;
+
         using var transaction = new Transaction(doc, $"Dimension {view.Name}");
         transaction.Start();
 
@@ -254,11 +267,20 @@ public sealed class DimensionHandler : ICommandHandler
                 }
 
                 var references = dimension.References?.Size ?? 0;
-                if (references < 2 || !drawn.Contains(dimension.Id))
+
+                // Three questions, because each one has caught a different way
+                // of being reported and not being there: does it still hold its
+                // references, does the view list it, and does it occupy any
+                // space on the drawing. A string that draws nothing has no
+                // extent in the view, whatever the other two say.
+                var extent = dimension.get_BoundingBox(view);
+
+                if (references < 2 || !drawn.Contains(dimension.Id) || extent is null)
                 {
                     Logger.Warn(
-                        $"Dimension {dimension.Id} is not drawn in '{view.Name}' "
-                        + $"({references} reference(s), owner view {dimension.OwnerViewId}).");
+                        $"Dimension {dimension.Id} is not on the drawing in '{view.Name}': "
+                        + $"{references} reference(s), listed={drawn.Contains(dimension.Id)}, "
+                        + $"extent={(extent is null ? "none" : "yes")}, owner {dimension.OwnerViewId}.");
                     doc.Delete(dimension.Id);
                     rejected++;
                     continue;
@@ -266,6 +288,15 @@ public sealed class DimensionHandler : ICommandHandler
 
                 created++;
                 used += references;
+                survivors.Add(dimension.Id);
+
+                if (where is null)
+                {
+                    where = new XYZ(
+                        (extent.Min.X + extent.Max.X) / 2,
+                        (extent.Min.Y + extent.Max.Y) / 2,
+                        0);
+                }
             }
 
             transaction.Commit();
@@ -300,6 +331,27 @@ public sealed class DimensionHandler : ICommandHandler
                 retryable: false);
         }
 
+        if (drewElsewhere)
+        {
+            notes.Add(
+                $"Drawn in {Describe(view)}, not in the view open in Revit "
+                + $"({Describe(openView!)}). Open that view to see them.");
+        }
+
+        if (where is not null)
+        {
+            // Where, in project millimetres. A string drawn a mile off the plan
+            // and a string that was never drawn look identical from the chat,
+            // and this is the number that tells them apart.
+            notes.Add(
+                $"Drawn around ({RevitUnits.FeetToMm(where.X):F0}, "
+                + $"{RevitUnits.FeetToMm(where.Y):F0}) mm in {Describe(view)}");
+        }
+
+        // Left selected in Revit: the quickest way to find a dimension is to
+        // have Revit already holding it, so Zoom To Fit lands on it.
+        Select(context, doc, survivors);
+
         Logger.Info($"dimension: {created} string(s) over {used} reference(s) in {view.Name}");
 
         return CommandResult.Ok(new DimensionResultDto
@@ -318,6 +370,31 @@ public sealed class DimensionHandler : ICommandHandler
 
     /// <summary>A view named so it can be found: name, type and id.</summary>
     private static string Describe(View view) => $"{view.Name} · {view.ViewType} (id {view.Id})";
+
+    /// <summary>
+    /// Leaves what was drawn selected in Revit.
+    ///
+    /// An engineer who cannot find the dimensions has no way to tell "drawn
+    /// somewhere unexpected" from "not drawn at all". Revit holding them means
+    /// Zoom To Fit answers that in one keystroke.
+    /// </summary>
+    private static void Select(HandlerContext context, Document doc, List<ElementId> ids)
+    {
+        if (ids.Count == 0) return;
+
+        try
+        {
+            var uiDoc = context.UiApp.ActiveUIDocument;
+            if (uiDoc is null || !uiDoc.Document.Equals(doc)) return;
+
+            uiDoc.Selection.SetElementIds(ids);
+        }
+        catch (Exception ex)
+        {
+            // Cosmetic. Nothing about the drawing depends on it.
+            Logger.Debug($"Could not select the new dimensions: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Takes Revit's own answer to a failure instead of asking the user for one.
