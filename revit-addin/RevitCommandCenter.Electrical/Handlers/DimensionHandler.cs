@@ -234,6 +234,17 @@ public sealed class DimensionHandler : ICommandHandler
             // still open, and count what is left.
             doc.Regenerate();
 
+            // What the view actually draws. A view-scoped collector answers the
+            // only question that matters here — is this string on the drawing —
+            // and it answers it for every reason a string might not be: a
+            // reference Revit dropped, a crop region it fell outside of, a view
+            // it was never really in. Counting what NewDimension returned
+            // answers none of them.
+            var drawn = new HashSet<ElementId>(
+                new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(Dimension))
+                    .ToElementIds());
+
             foreach (var dimension in made)
             {
                 if (!dimension.IsValidObject)
@@ -243,8 +254,11 @@ public sealed class DimensionHandler : ICommandHandler
                 }
 
                 var references = dimension.References?.Size ?? 0;
-                if (references < 2)
+                if (references < 2 || !drawn.Contains(dimension.Id))
                 {
+                    Logger.Warn(
+                        $"Dimension {dimension.Id} is not drawn in '{view.Name}' "
+                        + $"({references} reference(s), owner view {dimension.OwnerViewId}).");
                     doc.Delete(dimension.Id);
                     rejected++;
                     continue;
@@ -279,9 +293,10 @@ public sealed class DimensionHandler : ICommandHandler
         if (created == 0 && made.Count > 0)
         {
             return CommandResult.Fail(
-                $"Revit rejected all {made.Count} dimension string(s) in view '{view.Name}': the "
-                + "references did not survive a regeneration. The families involved may publish no "
-                + "reference planes to dimension to.",
+                $"All {made.Count} dimension string(s) were made and none of them is drawn in "
+                + $"{Describe(view)}. Either the references did not survive a regeneration — the "
+                + "families involved may publish no reference planes to dimension to — or the "
+                + "strings fell outside the view's crop region.",
                 retryable: false);
         }
 
@@ -289,13 +304,20 @@ public sealed class DimensionHandler : ICommandHandler
 
         return CommandResult.Ok(new DimensionResultDto
         {
-            View = view.Name,
+            // Named, typed and numbered. "Level 1" is not one view in a Revit
+            // model — a floor plan and a ceiling plan share the name, and a
+            // string drawn in the one nobody has open is indistinguishable from
+            // no string at all.
+            View = Describe(view),
             DimensionsCreated = created,
             ReferencesUsed = used,
             Targets = targets,
             Notes = notes.Count > 0 ? notes : null,
         });
     }
+
+    /// <summary>A view named so it can be found: name, type and id.</summary>
+    private static string Describe(View view) => $"{view.Name} · {view.ViewType} (id {view.Id})";
 
     /// <summary>
     /// Takes Revit's own answer to a failure instead of asking the user for one.
