@@ -184,6 +184,15 @@ points are now tracked across the whole command, so the second run finds the
 first run's hanger there and leaves it. If the warning still appears, the two
 hangers are more than 50 mm apart — check whether the trays actually meet.
 
+### The hangers sit at the wrong height
+
+They are placed half the tray's height below its location line, which is the
+tray's underside — the tray rests on the support. If they land somewhere else,
+the family's origin is not on its bearing surface; the placement puts the
+family origin at the tray underside and nothing else can be inferred from
+outside the family. Check the tray's height parameter too: a tray reporting a
+height of 0 gets no drop at all.
+
 ### The hangers face the wrong way
 
 Each unhosted hanger is turned so its cross-member is perpendicular to its run,
