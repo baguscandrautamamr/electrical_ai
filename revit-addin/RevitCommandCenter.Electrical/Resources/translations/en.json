@@ -54,6 +54,7 @@
     "not_a_number": "must be a number",
     "not_an_integer": "must be a whole number",
     "out_of_range": "must be between {min} and {max}",
+    "required_one_of": "needs one of: {fields}",
     "not_in_enum": "must be one of: {allowed}",
     "not_a_boolean": "must be true or false",
     "bad_size_format": "bad size format, e.g. 150x100",
@@ -120,6 +121,8 @@
     "load_per_hanger": "Load per hanger",
     "load_capacity": "Capacity",
     "skipped_vertical": "Vertical segments skipped",
+    "elbows_missing": "⚠️ Some corners took no elbow — check them in Revit, the run may be broken there.",
+    "extra_runs": "That line style holds more than one run; the longest was used.",
     "panel_updated": "Panel updated"
   },
   "fire_alarm": {

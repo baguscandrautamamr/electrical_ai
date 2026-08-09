@@ -54,6 +54,7 @@
     "not_a_number": "harus berupa angka",
     "not_an_integer": "harus berupa bilangan bulat",
     "out_of_range": "harus antara {min} dan {max}",
+    "required_one_of": "harus diisi salah satu dari: {fields}",
     "not_in_enum": "harus salah satu dari: {allowed}",
     "not_a_boolean": "harus true atau false",
     "bad_size_format": "format ukuran salah, contoh: 150x100",
@@ -120,6 +121,8 @@
     "load_per_hanger": "Beban per hanger",
     "load_capacity": "Kapasitas",
     "skipped_vertical": "Segmen vertikal dilewati",
+    "elbows_missing": "⚠️ Sebagian belokan tidak bisa dipasangi elbow — cek di Revit, run-nya mungkin terputus di situ.",
+    "extra_runs": "Ada lebih dari satu rangkaian garis pada style itu; yang dipasang adalah yang terpanjang.",
     "panel_updated": "Panel diperbarui"
   },
   "fire_alarm": {

@@ -188,6 +188,8 @@ export function formatCableTray(result: CableTrayResult, ctx: FormatContext): st
     b.links(links);
   }
 
+  appendNotes(b, t, result.notes);
+
   return b.build();
 }
 

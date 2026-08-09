@@ -63,6 +63,8 @@ export function formatValidationIssues(
       } catch {
         message = t('validation.out_of_range', { min: '?', max: '?' });
       }
+    } else if (issue.code === 'required_one_of') {
+      message = t('validation.required_one_of', { fields: issue.detail ?? '' });
     } else if (issue.code === 'not_in_enum') {
       message = t('validation.not_in_enum', { allowed: issue.detail ?? '' });
     } else {

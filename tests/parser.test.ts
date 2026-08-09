@@ -369,7 +369,18 @@ describe('validateParams', () => {
     const outcome = validateParams(cableTray, 'CT-A1', {});
 
     expect(outcome.ok).toBe(false);
-    expect(outcome.issues).toContainEqual({ field: 'from', code: 'required' });
+    expect(outcome.issues).toContainEqual({ field: 'from', code: 'required_one_of', detail: 'from, follow' });
+    expect(outcome.issues).toContainEqual({ field: 'to', code: 'required_one_of', detail: 'to, follow' });
+  });
+
+  it('accepts a tray routed along drawn lines instead of between two places', () => {
+    // "pasang cable tray 300x300 mengikuti thin lines" names neither endpoint,
+    // and is a more precise route than either could be.
+    const outcome = validateParams(cableTray, 'CT-A1', { follow: 'Thin Lines', size: '300x300' });
+
+    expect(outcome.issues).toEqual([]);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.normalized.follow).toBe('Thin Lines');
   });
 
   it('reports a missing required subject', () => {

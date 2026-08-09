@@ -91,6 +91,10 @@ public sealed class CableTrayResultDto
 
     [JsonProperty("exports", NullValueHandling = NullValueHandling.Ignore)]
     public ExportLinksDto? Exports { get; set; }
+
+    /// <summary>i18n keys for anything the engineer should know. See HandlerContext.Warn.</summary>
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
 }
 
 /// <summary>Matches the TypeScript <c>PlacementResult</c>.</summary>

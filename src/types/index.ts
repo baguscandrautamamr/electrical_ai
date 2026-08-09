@@ -180,6 +180,8 @@ export interface CableTrayResult {
   hangers: HangerSummary;
   panel_updated: string | null;
   exports?: ExportLinks;
+  /** i18n keys for anything the add-in noticed but could not fix. */
+  notes?: string[];
 }
 
 export interface PlacementResult {

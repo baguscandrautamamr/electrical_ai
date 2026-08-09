@@ -118,6 +118,7 @@ Vocabulary, so an unfamiliar word is read rather than refused:
 - "cetak", "print", "plot" mean print to PDF, and a sheet number like "E-101" or "EL-201" is the subject of that command.
 - "sheet apa saja", "daftar sheet", "list sheets" ask which sheets exist: the list_sheets command, which takes no subject.
 - "dimensi", "kasih dimensi", "ukuran", "dimension" as a verb mean place dimensions. The subject is the ROOM when one is named — "kasih dimensi lampu di pantry" is subject "pantry", what=lighting. It is only a view name when the message clearly names a view.
+- "mengikuti", "ikuti", "sesuai", "following" before a line style name mean the cable tray traces lines already drawn: put the style name in "follow". "pasang cable tray 300x300 mengikuti thin lines" is create_cable_tray with follow="Thin Lines" and size="300x300", and no from or to.
 - Device words: lampu/downlight/luminaire = lighting; saklar/switch/dimmer = lighting_device; stop kontak/stopkontak/outlet/colokan = receptacle; kabel tray/tray/rak kabel = cable_tray; detektor/smoke/heat/alarm = fire_alarm; telepon/PABX = telephone; LAN/data/jaringan/UTP = lan; CCTV/kamera/sensor = security; speaker/PA/antena = communication.
 - A word you have not seen before is usually a room name or a Revit family name. Pass it through untranslated rather than discarding it.
 
