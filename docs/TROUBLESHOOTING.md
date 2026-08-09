@@ -177,6 +177,22 @@ Two causes, both fixed in the current add-in but worth knowing:
 - **The run was hung twice with `mode=replace`.** Replace clears what it finds
   first, using the same matching, then sets out again.
 
+### "There are identical instances in the same place"
+
+Two runs meeting at a corner both want a support at that corner. Fixed: occupied
+points are now tracked across the whole command, so the second run finds the
+first run's hanger there and leaves it. If the warning still appears, the two
+hangers are more than 50 mm apart — check whether the trays actually meet.
+
+### The hangers face the wrong way
+
+Each unhosted hanger is turned so its cross-member is perpendicular to its run,
+with the family's own drawn direction measured from the first instance placed.
+If they all come out square to the run but rotated 90° from what you want, the
+family's cross-member is not its longest horizontal dimension — that is the
+assumption the measurement makes; see
+[HANGERS.md](HANGERS.md#which-way-the-hanger-faces).
+
 ### Existing hangers were ignored and new ones added alongside
 
 They are further than 50 mm from the ideal stations. That tolerance is

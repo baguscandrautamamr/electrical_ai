@@ -19,6 +19,11 @@ namespace RevitCommandCenter.Electrical.SmartHangers;
 /// does not. Clearing and re-placing on a fixed pitch would silently destroy
 /// that work, so every run reads what is already there first.
 ///
+/// Two things the rules do not say, both of which show up in the model rather
+/// than in the reply: a free-standing hanger is turned so it spans its run
+/// instead of lying along it, and a support point is only ever hung once, even
+/// when two runs meet there and both ask for it.
+///
 /// Nothing here reports success for work it did not do: a run that placed no
 /// hanger says why, and the reason travels back to the chat rather than only
 /// into the log.
@@ -41,6 +46,9 @@ public sealed class SmartHangerPlacement
 
     private readonly Document _doc;
     private readonly string _hangerFamilyName;
+
+    /// <summary>Which axis each type's cross-member spans. See CrossMemberIsAlongX.</summary>
+    private readonly Dictionary<ElementId, bool> _crossMemberAlongX = new();
 
     public SmartHangerPlacement(Document doc, string hangerFamilyName)
     {
@@ -164,6 +172,20 @@ public sealed class SmartHangerPlacement
             ? MapExistingHangers(horizontal)
             : new Dictionary<ElementId, List<double>>();
 
+        // Every support point in the model, and every one this run adds. Gap-fill
+        // is per run, and two runs meeting at a corner both want a support at
+        // that corner — the same point, one from each side. That is where
+        // Revit's "identical instances in the same place" came from: 12 of them
+        // for a route with 12 joints. The list is global for the same reason the
+        // problem is: the second run cannot see the first run's work in a
+        // per-segment view.
+        var occupied = ExistingHangerPoints();
+
+        // Turned after the whole run rather than one at a time: rotating needs
+        // the instance's geometry, and a regenerate per hanger costs more than
+        // the placement itself on a model-wide command.
+        var toTurn = new List<PendingTurn>();
+
         using var transaction = new Transaction(_doc, "Place cable tray hangers (gap-fill)");
         transaction.Start();
 
@@ -196,8 +218,10 @@ public sealed class SmartHangerPlacement
 
                 PlaceOnSegment(
                     segment, match, existing ?? new List<double>(),
-                    spacingMm, fillPercentage, material, outcome);
+                    spacingMm, fillPercentage, material, occupied, toTurn, outcome);
             }
+
+            TurnAcrossRuns(toTurn);
 
             transaction.Commit();
         }
@@ -256,6 +280,8 @@ public sealed class SmartHangerPlacement
         double spacingMm,
         double fillPercentage,
         string material,
+        List<XYZ> occupied,
+        List<PendingTurn> toTurn,
         PlacementOutcome outcome)
     {
         var symbol = match.Symbol!;
@@ -325,7 +351,21 @@ public sealed class SmartHangerPlacement
             try
             {
                 var point = RevitUnits.PointAlong(segment.Start, direction, position);
-                var instance = CreateInstance(point, symbol, segment, level);
+
+                if (IsOccupied(occupied, point))
+                {
+                    // The support exists — it belongs to the run on the other
+                    // side of the joint. Not work skipped, work already done, so
+                    // it comes off the expected count rather than reading as a
+                    // failure to hang this station.
+                    outcome.Expected--;
+                    Logger.Debug(
+                        $"Station at {position:F0} mm on {segment.Element.Id} is already supported.");
+                    continue;
+                }
+
+                var instance = CreateInstance(point, symbol, segment, level, direction, toTurn);
+                occupied.Add(point);
                 var load = LoadAt(position);
 
                 ParameterMapper.TrySetParameters(instance, new Dictionary<string, object>
@@ -383,7 +423,9 @@ public sealed class SmartHangerPlacement
         XYZ point,
         FamilySymbol symbol,
         TraySegment segment,
-        Level? level)
+        Level? level,
+        XYZ direction,
+        List<PendingTurn> toTurn)
     {
         var placementType = symbol.Family?.FamilyPlacementType ?? FamilyPlacementType.OneLevelBased;
 
@@ -395,6 +437,7 @@ public sealed class SmartHangerPlacement
         {
             try
             {
+                // A hosted family is oriented by its host, so it is left alone.
                 return _doc.Create.NewFamilyInstance(
                     point, symbol, segment.Element, StructuralType.NonStructural);
             }
@@ -427,7 +470,89 @@ public sealed class SmartHangerPlacement
         Logger.Debug(
             $"Family '{symbol.Family?.Name}' is not host-based; hanger placed as a free instance.");
 
+        toTurn.Add(new PendingTurn(instance, symbol, point, direction));
+
         return instance;
+    }
+
+    /// <summary>A hanger placed but not yet turned to face its run.</summary>
+    private readonly record struct PendingTurn(
+        FamilyInstance Instance, FamilySymbol Symbol, XYZ Point, XYZ Direction);
+
+    /// <summary>
+    /// Turns every free-standing hanger so its cross-member spans its run.
+    ///
+    /// An unhosted instance is created facing whichever way the family was
+    /// drawn — the same way for every hanger in the model, whatever direction
+    /// the tray under it runs. On a north-south run that reads as correct and on
+    /// an east-west one the trapeze lies along the tray instead of across it,
+    /// carrying nothing. That is what "orientasi hanger salah" was.
+    ///
+    /// Which way the family was drawn is measured rather than assumed: the
+    /// instances are all still unrotated here, so the longer horizontal side of
+    /// the first one of each type is taken as its cross-member. Assuming the
+    /// family's X axis would be right for some offices' content and silently
+    /// wrong for others.
+    /// </summary>
+    private void TurnAcrossRuns(List<PendingTurn> pending)
+    {
+        if (pending.Count == 0) return;
+
+        // One regenerate for the whole run: the instances were created this
+        // transaction and have no geometry to measure until Revit builds it.
+        _doc.Regenerate();
+
+        foreach (var turn in pending)
+        {
+            try
+            {
+                var crossAlongX = CrossMemberIsAlongX(turn.Symbol, turn.Instance);
+
+                // Perpendicular to the run in plan, less however the family is
+                // already turned.
+                var rotation = Math.Atan2(turn.Direction.Y, turn.Direction.X)
+                    + Math.PI / 2
+                    - (crossAlongX ? 0 : Math.PI / 2);
+
+                // A half turn puts a symmetric trapeze back where it started, and
+                // for an asymmetric one the family's own facing is a better guess
+                // than ours. Only the quarter matters.
+                rotation = Math.IEEERemainder(rotation, Math.PI);
+                if (Math.Abs(rotation) < 1e-9) continue;
+
+                ElementTransformUtils.RotateElement(
+                    _doc,
+                    turn.Instance.Id,
+                    Line.CreateBound(turn.Point, turn.Point + XYZ.BasisZ),
+                    rotation);
+            }
+            catch (Exception ex)
+            {
+                // A hanger facing the wrong way is still worth more than no
+                // hanger, so this does not undo the placement.
+                Logger.Warn($"Could not turn hanger {turn.Instance.Id} to its run: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether this type's cross-member runs along the family's X axis, from the
+    /// bounding box of an instance that has not been turned yet. Measured once
+    /// per type.
+    /// </summary>
+    private bool CrossMemberIsAlongX(FamilySymbol symbol, FamilyInstance unturned)
+    {
+        if (_crossMemberAlongX.TryGetValue(symbol.Id, out var known)) return known;
+
+        var box = unturned.get_BoundingBox(null);
+        var alongX = box is null || (box.Max.X - box.Min.X) >= (box.Max.Y - box.Min.Y);
+
+        _crossMemberAlongX[symbol.Id] = alongX;
+        Logger.Info(
+            $"Hanger type '{symbol.Name}' spans its {(alongX ? "X" : "Y")} axis; "
+            + "turning each instance across its run.");
+
+        return alongX;
     }
 
     /// <summary>The level a tray belongs to, for placing level-based hangers.</summary>
@@ -472,6 +597,29 @@ public sealed class SmartHangerPlacement
 
         return positions;
     }
+
+    /// <summary>
+    /// Whether a support already stands at this point, from any run.
+    ///
+    /// The same 50 mm that makes gap-fill work along a run: a hanger 13 mm away
+    /// is the same support, not a second one.
+    /// </summary>
+    private static bool IsOccupied(List<XYZ> occupied, XYZ point)
+    {
+        var tolerance = RevitUnits.MmToFeet(HangerPositionCalculator.DefaultToleranceMm);
+        return occupied.Any(taken => taken.DistanceTo(point) < tolerance);
+    }
+
+    /// <summary>Insertion points of every hanger of this family in the model.</summary>
+    private List<XYZ> ExistingHangerPoints() =>
+        new FilteredElementCollector(_doc)
+            .OfClass(typeof(FamilyInstance))
+            .Cast<FamilyInstance>()
+            .Where(instance => HangerTypeDetector.IsHangerFamily(instance, _hangerFamilyName))
+            .Select(instance => (instance.Location as LocationPoint)?.Point)
+            .Where(point => point is not null)
+            .Select(point => point!)
+            .ToList();
 
     /// <summary>One hanger already in the model, and where it sits on its run.</summary>
     public readonly record struct ExistingHanger(ElementId Id, double AlongMm);

@@ -75,6 +75,20 @@ Existing hangers are located by projecting them onto the run's axis rather than
 by straight-line distance, so a hanger modelled slightly off-axis still resolves
 to the right station instead of reading as a gap.
 
+### 2a. One support per point, across every run
+
+Gap-fill is worked out per run, and `calculateExpectedPositions` always supports
+both ends. Two runs meeting at a corner therefore both want a support *at that
+corner* — the same point, once from each side. Revit reports that as **"There
+are identical instances in the same place. This will result in double counting
+in schedules."**, one warning per joint.
+
+So the occupied points are tracked for the whole command, not per run: every
+hanger already in the model, plus every one this command places. A station
+already carrying a support within the same 50 mm is not hung again, and it comes
+off the expected count rather than reading as a station that failed — the
+support is there, it just belongs to the run on the other side of the joint.
+
 ### 3. Horizontal runs only
 
 Hangers support horizontal tray. Vertical drops are held by a different detail.
@@ -197,6 +211,26 @@ So the family is asked how it wants to be placed
 (`Family.FamilyPlacementType`) and placed that way, falling back to the other
 route if Revit refuses. A level-based instance is placed on the tray's own level
 with its elevation set to the tray, not the floor.
+
+### Which way the hanger faces
+
+A free-standing instance is created facing whichever way the family was drawn —
+the same way for every hanger in the model, whatever direction the tray under it
+runs. On a north-south run that reads as correct; on an east-west one the
+trapeze lies *along* the tray instead of across it, and the hanger carries
+nothing.
+
+Each unhosted hanger is therefore turned about its own vertical axis until its
+cross-member is perpendicular to the run in plan. Which way the family was drawn
+is measured, not assumed: the first instance of each type is created unrotated
+and its longer horizontal side is taken as the cross-member. Assuming the
+family's X axis would be right for some offices' content and silently wrong for
+others, and "silently wrong" is the failure mode this whole feature keeps
+running into.
+
+A half turn is skipped — it puts a symmetric trapeze back where it started, and
+for an asymmetric one the family's drawn facing is the better guess than ours.
+A hosted family is oriented by its host and left alone.
 
 ### Finding what is already there
 
