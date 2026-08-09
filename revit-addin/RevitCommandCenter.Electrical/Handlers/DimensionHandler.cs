@@ -265,14 +265,15 @@ public sealed class DimensionHandler : ICommandHandler
             // Revit's own reason, when it gave one, rather than a guess about
             // references. The notes carry it; the error line names it too so it
             // is the first thing read.
-            var refusal = notes.FirstOrDefault(note => note.StartsWith("Revit: ", StringComparison.Ordinal));
+            var refusal = notes.FirstOrDefault(note =>
+                note.StartsWith("Revit", StringComparison.Ordinal));
 
             return CommandResult.Fail(
                 $"Revit did not keep any of the {strings.Count} dimension string(s) in "
                 + $"{Describe(view)} — the transaction came back {status}."
                 + (refusal is null
-                    ? " It gave no reason, which usually means the references given to the strings "
-                      + "did not survive the commit."
+                    ? " It raised no error and threw nothing, which leaves the references given to "
+                      + "the strings as the only candidate."
                     : $" {refusal}"),
                 retryable: false);
         }
@@ -420,41 +421,73 @@ public sealed class DimensionHandler : ICommandHandler
         {
             foreach (var strand in strings)
             {
-                var placed = Place(doc, view, strand.Chain, strand.Line);
+                var placed = Place(doc, view, strand.Chain, strand.Line, notes);
                 if (placed is null) continue;
 
                 made.Add(placed);
                 ids.Add(placed.Id);
             }
 
+            if (made.Count == 0)
+            {
+                // Revit refused every one of them at creation. The reasons are
+                // already on the notes; rolling back keeps the model clean.
+                transaction.RollBack();
+                status = TransactionStatus.RolledBack;
+                return kept;
+            }
+
             // Drop the ones that draw nothing before committing, so a string
             // that lost its references cannot take the commit down with it.
-            doc.Regenerate();
-
-            var drawing = new HashSet<ElementId>(
-                new FilteredElementCollector(doc, view.Id)
-                    .OfClass(typeof(Dimension))
-                    .ToElementIds());
-
-            var dead = made
-                .Where(dimension => !dimension.IsValidObject
-                                    || (dimension.References?.Size ?? 0) < 2
-                                    || !drawing.Contains(dimension.Id))
-                .Select(dimension => dimension.Id)
-                .ToList();
-
-            if (dead.Count > 0)
+            // The regenerate is where a bad reference surfaces, and it can
+            // throw rather than fail politely — so it gets its own handling,
+            // and what it says goes on the reply.
+            try
             {
-                Logger.Warn($"dimension: {dead.Count} string(s) drew nothing; removing before commit.");
-                doc.Delete(dead);
+                doc.Regenerate();
+            }
+            catch (Exception ex)
+            {
+                Blame("Revit could not regenerate the view with these strings", ex, notes);
+                doc.Delete(ids);
+                ids.Clear();
+                made.Clear();
+                doc.Regenerate();
+            }
+
+            if (made.Count > 0)
+            {
+                var drawing = new HashSet<ElementId>(
+                    new FilteredElementCollector(doc, view.Id)
+                        .OfClass(typeof(Dimension))
+                        .ToElementIds());
+
+                var dead = made
+                    .Where(dimension => !dimension.IsValidObject
+                                        || (dimension.References?.Size ?? 0) < 2
+                                        || !drawing.Contains(dimension.Id))
+                    .Select(dimension => dimension.Id)
+                    .ToList();
+
+                if (dead.Count > 0)
+                {
+                    Logger.Warn(
+                        $"dimension: {dead.Count} string(s) drew nothing; removing before commit.");
+                    doc.Delete(dead);
+                }
             }
 
             status = transaction.Commit();
         }
         catch (Exception ex)
         {
+            // The one that has been hiding all along. An exception here set the
+            // status to RolledBack and put its message in a log file on a
+            // machine nobody is sitting at, so the reply said "it gave no
+            // reason" — while Revit had given one.
+            Blame("Revit threw while the strings were being made", ex, notes);
+
             if (transaction.HasStarted()) transaction.RollBack();
-            Logger.Error("dimension rolled back", ex);
             status = TransactionStatus.RolledBack;
             return kept;
         }
@@ -1606,7 +1639,12 @@ public sealed class DimensionHandler : ICommandHandler
     /// failing should still leave the other one drawn, and an engineer with
     /// half the dimensions is better off than one with none and an error.
     /// </summary>
-    private static Dimension? Place(Document doc, View view, List<Anchor> chain, Line line)
+    private static Dimension? Place(
+        Document doc,
+        View view,
+        List<Anchor> chain,
+        Line line,
+        List<string> notes)
     {
         if (chain.Count < 2) return null;
 
@@ -1619,8 +1657,23 @@ public sealed class DimensionHandler : ICommandHandler
         }
         catch (Exception ex)
         {
-            Logger.Warn($"Revit refused a dimension string over {chain.Count} references: {ex.Message}");
+            Blame($"Revit refused a string over {chain.Count} references", ex, notes);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Puts what Revit said on the reply, once, and in the log.
+    ///
+    /// Every failure path in this handler used to log its reason and report a
+    /// number. That is how six rounds went by with "it gave no reason" while
+    /// Revit was giving one every time.
+    /// </summary>
+    private static void Blame(string what, Exception ex, List<string> notes)
+    {
+        var text = $"{what}: {ex.Message}";
+
+        if (!notes.Contains(text)) notes.Add(text);
+        Logger.Error(what, ex);
     }
 }
