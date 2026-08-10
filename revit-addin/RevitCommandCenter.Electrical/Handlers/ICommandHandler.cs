@@ -70,6 +70,19 @@ public sealed class HandlerContext
             return $"{Config.ExportBaseUrl.TrimEnd('/')}/{Uri.EscapeDataString(fileName)}";
         }
 
+        // Nothing here can carry the file off this machine: no Cloudinary, no
+        // served export folder, and (for a website command) no chat either. The
+        // export still ran, and the path below is still correct — but on a phone
+        // it is a string that opens nothing, and the reply gives no hint why.
+        //
+        // Said here rather than left to be noticed: the setting that fixes it is
+        // three lines in the add-in's config, and without this warning the only
+        // symptom is a link that is not a link.
+        if (!Config.HasCloudinary)
+        {
+            Warn("export.local_only");
+        }
+
         return localPath;
     }
 
