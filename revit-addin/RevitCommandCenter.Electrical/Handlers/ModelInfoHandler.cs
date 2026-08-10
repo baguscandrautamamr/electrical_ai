@@ -58,14 +58,6 @@ public sealed class ModelInfoHandler : ICommandHandler
     }
 
     /// <summary>
-    /// Names of every saved setup of one kind, in the order a person reading a
-    /// dropdown would expect.
-    ///
-    /// A model with none is normal — Revit only creates these once somebody
-    /// saves one — so an empty list is an answer, not a failure. The website
-    /// falls back to Revit's own defaults when it gets one.
-    /// </summary>
-    /// <summary>
     /// Versi DLL add-in yang sedang berjalan.
     ///
     /// Ada di sini karena tidak adanya membuat setiap perbaikan sulit
@@ -74,9 +66,35 @@ public sealed class ModelInfoHandler : ICommandHandler
     /// mengenalinya, lalu berjalan seperti sebelumnya. Gejalanya identik dengan
     /// perbaikan yang tidak bekerja, dan berhari-hari bisa habis untuk mengejar
     /// bug yang sudah lama diperbaiki tapi belum terpasang.
+    ///
+    /// Tanggal berkas DLL-nya ikut karena nomor versinya sendiri tidak pernah
+    /// berubah: csproj tidak menyetel Version, jadi setiap build sejak yang
+    /// pertama adalah 1.0.0.0 dan angka itu tidak bisa membedakan build hari ini
+    /// dari build bulan lalu — persis pertanyaan yang perlu dijawab. Tanggalnya
+    /// terbaca sekilas dan tidak menuntut apa pun dari CI.
     /// </summary>
-    private static string AddinVersion() =>
-        typeof(ModelInfoHandler).Assembly.GetName().Version?.ToString() ?? "unknown";
+    private static string AddinVersion()
+    {
+        var version = typeof(ModelInfoHandler).Assembly.GetName().Version?.ToString() ?? "unknown";
+        var built = BuiltAt();
+        return built is null ? version : $"{version} ({built})";
+    }
+
+    /// <summary>Tanggal tulis DLL add-in, atau null kalau tak terbaca.</summary>
+    private static string? BuiltAt()
+    {
+        try
+        {
+            var path = typeof(ModelInfoHandler).Assembly.Location;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+            return File.GetLastWriteTime(path).ToString("yyyy-MM-dd");
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug($"Could not read the add-in build date: {ex.Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// Kategori yang punya field "tipe" di form website, dan nama yang dipakai
@@ -151,6 +169,14 @@ public sealed class ModelInfoHandler : ICommandHandler
             .Take(500)
             .ToList();
 
+    /// <summary>
+    /// Names of every saved setup of one kind, in the order a person reading a
+    /// dropdown would expect.
+    ///
+    /// A model with none is normal — Revit only creates these once somebody
+    /// saves one — so an empty list is an answer, not a failure. The website
+    /// falls back to Revit's own defaults when it gets one.
+    /// </summary>
     private static List<string> Names<T>(Document doc) where T : Element =>
         new FilteredElementCollector(doc)
             .OfClass(typeof(T))
