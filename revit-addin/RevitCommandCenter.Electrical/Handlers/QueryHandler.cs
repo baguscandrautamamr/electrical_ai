@@ -182,14 +182,11 @@ public sealed class QueryHandler : ICommandHandler
                     HangerTypeDetector.IsHangerFamily(instance, context.Config.HangerFamilyName));
         }
 
-        var collector = new FilteredElementCollector(doc)
-            .OfCategory(target.Category.Value)
-            .WhereElementIsNotElementType();
-
         // Room DAN Space MEP: keduanya "ruangan" bagi orang yang bertanya, dan
-        // model MEP yang sungguhan hampir selalu punya keduanya. Yang belum
-        // ditempatkan dibuang di dalam Enclosures — luasnya nol dan tidak ada
-        // yang bisa melihatnya di gambar.
+        // model MEP yang sungguhan hampir selalu punya keduanya. Satu kategori
+        // saja tidak cukup, jadi jalannya tidak lewat collector di bawah. Yang
+        // belum ditempatkan dibuang di dalam Enclosures — luasnya nol dan tidak
+        // ada yang bisa melihatnya di gambar.
         if (target.Key == "room")
         {
             return RevitUtils.Enclosures(doc);
@@ -206,7 +203,10 @@ public sealed class QueryHandler : ICommandHandler
                 .OrderBy(sheet => sheet.SheetNumber, StringComparer.OrdinalIgnoreCase);
         }
 
-        return collector.ToElements();
+        return new FilteredElementCollector(doc)
+            .OfCategory(target.Category.Value)
+            .WhereElementIsNotElementType()
+            .ToElements();
     }
 
     private static Level? FindLevel(Document doc, string name) =>
