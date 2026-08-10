@@ -176,7 +176,7 @@ public static class CloudinaryUploader
             }
 
             Logger.Info($"Uploaded '{Path.GetFileName(localPath)}' to Cloudinary.");
-            return UploadOutcome.Uploaded(url!);
+            return UploadOutcome.Uploaded(url!, await UndeliverableAsync(url!, ct).ConfigureAwait(false));
         }
         catch (Exception ex)
         {
@@ -195,10 +195,63 @@ public static class CloudinaryUploader
     /// "Cloudinary refused it (HTTP 401): Invalid Signature" tells them their
     /// keys were rotated; silence tells them nothing.
     /// </summary>
-    public readonly record struct UploadOutcome(string? Url, string? Error)
+    public readonly record struct UploadOutcome(string? Url, string? Error, string? Warning)
     {
-        public static UploadOutcome Uploaded(string url) => new(url, null);
-        public static UploadOutcome Failed(string error) => new(null, error);
+        public static UploadOutcome Uploaded(string url, string? warning = null) =>
+            new(url, null, warning);
+
+        public static UploadOutcome Failed(string error) => new(null, error, null);
+    }
+
+    /// <summary>
+    /// Menanyakan tautan yang baru dibuat itu kepada Cloudinary, dan
+    /// mengembalikan alasannya kalau ia menolak mengirimkannya.
+    ///
+    /// Diunggah dan bisa diunduh adalah dua izin yang berbeda, dan tidak ada
+    /// satu pun tanda di jawaban unggahan kalau yang kedua tidak diberikan:
+    /// Cloudinary menjawab 200 beserta secure_url, lalu menolak permintaan
+    /// pertama ke URL itu dengan 401. Penolakan itu terjadi di tempat yang
+    /// paling jauh dari sini — di peramban orang lain, beberapa menit kemudian,
+    /// sebagai "Halaman ini tidak berfungsi" tanpa menyebut Cloudinary.
+    ///
+    /// Sebab yang paling sering: pengiriman berkas PDF dan ZIP dimatikan secara
+    /// bawaan pada akun Cloudinary, di Settings → Security → Restricted media
+    /// types. Nama setelan itu ikut disebutkan di pesannya, karena tanpa itu
+    /// "HTTP 401" mengarahkan kecurigaan ke kunci — dan kuncinya justru baru saja
+    /// terbukti benar oleh unggahan yang berhasil.
+    ///
+    /// HEAD, bukan GET: yang ditanyakan izinnya, bukan isinya, dan berkasnya
+    /// baru saja dikirim dari mesin ini.
+    /// </summary>
+    private static async Task<string?> UndeliverableAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode) return null;
+
+            var status = (int)response.StatusCode;
+            Logger.Warn($"Cloudinary menolak mengirimkan '{url}' (HTTP {status}).");
+
+            var advice = status is 401 or 403
+                ? " Buka Cloudinary → Settings → Security → Restricted media types "
+                    + "dan matikan pembatasan untuk PDF; secara bawaan akun baru "
+                    + "tidak mengizinkan PDF diunduh."
+                : string.Empty;
+
+            return $"Berkasnya terunggah, tapi Cloudinary menolak mengirimkannya "
+                + $"(HTTP {status}).{advice}";
+        }
+        catch (Exception ex)
+        {
+            // Jaringan mesin ini, bukan izin di Cloudinary. Unggahannya sudah
+            // berhasil, dan menuduhnya gagal karena pemeriksaan ini tidak jalan
+            // akan menyesatkan.
+            Logger.Debug($"Tidak bisa memeriksa tautan '{url}': {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>Parameter sebagai query string.</summary>
