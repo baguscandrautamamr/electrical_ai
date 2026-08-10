@@ -651,14 +651,34 @@ public static class RevitUtils
     }
 
     /// <summary>
-    /// Apakah sebuah titik berada di dalam ruangan ini.
+    /// Apakah sebuah titik berada di dalam batas ruangan ini, dilihat di denah.
     /// </summary>
     /// <remarks>
-    /// Revit tidak menyediakan satu metode untuk keduanya: Room punya
-    /// <c>IsPointInRoom</c> dan Space punya <c>IsPointInSpace</c>, dan tidak ada
-    /// yang diwarisi dari SpatialElement. Perbedaan itu berhenti di sini,
-    /// supaya sisa add-in tidak perlu tahu ia sedang bekerja di ruangan
-    /// arsitektur atau di space MEP.
+    /// Dua hal diselesaikan di satu tempat ini.
+    ///
+    /// Pertama: Revit tidak menyediakan satu metode untuk Room dan Space. Room
+    /// punya <c>IsPointInRoom</c>, Space punya <c>IsPointInSpace</c>, dan tak
+    /// satu pun diwarisi dari SpatialElement. Perbedaan itu berhenti di sini.
+    ///
+    /// Kedua, dan ini yang pernah menyebabkan salah hitung: kedua metode itu
+    /// menguji VOLUME, bukan batas di denah. Sebuah ruangan dibatasi di atas
+    /// oleh Upper Limit dan Limit Offset-nya, dan banyak template Revit memberi
+    /// ruangan tinggi bawaan 8 kaki (2,44 m). Downlight yang dipasang pada 3 m
+    /// jatuh DI ATAS volume ruangan itu — jadi lampu yang jelas berada di dalam
+    /// ruangan pada gambar terbaca sebagai bukan miliknya.
+    ///
+    /// Akibatnya adalah kegagalan yang paling sulit dilihat: /delete_devices
+    /// tidak menemukan apa pun untuk dihapus dan melaporkan nol tanpa galat,
+    /// /modify_devices lalu menambahkan tata letak baru di atas yang lama, dan
+    /// /query melaporkan ruangan yang kosong padahal tidak. Tak satu pun dari
+    /// ketiganya menyebut ketinggian, karena tak satu pun tahu itu sebabnya.
+    ///
+    /// Karena itu Z-nya diganti dengan satu titik yang pasti ada di dalam
+    /// ruangan — dasar kotak pembatasnya — sehingga yang benar-benar diuji
+    /// adalah batas denahnya. Untuk add-in listrik itulah pertanyaan yang
+    /// dimaksud setiap kali: perangkat ini di ruangan yang mana. Sebuah armatur
+    /// plafon adalah milik ruangan di bawahnya, seberapa pun tinggi ruangan itu
+    /// dimodelkan.
     ///
     /// Keduanya melempar — bukan mengembalikan false — untuk ruangan yang
     /// geometrinya tidak tertutup, jadi lemparan itu ditangkap di satu tempat.
@@ -667,10 +687,12 @@ public static class RevitUtils
     {
         try
         {
+            var probe = AtFloorLevel(enclosure, point);
+
             return enclosure switch
             {
-                Room room => room.IsPointInRoom(point),
-                Autodesk.Revit.DB.Mechanical.Space space => space.IsPointInSpace(point),
+                Room room => room.IsPointInRoom(probe),
+                Autodesk.Revit.DB.Mechanical.Space space => space.IsPointInSpace(probe),
                 // Tidak akan terjadi selama yang dikumpulkan hanya dua kategori
                 // itu. Kalau nanti terjadi, kotak pembatas adalah jawaban yang
                 // jujur — ia yang dipakai untuk membangkitkan titiknya — dan
@@ -685,6 +707,20 @@ public static class RevitUtils
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Titik yang sama, dipindahkan ke ketinggian yang pasti di dalam ruangan.
+    ///
+    /// Sedikit di atas dasar kotak pembatas, bukan tepat di dasarnya: tepat di
+    /// bidang lantai adalah kasus batas, dan 30 mm ke dalam menjauhinya tanpa
+    /// mendekati batas atas mana pun. Angka yang sama sudah dipakai
+    /// <see cref="GridPoints"/> untuk menyaring sel di ruangan berbentuk L.
+    /// </summary>
+    private static XYZ AtFloorLevel(SpatialElement enclosure, XYZ point)
+    {
+        var box = enclosure.get_BoundingBox(null);
+        return box is null ? point : new XYZ(point.X, point.Y, box.Min.Z + 0.1);
     }
 
     /// <summary>
