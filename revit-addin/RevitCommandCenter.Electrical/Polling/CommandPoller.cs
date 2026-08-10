@@ -370,6 +370,7 @@ public sealed class CommandPoller : IDisposable
                     _config.CloudinaryApiSecret,
                     _config.CloudinaryFolder,
                     upload.LocalPath,
+                    _config.CloudinaryUploadPreset,
                     token)
                 .ConfigureAwait(false);
 
