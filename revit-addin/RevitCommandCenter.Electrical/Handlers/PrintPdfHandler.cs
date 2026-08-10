@@ -259,3 +259,4 @@ public sealed class PrintPdfHandler : ICommandHandler
             Path.GetFileName(file).StartsWith(stem, StringComparison.OrdinalIgnoreCase));
     }
 
+}
