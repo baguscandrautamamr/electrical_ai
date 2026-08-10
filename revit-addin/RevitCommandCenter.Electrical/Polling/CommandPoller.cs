@@ -273,7 +273,7 @@ public sealed class CommandPoller : IDisposable
     /// serialised payload rather than by reaching back into the handler,
     /// because by this point the handler has finished and its context is gone.
     /// </summary>
-    private static CommandResult WithNote(CommandResult result, string note)
+    private static CommandResult WithNote(CommandResult result, string note, string? detail = null)
     {
         try
         {
@@ -283,6 +283,8 @@ public sealed class CommandPoller : IDisposable
             var notes = payload["notes"] as JArray ?? new JArray();
             if (!notes.Any(existing => (string?)existing == note)) notes.Add(note);
             payload["notes"] = notes;
+
+            if (!string.IsNullOrWhiteSpace(detail)) payload["upload_error"] = detail;
 
             return new CommandResult
             {
@@ -357,10 +359,11 @@ public sealed class CommandPoller : IDisposable
         }
 
         var files = new JArray();
+        string? firstError = null;
 
         foreach (var upload in outcome.PendingUploads)
         {
-            var url = await CloudinaryUploader
+            var attempt = await CloudinaryUploader
                 .UploadAsync(
                     _config.CloudinaryCloudName,
                     _config.CloudinaryApiKey,
@@ -370,12 +373,16 @@ public sealed class CommandPoller : IDisposable
                     token)
                 .ConfigureAwait(false);
 
-            if (url is null) continue;
+            if (attempt.Url is null)
+            {
+                firstError ??= attempt.Error;
+                continue;
+            }
 
             files.Add(new JObject
             {
                 ["name"] = Path.GetFileName(upload.LocalPath),
-                ["url"] = url,
+                ["url"] = attempt.Url,
             });
         }
 
@@ -389,9 +396,12 @@ public sealed class CommandPoller : IDisposable
             // Dua sebab yang sangat berbeda, satu gejala.
             Logger.Warn(
                 $"Cloudinary is configured but all {outcome.PendingUploads.Count} upload(s) failed; "
-                + "the export stays on this machine.");
+                + $"the export stays on this machine. {firstError}");
 
-            return WithNote(result, "export.upload_failed");
+            // Alasannya ikut, bukan hanya kunci i18n-nya. "Invalid Signature"
+            // dan "quota exceeded" menuntut dua tindakan yang sama sekali
+            // berbeda, dan tanpa kalimat itu keduanya tampil identik.
+            return WithNote(result, "export.upload_failed", firstError);
         }
 
         try
