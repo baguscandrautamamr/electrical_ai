@@ -1,4 +1,5 @@
 using Autodesk.Revit.UI;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Database;
@@ -228,9 +229,27 @@ public sealed class CommandPoller : IDisposable
 
             await _repository.ReportAsync(command, result, token).ConfigureAwait(false);
 
+            // Chat mana yang perlu tahu: chat yang mengirim perintahnya, atau —
+            // untuk perintah dari website — chat yang ditautkan si pengirim.
+            var chat = await NotifyChatAsync(command, token).ConfigureAwait(false);
+
+            // Ringkasannya hanya untuk perintah dari website. Perintah dari bot
+            // sudah dijawab oleh bot itu sendiri di chat yang sama, jadi pesan
+            // kedua dari sini cuma menggandakan yang sudah dibaca.
+            if (chat is { } target && command.ChatId is null)
+            {
+                await TelegramUploader
+                    .SendMessageAsync(
+                        _config.TelegramBotToken,
+                        target,
+                        CommandSummary.Describe(command, result),
+                        token)
+                    .ConfigureAwait(false);
+            }
+
             // Files go after the result, so the chat reads "printed E-101" and
             // then the drawing, rather than a document arriving out of nowhere.
-            await SendFilesAsync(command, outcome.PendingUploads, token).ConfigureAwait(false);
+            await SendFilesAsync(chat, outcome.PendingUploads, token).ConfigureAwait(false);
 
             if (outcome.Result.Success) CommandsProcessed++;
             else CommandsFailed++;
@@ -459,7 +478,8 @@ public sealed class CommandPoller : IDisposable
     }
 
     /// <summary>
-    /// Sends the files a handler wrote to the chat that asked for them.
+    /// Sends the files a handler wrote to the chat that asked for them, or — for
+    /// a command from the website — to the chat its sender linked.
     ///
     /// A failure is logged and not raised: the file is on the disk of the
     /// machine running Revit either way, and losing the delivery is not worth
@@ -467,15 +487,15 @@ public sealed class CommandPoller : IDisposable
     /// and this log line says why it did not arrive.
     /// </summary>
     private async Task SendFilesAsync(
-        CommandModel command,
+        long? chat,
         List<Handlers.HandlerContext.PendingUpload> uploads,
         CancellationToken token)
     {
         if (uploads.Count == 0 || !_config.SendFilesToTelegram) return;
 
-        if (command.ChatId is not { } chatId)
+        if (chat is not { } chatId)
         {
-            Logger.Warn("Command carries no chat_id; the generated files stay on this machine.");
+            Logger.Warn("No Telegram chat for this command; the generated files stay on this machine.");
             return;
         }
 
@@ -486,6 +506,58 @@ public sealed class CommandPoller : IDisposable
                     _config.TelegramBotToken, chatId, upload.LocalPath, upload.ContentType, token)
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Chat Telegram yang perlu diberi tahu tentang perintah ini, atau null
+    /// kalau tidak ada.
+    /// </summary>
+    /// <remarks>
+    /// Perintah dari bot membawa chat-nya sendiri, dan itu selesai. Yang dari
+    /// website tidak membawa apa pun: satu-satunya tempat hasilnya muncul adalah
+    /// tab yang mengirimnya, dan cetak 40 sheet yang dikirim lalu ditinggal ke
+    /// lapangan tidak punya cara memberi tahu siapa pun bahwa ia sudah jalan.
+    ///
+    /// Nomornya dibaca dari baris <c>users</c> milik pengirim, bukan dari
+    /// perintahnya: dengan begitu satu-satunya orang yang bisa menentukan ke mana
+    /// hasil sebuah perintah dikirim adalah orang yang mengirim perintah itu,
+    /// lewat halaman Riwayat di akunnya sendiri. Sebuah perintah tidak bisa
+    /// menyebutkan chat tujuan, jadi tidak ada perintah yang bisa mengirim hasil
+    /// ke chat orang lain.
+    ///
+    /// Belum ditautkan berarti null, dan null berarti tidak ada yang dikirim —
+    /// keadaan yang sama seperti sebelum fitur ini ada.
+    /// </remarks>
+    private async Task<long?> NotifyChatAsync(CommandModel command, CancellationToken token)
+    {
+        if (command.ChatId is { } fromBot) return fromBot;
+
+        if (!_config.NotifyWebCommands) return null;
+        if (string.IsNullOrWhiteSpace(_config.TelegramBotToken)) return null;
+        if (string.IsNullOrWhiteSpace(command.UserId)) return null;
+
+        try
+        {
+            var rows = await _supabase.SelectAsync<LinkedChatRow>(
+                "users",
+                $"select=telegram_user_id&id=eq.{Uri.EscapeDataString(command.UserId)}&limit=1",
+                token).ConfigureAwait(false);
+
+            return rows.Count > 0 ? rows[0].TelegramUserId : null;
+        }
+        catch (Exception ex)
+        {
+            // Perintahnya sudah dijalankan dan sudah dilaporkan; kehilangan
+            // pemberitahuannya tidak boleh menjatuhkan siklus polling.
+            Logger.Warn($"Could not look up a Telegram chat for user {command.UserId}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Satu kolom dari <c>users</c>: chat yang ditautkan, kalau ada.</summary>
+    private sealed class LinkedChatRow
+    {
+        [JsonProperty("telegram_user_id")] public long? TelegramUserId { get; set; }
     }
 
     private async Task FlushPendingRowsAsync(

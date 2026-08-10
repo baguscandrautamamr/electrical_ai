@@ -76,6 +76,24 @@ public sealed class AddinConfig
     public string TelegramBotToken { get; set; } = string.Empty;
 
     /// <summary>
+    /// Kabari lewat Telegram saat perintah dari website selesai.
+    ///
+    /// Perintah dari bot sudah dijawab oleh bot itu sendiri di chat yang
+    /// mengirimnya. Perintah dari website tidak: satu-satunya tempat hasilnya
+    /// muncul adalah halaman yang mengirimnya, dan siapa pun yang menutup tab
+    /// itu — atau mengirim cetak 40 sheet lalu pergi ke lapangan — tidak punya
+    /// cara tahu perintahnya sudah jalan sampai ia kembali dan membukanya lagi.
+    ///
+    /// Yang dikirimi adalah chat orang yang mengirim perintahnya, bukan chat
+    /// mana pun yang lain: nomornya dibaca dari <c>users.telegram_user_id</c>
+    /// milik user itu, yang hanya terisi kalau ia sendiri menautkannya di
+    /// halaman Riwayat. Belum ditautkan berarti tidak ada yang dikirim, dan
+    /// tidak ada yang gagal.
+    /// </summary>
+    [JsonProperty("notify_web_commands")]
+    public bool NotifyWebCommands { get; set; } = true;
+
+    /// <summary>
     /// Cloudinary account that generated files are uploaded to.
     ///
     /// This is what makes an export reach the website. A command from the
@@ -231,6 +249,7 @@ public sealed class AddinConfig
         ExportBaseUrl = other.ExportBaseUrl;
         SendFilesToTelegram = other.SendFilesToTelegram;
         TelegramBotToken = other.TelegramBotToken;
+        NotifyWebCommands = other.NotifyWebCommands;
         CloudinaryCloudName = other.CloudinaryCloudName;
         CloudinaryApiKey = other.CloudinaryApiKey;
         CloudinaryApiSecret = other.CloudinaryApiSecret;

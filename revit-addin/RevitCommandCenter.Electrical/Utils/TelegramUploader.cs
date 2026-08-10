@@ -105,6 +105,59 @@ public static class TelegramUploader
     }
 
     /// <summary>
+    /// Sends one line of text to a chat. False when it did not arrive, having
+    /// already logged why.
+    /// </summary>
+    /// <remarks>
+    /// Telegram refuses <c>sendMessage</c> to someone who has never opened a
+    /// conversation with the bot — "bot can't initiate conversation with a user".
+    /// That refusal is the thing keeping a mistyped chat id from reaching a
+    /// stranger, so it is logged as a warning with the id in it rather than
+    /// swallowed: a notification that never arrives and a notification that
+    /// arrived at the wrong person look identical from here otherwise.
+    /// </remarks>
+    public static async Task<bool> SendMessageAsync(
+        string botToken,
+        long chatId,
+        string text,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(text)) return false;
+
+        try
+        {
+            using var form = new MultipartFormDataContent
+            {
+                { new StringContent(chatId.ToString()), "chat_id" },
+                // Telegram memotong pada 4096 karakter dan menolak seluruh
+                // pesannya, bukan memangkasnya.
+                { new StringContent(text.Length > 3500 ? text[..3500] : text), "text" },
+            };
+
+            using var response = await Http
+                .PostAsync($"https://api.telegram.org/bot{botToken}/sendMessage", form, ct)
+                .ConfigureAwait(false);
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode || !IsOk(body))
+            {
+                Logger.Warn(
+                    $"Telegram refused a notification to chat {chatId}: "
+                    + $"HTTP {(int)response.StatusCode} {Describe(body)}");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not notify chat {chatId}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Telegram answers 200 with <c>ok:false</c> for some refusals, so the
     /// status code alone does not say whether the file arrived.
     /// </summary>

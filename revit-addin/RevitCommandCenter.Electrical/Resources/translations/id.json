@@ -316,5 +316,20 @@
     "admin_help": "seluruh parameter satu perintah, lengkap dengan rentang dan nilai bawaan",
     "admin_standards": "buka mode tanya standar PUIL/SNI/IEC (dua arah, tidak menyentuh Revit)",
     "admin_standards_exit": "tutup mode tanya standar"
+  },
+  "notify": {
+    "done": "Perintah dari website selesai",
+    "failed": "Perintah dari website gagal",
+    "dry_run": "Uji coba — tidak ada yang diubah di model",
+    "fields": {
+      "room": "Ruang",
+      "devices_placed": "Perangkat dipasang",
+      "devices_removed": "Perangkat dihapus",
+      "updated": "Diperbarui",
+      "skipped": "Dilewati",
+      "count": "Jumlah",
+      "rows": "Baris",
+      "files": "Berkas"
+    }
   }
 }

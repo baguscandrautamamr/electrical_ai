@@ -46,6 +46,7 @@ internal sealed class SettingsWindow : Window
     private readonly TextBox _exportDirectory = new();
     private readonly PasswordBox _botToken = new();
     private readonly CheckBox _sendFiles = new();
+    private readonly CheckBox _notifyWeb = new();
     private readonly ComboBox _language = new();
     private readonly CheckBox _autoStart = new();
     private readonly TextBlock _status = new();
@@ -102,6 +103,13 @@ internal sealed class SettingsWindow : Window
         _sendFiles.Content = "Send printed sheets and schedules to the Telegram chat";
         _sendFiles.Margin = new Thickness(0, 10, 0, 0);
         root.Children.Add(_sendFiles);
+
+        _notifyWeb.Content = "Tell the sender on Telegram when a website command finishes";
+        _notifyWeb.Margin = new Thickness(0, 6, 0, 0);
+        root.Children.Add(_notifyWeb);
+        root.Children.Add(Hint(
+            "Only reaches people who linked their own Telegram on the website's History page. "
+            + "A command from the bot is unaffected — the bot already answers it."));
         root.Children.Add(Field(
             "Telegram bot token",
             _botToken,
@@ -189,6 +197,7 @@ internal sealed class SettingsWindow : Window
         _exportDirectory.Text = _config.ExportDirectory;
         _botToken.Password = _config.TelegramBotToken;
         _sendFiles.IsChecked = _config.SendFilesToTelegram;
+        _notifyWeb.IsChecked = _config.NotifyWebCommands;
         _language.SelectedItem = _config.Language == "en" ? "en" : "id";
         _autoStart.IsChecked = _config.StartPollingOnLaunch;
 
@@ -328,6 +337,7 @@ internal sealed class SettingsWindow : Window
         _config.ExportDirectory = _exportDirectory.Text.Trim();
         _config.TelegramBotToken = _botToken.Password.Trim();
         _config.SendFilesToTelegram = _sendFiles.IsChecked == true;
+        _config.NotifyWebCommands = _notifyWeb.IsChecked == true;
         _config.Language = (_language.SelectedItem as string) ?? "id";
         _config.StartPollingOnLaunch = _autoStart.IsChecked == true;
 
