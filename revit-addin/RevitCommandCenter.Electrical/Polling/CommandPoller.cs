@@ -266,6 +266,43 @@ public sealed class CommandPoller : IDisposable
     }
 
     /// <summary>
+    /// Adds one i18n key to a result's `notes`, leaving everything else alone.
+    ///
+    /// Notes are set by handlers while they run; this one is only knowable
+    /// afterwards, once the upload has been tried. Written by patching the
+    /// serialised payload rather than by reaching back into the handler,
+    /// because by this point the handler has finished and its context is gone.
+    /// </summary>
+    private static CommandResult WithNote(CommandResult result, string note)
+    {
+        try
+        {
+            var data = result.Data is null ? new JObject() : JToken.FromObject(result.Data);
+            var payload = data as JObject ?? new JObject { ["data"] = data };
+
+            var notes = payload["notes"] as JArray ?? new JArray();
+            if (!notes.Any(existing => (string?)existing == note)) notes.Add(note);
+            payload["notes"] = notes;
+
+            return new CommandResult
+            {
+                Success = result.Success,
+                Data = payload,
+                Error = result.Error,
+                Stack = result.Stack,
+                Retryable = result.Retryable,
+                ExecutionTimeMs = result.ExecutionTimeMs,
+            };
+        }
+        catch (Exception ex)
+        {
+            // A note is worth less than the result it would be attached to.
+            Logger.Warn($"Could not attach note '{note}': {ex.Message}");
+            return result;
+        }
+    }
+
+    /// <summary>
     /// Picks up edits to config.json without restarting Revit.
     ///
     /// The add-in used to read this file once, at load. Filling in the
@@ -342,7 +379,20 @@ public sealed class CommandPoller : IDisposable
             });
         }
 
-        if (files.Count == 0) return result;
+        if (files.Count == 0)
+        {
+            // Kredensial ada, unggahan dicoba, dan tak satu pun berhasil —
+            // kunci yang sudah dirotasi, akun yang penuh, jaringan yang
+            // diblokir kantor. Sebelumnya ini diam sepenuhnya: hasilnya
+            // dikembalikan apa adanya dan yang terlihat di website hanya path
+            // lokal, sama persis seperti kalau Cloudinary memang tidak diisi.
+            // Dua sebab yang sangat berbeda, satu gejala.
+            Logger.Warn(
+                $"Cloudinary is configured but all {outcome.PendingUploads.Count} upload(s) failed; "
+                + "the export stays on this machine.");
+
+            return WithNote(result, "export.upload_failed");
+        }
 
         try
         {
