@@ -316,5 +316,20 @@
     "admin_help": "every parameter of one command, with ranges and defaults",
     "admin_standards": "open the two-way PUIL/SNI/IEC standards channel; never touches Revit",
     "admin_standards_exit": "close the standards channel"
+  },
+  "notify": {
+    "done": "A command from the website finished",
+    "failed": "A command from the website failed",
+    "dry_run": "Dry run — nothing in the model changed",
+    "fields": {
+      "room": "Room",
+      "devices_placed": "Devices placed",
+      "devices_removed": "Devices removed",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "count": "Count",
+      "rows": "Rows",
+      "files": "Files"
+    }
   }
 }
