@@ -83,7 +83,9 @@ public sealed class ExportCadHandler : ICommandHandler
             : context.Config.ExportDirectory;
         Directory.CreateDirectory(directory);
 
-        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        // Dicatat sebelum export: nama berkas tidak membawa cap waktu, jadi
+        // inilah yang membedakan berkas baru dari sisa percobaan sebelumnya.
+        var startedAt = DateTime.UtcNow.AddSeconds(-2);
         var files = new List<string>();
 
         try
@@ -94,7 +96,9 @@ public sealed class ExportCadHandler : ICommandHandler
             // parse its naming scheme — which changes between versions.
             foreach (var sheet in matched)
             {
-                var name = $"{Sanitize(sheet.SheetNumber)}-{stamp}";
+                // Nama yang sama dengan PDF sheet ini, jadi keduanya
+                // berjejer saat foldernya diurutkan.
+                var name = ExportNaming.ForSheet(sheet);
 
                 if (!doc.Export(directory, name, new List<ElementId> { sheet.Id }, options))
                 {
@@ -102,7 +106,7 @@ public sealed class ExportCadHandler : ICommandHandler
                     continue;
                 }
 
-                files.AddRange(Written(directory, name));
+                files.AddRange(ExportNaming.Written(directory, name, "dwg", startedAt));
             }
         }
         catch (Exception ex)
@@ -146,19 +150,4 @@ public sealed class ExportCadHandler : ICommandHandler
             .Cast<ExportDWGSettings>()
             .FirstOrDefault(setting =>
                 string.Equals(setting.Name, name, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>Finds what Revit actually wrote: it decorates the stem it is given.</summary>
-    private static IEnumerable<string> Written(string directory, string name)
-    {
-        var exact = Path.Combine(directory, $"{name}.dwg");
-        if (File.Exists(exact)) return new[] { exact };
-
-        return Directory
-            .GetFiles(directory, $"*{name}*.dwg")
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static string Sanitize(string value) =>
-        string.Join("_", value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))
-            .Trim();
 }

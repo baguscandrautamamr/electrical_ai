@@ -84,9 +84,14 @@ public sealed class PrintPdfHandler : ICommandHandler
 
         try
         {
+            // Dicatat sebelum export dimulai: berkas per-sheet tidak lagi
+            // membawa cap waktu di namanya, jadi inilah yang membedakan berkas
+            // yang baru ditulis dari sisa percobaan sebelumnya.
+            var startedAt = DateTime.UtcNow.AddSeconds(-2);
+
             var files = combine
-                ? PrintCombined(context.Doc, matched, directory, stamp, setup)
-                : PrintSeparately(context.Doc, matched, directory, stamp, setup);
+                ? PrintCombined(context.Doc, matched, directory, stamp, setup, startedAt)
+                : PrintSeparately(context.Doc, matched, directory, setup, startedAt);
 
             if (files.Count == 0)
             {
@@ -97,7 +102,7 @@ public sealed class PrintPdfHandler : ICommandHandler
 
             var result = new PrintResultDto
             {
-                Sheets = matched.Select(sheet => Describe(context, sheet, files, stamp, combine)).ToList(),
+                Sheets = matched.Select(sheet => Describe(context, sheet, files, combine)).ToList(),
                 Files = files.Select(context.Share).ToList(),
                 NotFound = unmatched.Count > 0 ? unmatched : null,
                 Notes = context.Warnings.Count > 0 ? context.Warnings : null,
@@ -123,13 +128,12 @@ public sealed class PrintPdfHandler : ICommandHandler
         HandlerContext context,
         ViewSheet sheet,
         List<string> files,
-        string stamp,
         bool combine)
     {
         string? file = null;
         if (!combine)
         {
-            var own = FileFor(files, sheet, stamp);
+            var own = FileFor(files, sheet);
             if (own is not null) file = context.Share(own);
         }
 
@@ -198,15 +202,19 @@ public sealed class PrintPdfHandler : ICommandHandler
         List<ViewSheet> sheets,
         string directory,
         string stamp,
-        PrintSetting? setup)
+        PrintSetting? setup,
+        DateTime startedAt)
     {
+        // Satu berkas berisi banyak sheet tidak punya satu nama sheet yang bisa
+        // dipakai, jadi yang ini tetap memakai cap waktu — tanpanya, tiap cetak
+        // gabungan menimpa yang sebelumnya berapa pun sheet yang dipilih.
         var name = $"sheets-{stamp}";
         var options = Options(name, setup);
 
         var ok = doc.Export(directory, sheets.Select(sheet => sheet.Id).ToList(), options);
         if (!ok) return new List<string>();
 
-        return Written(directory, name).ToList();
+        return ExportNaming.Written(directory, name, "pdf", startedAt).ToList();
     }
 
     /// <summary>
@@ -221,14 +229,14 @@ public sealed class PrintPdfHandler : ICommandHandler
         Document doc,
         List<ViewSheet> sheets,
         string directory,
-        string stamp,
-        PrintSetting? setup)
+        PrintSetting? setup,
+        DateTime startedAt)
     {
         var files = new List<string>();
 
         foreach (var sheet in sheets)
         {
-            var name = $"{Sanitize(sheet.SheetNumber)}-{stamp}";
+            var name = ExportNaming.ForSheet(sheet);
             var options = Options(name, setup);
 
             if (!doc.Export(directory, new List<ElementId> { sheet.Id }, options))
@@ -237,39 +245,17 @@ public sealed class PrintPdfHandler : ICommandHandler
                 continue;
             }
 
-            files.AddRange(Written(directory, name));
+            files.AddRange(ExportNaming.Written(directory, name, "pdf", startedAt));
         }
 
         return files;
     }
 
-    /// <summary>
-    /// Finds what Revit actually wrote.
-    ///
-    /// The requested name is a stem: Revit appends its own decoration on some
-    /// versions and configurations, so the file is looked up rather than assumed.
-    /// </summary>
-    private static IEnumerable<string> Written(string directory, string name)
+    /// <summary>Berkas milik satu sheet, saat tiap sheet dicetak sendiri-sendiri.</summary>
+    private static string? FileFor(List<string> files, ViewSheet sheet)
     {
-        var exact = Path.Combine(directory, $"{name}.pdf");
-        if (File.Exists(exact)) return new[] { exact };
-
-        return Directory
-            .GetFiles(directory, $"*{name}*.pdf")
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>The file belonging to one sheet, when each was printed on its own.</summary>
-    private static string? FileFor(List<string> files, ViewSheet sheet, string stamp)
-    {
-        var stem = $"{Sanitize(sheet.SheetNumber)}-{stamp}";
+        var stem = ExportNaming.ForSheet(sheet);
         return files.FirstOrDefault(file =>
-            Path.GetFileName(file).Contains(stem, StringComparison.OrdinalIgnoreCase));
+            Path.GetFileName(file).StartsWith(stem, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>Sheet numbers carry slashes and colons on some projects.</summary>
-    private static string Sanitize(string value) =>
-        string.Join("_", value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))
-            .Trim();
-
-}
