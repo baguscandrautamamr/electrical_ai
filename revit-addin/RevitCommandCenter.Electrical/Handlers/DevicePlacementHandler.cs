@@ -119,6 +119,10 @@ public abstract class DevicePlacementHandler : ICommandHandler
         var placed = new List<FamilyInstance>();
         var deviceIds = new List<string>();
 
+        // Diminta uji coba: dijalankan sungguhan lalu dibatalkan, bukan
+        // ditebak. Lihat pembatalannya di bawah.
+        var dryRun = command.GetBool("dry_run");
+
         using var transaction = new Transaction(context.Doc, $"Place {ResultKind} in {room.Name}");
         transaction.Start();
 
@@ -149,7 +153,29 @@ public abstract class DevicePlacementHandler : ICommandHandler
                     BuildRow(context, command, room, deviceId, instance, placement.Point));
             }
 
-            transaction.Commit();
+            // Uji coba: dijalankan sungguhan, lalu dibatalkan.
+            //
+            // Bukan disimulasikan — yang menjawab "berapa yang muat" adalah
+            // Revit, bukan perkiraan kode ini. Ruangan yang bentuknya aneh,
+            // plafon yang tidak rata, family yang menolak dipasang di titik
+            // tertentu: semua itu hanya terlihat kalau penempatannya benar-benar
+            // terjadi. Yang dibatalkan cuma penulisannya ke model.
+            if (dryRun)
+            {
+                transaction.RollBack();
+
+                // Baris yang sudah disiapkan untuk Supabase ikut dibuang.
+                // Menyimpannya berarti database mencatat perangkat yang tidak
+                // ada di model mana pun — dan perintah berikutnya membacanya
+                // sebagai kenyataan.
+                context.PendingRows.Clear();
+
+                Logger.Info($"{CommandType}: uji coba, {placed.Count} perangkat dibatalkan.");
+            }
+            else
+            {
+                transaction.Commit();
+            }
         }
         catch (Exception ex)
         {
@@ -163,10 +189,23 @@ public abstract class DevicePlacementHandler : ICommandHandler
             Kind = ResultKind,
             Room = room.Name,
             DevicesPlaced = placed.Count,
-            DeviceIds = deviceIds,
+            DryRun = dryRun,
+            // Id elemen tidak ikut dilaporkan pada uji coba: elemennya sudah
+            // tidak ada setelah transaksinya dibatalkan, dan Id yang menunjuk ke
+            // ketiadaan lebih buruk daripada tidak ada Id sama sekali.
+            DeviceIds = dryRun ? new List<string>() : deviceIds,
         };
 
-        Decorate(result, context, command, room, placed);
+        // Dilewati pada uji coba: elemennya sudah tidak ada.
+        //
+        // Decorate membaca beban, sirkuit, dan jarak DARI instance yang barusan
+        // dipasang. Setelah transaksinya dibatalkan, instance itu tidak lagi
+        // valid — membacanya bukan menghasilkan angka nol, melainkan pengecualian
+        // dari Revit di tengah perintah yang sebenarnya berhasil.
+        //
+        // Yang hilang cuma hiasannya. Jumlah yang muat — satu-satunya hal yang
+        // ditanyakan sebuah uji coba — sudah dihitung sebelum pembatalan.
+        if (!dryRun) Decorate(result, context, command, room, placed);
 
         // Placing fewer than were asked for is a fact about the room, and it
         // has to be said. Reporting five where six were asked for, with nothing

@@ -79,7 +79,11 @@ public sealed class DeleteDevicesHandler : ICommandHandler
         // whatever a colleague added to the same room in the meantime.
         var marks = ParseMarks(command.GetString("marks"));
 
-        var removed = Delete(context, lookup.Room, categories, marks, out var byCategory);
+        // Perintah yang paling pantas diuji lebih dulu: yang ini tidak
+        // menambah apa pun yang bisa dihapus lagi, ia menghapus.
+        var dryRun = command.GetBool("dry_run");
+
+        var removed = Delete(context, lookup.Room, categories, marks, dryRun, out var byCategory);
         if (removed.Failed is { } failure) return failure;
 
         return CommandResult.Ok(new DeleteResultDto
@@ -87,6 +91,7 @@ public sealed class DeleteDevicesHandler : ICommandHandler
             Room = lookup.Room.Name,
             What = what,
             DevicesRemoved = removed.Count,
+            DryRun = dryRun,
             DeviceIds = removed.Ids,
             Groups = byCategory,
         });
@@ -122,6 +127,7 @@ public sealed class DeleteDevicesHandler : ICommandHandler
         Room room,
         List<string> categories,
         HashSet<string>? onlyMarks,
+        bool dryRun,
         out List<QueryGroupDto> groups)
     {
         var doc = context.Doc;
@@ -167,7 +173,16 @@ public sealed class DeleteDevicesHandler : ICommandHandler
         try
         {
             doc.Delete(ids);
-            transaction.Commit();
+
+            // Uji coba: dihapus sungguhan lalu dikembalikan.
+            //
+            // Menghitungnya saja tidak cukup untuk perintah ini. Menghapus
+            // satu elemen di Revit bisa menyeret yang lain — sirkuit yang
+            // kehilangan anggota terakhirnya, tag yang menempel pada
+            // perangkat itu — dan yang benar-benar hilang hanya terlihat
+            // setelah penghapusannya terjadi.
+            if (dryRun) transaction.RollBack();
+            else transaction.Commit();
         }
         catch (Exception ex)
         {

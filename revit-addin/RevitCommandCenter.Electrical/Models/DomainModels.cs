@@ -103,6 +103,17 @@ public sealed class PlacementResultDto
     [JsonProperty("kind")] public string Kind { get; set; } = string.Empty;
     [JsonProperty("room")] public string? Room { get; set; }
     [JsonProperty("devices_placed")] public int DevicesPlaced { get; set; }
+
+    /// <summary>
+    /// Perubahannya dibatalkan setelah dijalankan — modelnya tidak tersentuh.
+    ///
+    /// Ikut di hasil, bukan hanya diketahui pengirimnya: hasil yang sama
+    /// persis bunyinya untuk "6 terpasang" dan "6 akan terpasang" membuat
+    /// riwayat perintah tidak bisa dibaca, dan orang berikutnya menganggap
+    /// pekerjaan itu sudah selesai.
+    /// </summary>
+    [JsonProperty("dry_run", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? DryRun { get; set; }
     [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
 
     [JsonProperty("total_load_w", NullValueHandling = NullValueHandling.Ignore)]
@@ -176,6 +187,10 @@ public sealed class DeleteResultDto
     [JsonProperty("room")] public string? Room { get; set; }
     [JsonProperty("what")] public string What { get; set; } = "all";
     [JsonProperty("devices_removed")] public int DevicesRemoved { get; set; }
+
+    /// <summary>Dihapus lalu dikembalikan — modelnya tidak tersentuh.</summary>
+    [JsonProperty("dry_run", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? DryRun { get; set; }
     [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
     [JsonProperty("groups")] public List<QueryGroupDto> Groups { get; set; } = new();
 }
