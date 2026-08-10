@@ -40,6 +40,10 @@ public sealed class ModelInfoHandler : ICommandHandler
             Path = string.IsNullOrWhiteSpace(doc.PathName) ? null : doc.PathName,
             IsWorkshared = doc.IsWorkshared,
             PrintableSheets = sheets,
+            AddinVersion = AddinVersion(),
+            UploadMode = context.Config.UsesUploadPreset
+                ? $"preset:{context.Config.CloudinaryUploadPreset}"
+                : context.Config.HasCloudinary ? "signed" : "none",
             PrintSetups = Names<PrintSetting>(doc),
             CadSetups = Names<ExportDWGSettings>(doc),
             FamilyTypes = FamilyTypesByCategory(doc),
@@ -61,6 +65,19 @@ public sealed class ModelInfoHandler : ICommandHandler
     /// saves one — so an empty list is an answer, not a failure. The website
     /// falls back to Revit's own defaults when it gets one.
     /// </summary>
+    /// <summary>
+    /// Versi DLL add-in yang sedang berjalan.
+    ///
+    /// Ada di sini karena tidak adanya membuat setiap perbaikan sulit
+    /// dibicarakan: config.json bisa diubah, tapi kunci baru di dalamnya tidak
+    /// berarti apa-apa bagi add-in versi lama — ia membacanya, tidak
+    /// mengenalinya, lalu berjalan seperti sebelumnya. Gejalanya identik dengan
+    /// perbaikan yang tidak bekerja, dan berhari-hari bisa habis untuk mengejar
+    /// bug yang sudah lama diperbaiki tapi belum terpasang.
+    /// </summary>
+    private static string AddinVersion() =>
+        typeof(ModelInfoHandler).Assembly.GetName().Version?.ToString() ?? "unknown";
+
     /// <summary>
     /// Kategori yang punya field "tipe" di form website, dan nama yang dipakai
     /// katalog perintah untuk masing-masing.
