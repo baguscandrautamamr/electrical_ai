@@ -62,7 +62,7 @@ public sealed class DeleteDevicesHandler : ICommandHandler
         var lookup = RevitUtils.ResolveRoom(context.Doc, roomName);
         if (lookup.Room is null)
         {
-            return CommandResult.Fail(lookup.Problem ?? $"Room '{roomName}' not found.", retryable: false);
+            return CommandResult.Fail(lookup.Problem ?? $"No room or space called '{roomName}' in the model.", retryable: false);
         }
 
         var categories = CategoriesFor(what);
@@ -124,7 +124,7 @@ public sealed class DeleteDevicesHandler : ICommandHandler
 
     private static Outcome Delete(
         HandlerContext context,
-        Room room,
+        SpatialElement room,
         List<string> categories,
         HashSet<string>? onlyMarks,
         bool dryRun,
@@ -201,7 +201,7 @@ public sealed class DeleteDevicesHandler : ICommandHandler
     /// The same point-in-room test /query scopes its counts with, so what gets
     /// deleted is what was reported as being there.
     /// </summary>
-    internal static bool InRoom(Element element, Room room)
+    internal static bool InRoom(Element element, SpatialElement room)
     {
         var point = element.Location switch
         {
@@ -214,14 +214,6 @@ public sealed class DeleteDevicesHandler : ICommandHandler
 
         if (point is null) return false;
 
-        try
-        {
-            return room.IsPointInRoom(point);
-        }
-        catch (Autodesk.Revit.Exceptions.ApplicationException)
-        {
-            // Rooms with unbound geometry throw rather than returning false.
-            return false;
-        }
+        return RevitUtils.Contains(room, point);
     }
 }

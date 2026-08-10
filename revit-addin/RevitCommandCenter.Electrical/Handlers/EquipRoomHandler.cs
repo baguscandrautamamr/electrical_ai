@@ -33,7 +33,7 @@ public sealed class EquipRoomHandler : ICommandHandler
         var lookup = RevitUtils.ResolveRoom(context.Doc, requested);
         if (lookup.Room is null)
         {
-            return CommandResult.Fail(lookup.Problem ?? $"Room '{requested}' not found.", retryable: false);
+            return CommandResult.Fail(lookup.Problem ?? $"No room or space called '{requested}' in the model.", retryable: false);
         }
 
         // Sub-commands are handed the resolved name, so every category lands in

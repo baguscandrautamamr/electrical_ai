@@ -35,7 +35,7 @@ public sealed class LightingHandler : DevicePlacementHandler
     /// </summary>
     private const double BreakerAmps = 16;
 
-    protected override int ResolveCount(CommandModel command, Room room)
+    protected override int ResolveCount(CommandModel command, SpatialElement room)
     {
         // A stated grid is a stated count: "3x2" is six fixtures, laid out.
         var grid = RevitUtils.ParseGrid(command.GetString("grid"));
@@ -62,7 +62,7 @@ public sealed class LightingHandler : DevicePlacementHandler
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count)
     {
         var mountHeightM = command.GetDouble("height", 2.8);
@@ -85,7 +85,7 @@ public sealed class LightingHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point)
@@ -120,7 +120,7 @@ public sealed class LightingHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         var (totalLoad, source) = ResolveLoad(command, placed);

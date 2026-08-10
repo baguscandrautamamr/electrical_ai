@@ -23,7 +23,7 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
     /// </summary>
     private const double FallbackLoadPerOutletW = 1500;
 
-    protected override int ResolveCount(CommandModel command, Room room) =>
+    protected override int ResolveCount(CommandModel command, SpatialElement room) =>
         Math.Max(1, command.GetInt("count", 4));
 
     /// <summary>
@@ -33,7 +33,7 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count) =>
         RevitUtils.GeneratePerimeterPlacements(
             room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
@@ -44,7 +44,7 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point) => new
@@ -68,7 +68,7 @@ public sealed class ReceptacleHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         var (totalLoad, source) = ResolveLoad(command, placed);

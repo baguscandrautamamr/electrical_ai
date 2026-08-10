@@ -9,7 +9,51 @@ namespace RevitCommandCenter.Electrical.Utils;
 public static class RevitUtils
 {
     /// <summary>
-    /// A room by name or number, case-insensitive.
+    /// Kategori yang dianggap "ruangan" oleh seluruh add-in ini.
+    /// </summary>
+    /// <remarks>
+    /// Room dan Space adalah dua hal berbeda di Revit, dan model MEP yang
+    /// dikerjakan sungguhan hampir selalu punya keduanya: arsitek menaruh Room,
+    /// lalu insinyur MEP membuat Space di atasnya untuk beban dan pencahayaan.
+    /// Batasnya sama, namanya sama, dan yang terlihat di layar sama — tapi
+    /// sebuah kolektor yang hanya meminta OST_Rooms tidak menemukan satu pun
+    /// dari yang kedua.
+    ///
+    /// Akibatnya persis kebalikan dari yang tampak seperti masalah nama: sebuah
+    /// perintah untuk "Lounge" ditolak dengan "Room 'Lounge' not found" pada
+    /// model yang di layarnya jelas ada Lounge — karena Lounge di model itu
+    /// sebuah Space, dan tidak ada satu pun cara bagi orang yang mengirim
+    /// perintah untuk mengetahui perbedaan itu dari pesan yang diterimanya.
+    ///
+    /// Untuk penempatan perangkat listrik keduanya setara: yang dibutuhkan
+    /// hanyalah batas, luas, dan tinggi lantai, dan keduanya membawa ketiganya.
+    /// </remarks>
+    private static readonly BuiltInCategory[] EnclosureCategories =
+    {
+        BuiltInCategory.OST_Rooms,
+        BuiltInCategory.OST_MEPSpaces,
+    };
+
+    /// <summary>
+    /// Setiap ruangan bernama di model — Room arsitektur maupun Space MEP.
+    ///
+    /// Yang belum ditempatkan dibuang: luasnya nol, tidak punya posisi, dan
+    /// tidak bisa dijadikan sasaran perintah apa pun.
+    /// </summary>
+    public static List<SpatialElement> Enclosures(Document doc) =>
+        new FilteredElementCollector(doc)
+            .WherePasses(new ElementMulticategoryFilter(EnclosureCategories))
+            .WhereElementIsNotElementType()
+            .OfType<SpatialElement>()
+            .Where(enclosure => enclosure.Area > 0)
+            .ToList();
+
+    /// <summary>Kata yang dipakai di pesan galat, sesuai isi model.</summary>
+    private static string EnclosureWord(Document doc) =>
+        Enclosures(doc).Any(enclosure => enclosure is not Room) ? "room or space" : "room";
+
+    /// <summary>
+    /// A room — or an MEP space — by name or number, case-insensitive.
     ///
     /// Telegram users type what is on the drawing, which may be either. Revit's
     /// <c>Room.Name</c> is the name and the number run together — a room named
@@ -23,7 +67,7 @@ public static class RevitUtils
     /// first — the command ran, in the wrong room, and said nothing about it.
     /// Returning null puts a "room not found" in front of the engineer instead.
     /// </summary>
-    public static Room? FindRoom(Document doc, string nameOrNumber) =>
+    public static SpatialElement? FindRoom(Document doc, string nameOrNumber) =>
         ResolveRoom(doc, nameOrNumber).Room;
 
     /// <summary>
@@ -31,9 +75,9 @@ public static class RevitUtils
     /// no room to work with, and is written to say what the engineer should
     /// type instead.
     /// </summary>
-    public sealed record RoomLookup(Room? Room, string? Problem)
+    public sealed record RoomLookup(SpatialElement? Room, string? Problem)
     {
-        public static RoomLookup Found(Room room) => new(room, null);
+        public static RoomLookup Found(SpatialElement room) => new(room, null);
         public static RoomLookup Missing(string problem) => new(null, problem);
     }
 
@@ -53,12 +97,7 @@ public static class RevitUtils
             return RoomLookup.Missing($"'{nameOrNumber}' is not a usable room name.");
         }
 
-        var rooms = new FilteredElementCollector(doc)
-            .OfCategory(BuiltInCategory.OST_Rooms)
-            .WhereElementIsNotElementType()
-            .Cast<Room>()
-            .Where(room => room.Area > 0)
-            .ToList();
+        var rooms = Enclosures(doc);
 
         // Each candidate is judged on every name it goes by: the bare name, the
         // number, both together, and Revit's own concatenation.
@@ -68,13 +107,15 @@ public static class RevitUtils
 
         if (exact.Count > 0)
         {
+            var picked = Preferred(exact);
+
             if (exact.Count > 1)
             {
                 Logger.Warn(
-                    $"'{nameOrNumber}' matches {exact.Count} rooms exactly; using the first. " +
+                    $"'{nameOrNumber}' matches {exact.Count} enclosures exactly; using {Describe(picked)}. " +
                     "Give the room number to disambiguate.");
             }
-            return RoomLookup.Found(exact[0]);
+            return RoomLookup.Found(picked);
         }
 
         // No exact match: allow a prefix, but only when it picks out one room.
@@ -86,6 +127,17 @@ public static class RevitUtils
 
         if (prefixed.Count > 1)
         {
+            // Sebuah Room dan Space bernama sama bukan keraguan yang perlu
+            // dilempar kembali ke orangnya: batasnya sama, jadi keduanya
+            // menghasilkan penempatan yang sama persis. Yang tetap ditanyakan
+            // adalah nama yang benar-benar berbeda.
+            var distinct = prefixed
+                .Select(room => Normalize(room.Name))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (distinct.Count == 1) return RoomLookup.Found(Preferred(prefixed));
+
             var names = string.Join(", ", prefixed.Take(5).Select(room => room.Name));
             Logger.Warn($"'{nameOrNumber}' is ambiguous — it matches {names}. Not guessing.");
 
@@ -94,11 +146,31 @@ public static class RevitUtils
                 "Name the room exactly as it appears on the drawing.");
         }
 
-        return RoomLookup.Missing($"Room '{nameOrNumber}' not found in the model.");
+        return RoomLookup.Missing(
+            $"No {EnclosureWord(doc)} called '{nameOrNumber}' in the model.");
     }
 
+    /// <summary>
+    /// Yang dipilih ketika satu nama cocok dengan lebih dari satu ruangan.
+    ///
+    /// Room lebih dulu. Sebuah Room dan Space bernama sama menempati batas yang
+    /// sama, jadi pilihan mana pun menghasilkan penempatan yang identik — yang
+    /// penting adalah pilihannya sama setiap kali. Tanpa aturan ini yang terambil
+    /// adalah apa pun yang kebetulan lebih dulu keluar dari kolektor, dan itu
+    /// bisa berbeda antar sesi Revit untuk perintah yang sama persis.
+    ///
+    /// Room dipilih karena ia yang punya <c>IsPointInRoom</c> dan yang paling
+    /// banyak dilalui kode ini sejak awal.
+    /// </summary>
+    private static SpatialElement Preferred(List<SpatialElement> candidates) =>
+        candidates.FirstOrDefault(candidate => candidate is Room) ?? candidates[0];
+
+    /// <summary>Ruangan ini dalam satu frasa, untuk log.</summary>
+    private static string Describe(SpatialElement enclosure) =>
+        $"{(enclosure is Room ? "room" : "space")} '{enclosure.Name}'";
+
     /// <summary>Every string a room answers to, normalized for comparison.</summary>
-    private static IEnumerable<string> Identifiers(Room room)
+    private static IEnumerable<string> Identifiers(SpatialElement room)
     {
         var name = RoomName(room);
         var number = room.Number ?? string.Empty;
@@ -114,7 +186,7 @@ public static class RevitUtils
     /// <summary>
     /// The room's name without the number Revit appends to <c>Room.Name</c>.
     /// </summary>
-    private static string RoomName(Room room)
+    private static string RoomName(SpatialElement room)
     {
         var parameter = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString();
         return string.IsNullOrWhiteSpace(parameter) ? room.Name : parameter;
@@ -139,7 +211,7 @@ public static class RevitUtils
     }
 
     /// <summary>Room area in m², or 0 when unplaced.</summary>
-    public static double RoomAreaSqM(Room room) => RevitUnits.SqFeetToSqM(room.Area);
+    public static double RoomAreaSqM(SpatialElement room) => RevitUnits.SqFeetToSqM(room.Area);
 
     /// <summary>
     /// The floor area a placement should work over, in m²: what the command
@@ -149,7 +221,7 @@ public static class RevitUtils
     /// every room on the drawing, so requiring the engineer to type the number
     /// back in only created a way to disagree with it.
     /// </summary>
-    public static double AreaSqM(CommandModel command, Room room)
+    public static double AreaSqM(CommandModel command, SpatialElement room)
     {
         // "area" is what "space" used to be called, and old messages, saved
         // shortcuts and equip_room payloads still say it.
@@ -165,7 +237,7 @@ public static class RevitUtils
     }
 
     /// <summary>Room centroid at floor level, in feet.</summary>
-    public static XYZ? RoomCenter(Room room)
+    public static XYZ? RoomCenter(SpatialElement room)
     {
         if (room.Location is LocationPoint point) return point.Point;
 
@@ -192,7 +264,7 @@ public static class RevitUtils
     /// derived from a lux target and approximate anyway, wrong now that someone
     /// can ask for six fixtures and mean it.
     /// </summary>
-    public static List<XYZ> GenerateCeilingGrid(Room room, int count, double mountHeightFeet)
+    public static List<XYZ> GenerateCeilingGrid(SpatialElement room, int count, double mountHeightFeet)
     {
         if (count <= 0) return new List<XYZ>();
 
@@ -232,7 +304,7 @@ public static class RevitUtils
     /// deeper than it is wide comes out three deep rather than three across —
     /// the drawing reads the same either way, and this keeps cells square.
     /// </summary>
-    public static List<XYZ> GenerateCeilingGrid(Room room, int cols, int rows, double mountHeightFeet)
+    public static List<XYZ> GenerateCeilingGrid(SpatialElement room, int cols, int rows, double mountHeightFeet)
     {
         if (cols <= 0 || rows <= 0) return new List<XYZ>();
 
@@ -262,7 +334,7 @@ public static class RevitUtils
     }
 
     /// <summary>Every cell centre of a <paramref name="target"/>-cell grid that falls inside the room.</summary>
-    private static List<XYZ> GridPoints(Room room, int target, double mountHeightFeet, BoundingBoxXYZ bounds)
+    private static List<XYZ> GridPoints(SpatialElement room, int target, double mountHeightFeet, BoundingBoxXYZ bounds)
     {
         var points = new List<XYZ>();
 
@@ -285,7 +357,7 @@ public static class RevitUtils
                 var y = bounds.Min.Y + cellD * (row + 0.5);
 
                 // Skip points outside a non-rectangular room's actual boundary.
-                if (room.IsPointInRoom(new XYZ(x, y, bounds.Min.Z + 0.1)))
+                if (Contains(room, new XYZ(x, y, bounds.Min.Z + 0.1)))
                 {
                     points.Add(new XYZ(x, y, mountHeightFeet));
                 }
@@ -329,7 +401,7 @@ public static class RevitUtils
         return thinned;
     }
 
-    private static List<XYZ> CenterOnly(Room room, double mountHeightFeet)
+    private static List<XYZ> CenterOnly(SpatialElement room, double mountHeightFeet)
     {
         var center = RoomCenter(room);
         return center is null
@@ -341,7 +413,7 @@ public static class RevitUtils
     /// Points spaced around a room's perimeter, at <paramref name="heightFeet"/>.
     /// Used for wall-mounted devices (receptacles, jacks).
     /// </summary>
-    public static List<XYZ> GeneratePerimeterPoints(Room room, int count, double heightFeet) =>
+    public static List<XYZ> GeneratePerimeterPoints(SpatialElement room, int count, double heightFeet) =>
         GeneratePerimeterPlacements(room, count, heightFeet)
             .Select(placement => placement.Point)
             .ToList();
@@ -367,7 +439,7 @@ public static class RevitUtils
     private static readonly double OpeningClearanceFeet = RevitUnits.MToFeet(0.15);
 
     public static List<DevicePlacement> GeneratePerimeterPlacements(
-        Room room,
+        SpatialElement room,
         int count,
         double heightFeet)
     {
@@ -450,7 +522,7 @@ public static class RevitUtils
     /// have to drag it after the command ran.
     /// </summary>
     public static List<DevicePlacement> GenerateSwitchPlacements(
-        Room room,
+        SpatialElement room,
         int count,
         double heightFeet)
     {
@@ -521,7 +593,7 @@ public static class RevitUtils
     /// hosting a receptacle on the corridor side of an office wall puts it in
     /// the wrong room, and looks right in plan.
     /// </summary>
-    private static DevicePlacement? OnWallFace(Document doc, Wall? wall, XYZ at, Room room)
+    private static DevicePlacement? OnWallFace(Document doc, Wall? wall, XYZ at, SpatialElement room)
     {
         if (wall is null) return null;
 
@@ -549,7 +621,7 @@ public static class RevitUtils
                 if (normal.IsZeroLength()) continue;
 
                 // The face we want faces into the room the device serves.
-                if (!IsInRoom(room, projected.XYZPoint.Add(normal.Multiply(FaceProbeFeet)))) continue;
+                if (!Contains(room, projected.XYZPoint.Add(normal.Multiply(FaceProbeFeet)))) continue;
                 if (projected.Distance >= bestDistance) continue;
 
                 // The instance's X axis has to lie in the face; along the wall
@@ -579,14 +651,35 @@ public static class RevitUtils
     }
 
     /// <summary>
-    /// <c>Room.IsPointInRoom</c>, which throws rather than returning false for
-    /// a room whose geometry is unbound.
+    /// Apakah sebuah titik berada di dalam ruangan ini.
     /// </summary>
-    private static bool IsInRoom(Room room, XYZ point)
+    /// <remarks>
+    /// Revit tidak menyediakan satu metode untuk keduanya: Room punya
+    /// <c>IsPointInRoom</c> dan Space punya <c>IsPointInSpace</c>, dan tidak ada
+    /// yang diwarisi dari SpatialElement. Perbedaan itu berhenti di sini,
+    /// supaya sisa add-in tidak perlu tahu ia sedang bekerja di ruangan
+    /// arsitektur atau di space MEP.
+    ///
+    /// Keduanya melempar — bukan mengembalikan false — untuk ruangan yang
+    /// geometrinya tidak tertutup, jadi lemparan itu ditangkap di satu tempat.
+    /// </remarks>
+    public static bool Contains(SpatialElement enclosure, XYZ point)
     {
         try
         {
-            return room.IsPointInRoom(point);
+            return enclosure switch
+            {
+                Room room => room.IsPointInRoom(point),
+                Autodesk.Revit.DB.Mechanical.Space space => space.IsPointInSpace(point),
+                // Tidak akan terjadi selama yang dikumpulkan hanya dua kategori
+                // itu. Kalau nanti terjadi, kotak pembatas adalah jawaban yang
+                // jujur — ia yang dipakai untuk membangkitkan titiknya — dan
+                // jauh lebih baik daripada false yang membuat sebuah perintah
+                // memasang nol perangkat tanpa menyebut alasannya.
+                _ => enclosure.get_BoundingBox(null) is { } box
+                     && point.X >= box.Min.X && point.X <= box.Max.X
+                     && point.Y >= box.Min.Y && point.Y <= box.Max.Y,
+            };
         }
         catch (Autodesk.Revit.Exceptions.ApplicationException)
         {
@@ -813,7 +906,7 @@ public static class RevitUtils
     }
 
     /// <summary>Level nearest to a room, for hosting new instances.</summary>
-    public static Level? LevelOf(Document doc, Room room)
+    public static Level? LevelOf(Document doc, SpatialElement room)
     {
         if (room.LevelId != ElementId.InvalidElementId)
         {

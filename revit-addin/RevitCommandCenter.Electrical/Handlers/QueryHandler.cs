@@ -182,15 +182,14 @@ public sealed class QueryHandler : ICommandHandler
                     HangerTypeDetector.IsHangerFamily(instance, context.Config.HangerFamilyName));
         }
 
-        var collector = new FilteredElementCollector(doc)
-            .OfCategory(target.Category.Value)
-            .WhereElementIsNotElementType();
-
-        // Unplaced rooms have no area and no location; counting them would
-        // report rooms nobody can see on the drawing.
+        // Room DAN Space MEP: keduanya "ruangan" bagi orang yang bertanya, dan
+        // model MEP yang sungguhan hampir selalu punya keduanya. Satu kategori
+        // saja tidak cukup, jadi jalannya tidak lewat collector di bawah. Yang
+        // belum ditempatkan dibuang di dalam Enclosures — luasnya nol dan tidak
+        // ada yang bisa melihatnya di gambar.
         if (target.Key == "room")
         {
-            return collector.Cast<Room>().Where(room => room.Area > 0);
+            return RevitUtils.Enclosures(doc);
         }
 
         // Placeholder sheets carry a number but no drawing. They belong in an
@@ -204,7 +203,10 @@ public sealed class QueryHandler : ICommandHandler
                 .OrderBy(sheet => sheet.SheetNumber, StringComparer.OrdinalIgnoreCase);
         }
 
-        return collector.ToElements();
+        return new FilteredElementCollector(doc)
+            .OfCategory(target.Category.Value)
+            .WhereElementIsNotElementType()
+            .ToElements();
     }
 
     private static Level? FindLevel(Document doc, string name) =>
@@ -221,7 +223,7 @@ public sealed class QueryHandler : ICommandHandler
     // Scoping
     // -----------------------------------------------------------------------
 
-    private static bool InRoom(Element element, Room? room)
+    private static bool InRoom(Element element, SpatialElement? room)
     {
         if (room is null) return true;
         if (element.Id == room.Id) return true;
@@ -229,15 +231,7 @@ public sealed class QueryHandler : ICommandHandler
         var point = LocationOf(element);
         if (point is null) return false;
 
-        try
-        {
-            return room.IsPointInRoom(point);
-        }
-        catch (Autodesk.Revit.Exceptions.ApplicationException)
-        {
-            // Rooms with unbound geometry throw rather than returning false.
-            return false;
-        }
+        return RevitUtils.Contains(room, point);
     }
 
     private static bool OnLevel(Document doc, Element element, Level? level)
@@ -343,9 +337,9 @@ public sealed class QueryHandler : ICommandHandler
             Id = string.IsNullOrWhiteSpace(mark) ? element.Id.ToString() : mark,
             Label = element switch
             {
-                Room room => string.IsNullOrWhiteSpace(room.Number)
-                    ? room.Name
-                    : $"{room.Name} ({room.Number})",
+                SpatialElement enclosure => string.IsNullOrWhiteSpace(enclosure.Number)
+                    ? enclosure.Name
+                    : $"{enclosure.Name} ({enclosure.Number})",
                 FamilyInstance instance => instance.Symbol?.Name ?? instance.Name,
                 _ => element.Name,
             },

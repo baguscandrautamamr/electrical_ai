@@ -14,14 +14,14 @@ public sealed class TelephoneHandler : DevicePlacementHandler
     protected override BuiltInCategory Category => BuiltInCategory.OST_TelephoneDevices;
     protected override string TableName => "telephone_devices";
 
-    protected override int ResolveCount(CommandModel command, Room room) =>
+    protected override int ResolveCount(CommandModel command, SpatialElement room) =>
         Math.Max(1, command.GetInt("count", 2));
 
     /// <summary>Jacks host on the wall's vertical face, like the outlets beside them.</summary>
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count) =>
         RevitUtils.GeneratePerimeterPlacements(
             room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
@@ -32,7 +32,7 @@ public sealed class TelephoneHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point) => new
@@ -55,7 +55,7 @@ public sealed class TelephoneHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         result.Details = new Dictionary<string, object?>

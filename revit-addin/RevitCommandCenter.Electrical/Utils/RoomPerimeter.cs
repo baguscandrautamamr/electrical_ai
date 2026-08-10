@@ -67,7 +67,7 @@ public sealed class RoomPerimeter
     /// Inner loops are skipped: they are columns and shafts, not the wall an
     /// engineer runs sockets along.
     /// </summary>
-    public static RoomPerimeter? Of(Room room)
+    public static RoomPerimeter? Of(SpatialElement room)
     {
         var options = new SpatialElementBoundaryOptions
         {

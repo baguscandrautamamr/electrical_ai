@@ -23,13 +23,13 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
     protected override BuiltInCategory Category => BuiltInCategory.OST_LightingDevices;
     protected override string TableName => "lighting_switch_devices";
 
-    protected override int ResolveCount(CommandModel command, Room room) =>
+    protected override int ResolveCount(CommandModel command, SpatialElement room) =>
         Math.Max(1, command.GetInt("count", 1));
 
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count)
     {
         var heightFeet = RevitUnits.MToFeet(command.GetDouble("height", 1.2));
@@ -167,7 +167,7 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point) => new
@@ -192,7 +192,7 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         // Detail keys are i18n keys, resolved in the reader's language on the

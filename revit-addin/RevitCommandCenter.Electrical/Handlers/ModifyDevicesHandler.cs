@@ -57,7 +57,7 @@ public sealed class ModifyDevicesHandler : ICommandHandler
         var lookup = RevitUtils.ResolveRoom(context.Doc, requested);
         if (lookup.Room is null)
         {
-            return CommandResult.Fail(lookup.Problem ?? $"Room '{requested}' not found.", retryable: false);
+            return CommandResult.Fail(lookup.Problem ?? $"No room or space called '{requested}' in the model.", retryable: false);
         }
 
         // Nothing stated to change to would delete the room's devices and put
