@@ -39,13 +39,21 @@ public static class CloudinaryUploader
         string apiSecret,
         string folder,
         string localPath,
+        string uploadPreset = "",
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(cloudName)
-            || string.IsNullOrWhiteSpace(apiKey)
-            || string.IsNullOrWhiteSpace(apiSecret))
+        var unsigned = !string.IsNullOrWhiteSpace(uploadPreset);
+
+        if (string.IsNullOrWhiteSpace(cloudName))
         {
-            return UploadOutcome.Failed("Cloudinary credentials are incomplete.");
+            return UploadOutcome.Failed("Cloudinary cloud name is missing.");
+        }
+
+        if (!unsigned
+            && (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(apiSecret)))
+        {
+            return UploadOutcome.Failed(
+                "Cloudinary needs either api_key + api_secret, or cloudinary_upload_preset.");
         }
 
         if (!File.Exists(localPath))
@@ -93,12 +101,27 @@ public static class CloudinaryUploader
             form.Headers.TryAddWithoutValidation(
                 "Content-Type", $"multipart/form-data; boundary={boundary}");
 
-            foreach (var (key, value) in signed)
+            if (unsigned)
             {
-                form.Add(Field(value), key);
+                // Unggahan tanpa tanda tangan: nama presetnya yang jadi izin.
+                //
+                // Sengaja hanya preset dan berkasnya. Unsigned upload menolak
+                // sebagian besar parameter lain, dan penolakan itu muncul
+                // sebagai HTTP 400 yang menyebut parameternya — bukan sesuatu
+                // yang layak ditemukan satu per satu lewat percobaan. Nama
+                // berkasnya jadi urusan preset itu; yang disimpan sistem ini
+                // adalah URL-nya, bukan namanya.
+                form.Add(Field(uploadPreset.Trim()), "upload_preset");
             }
-            form.Add(Field(apiKey), "api_key");
-            form.Add(Field(Sign(signed, apiSecret)), "signature");
+            else
+            {
+                foreach (var (key, value) in signed)
+                {
+                    form.Add(Field(value), key);
+                }
+                form.Add(Field(apiKey), "api_key");
+                form.Add(Field(Sign(signed, apiSecret)), "signature");
+            }
 
             var bytes = await ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
             var file = new ByteArrayContent(bytes);

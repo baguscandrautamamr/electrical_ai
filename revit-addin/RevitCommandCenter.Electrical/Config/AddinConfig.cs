@@ -103,7 +103,26 @@ public sealed class AddinConfig
     [JsonProperty("cloudinary_folder")]
     public string CloudinaryFolder { get; set; } = "electrical-ai/exports";
 
-    /// <summary>True when the three Cloudinary credentials are all present.</summary>
+    /// <summary>
+    /// Nama unsigned upload preset, kalau unggahan bertanda tangan tidak dipakai.
+    ///
+    /// Kosongkan untuk cara yang normal: add-in ini memegang api_secret, jadi ia
+    /// tempat yang sah untuk menandatangani unggahannya sendiri, dan unggahan
+    /// bertanda tangan tidak menitipkan izin menulis kepada siapa pun.
+    ///
+    /// Diisi kalau jalur bertanda tangan ditolak akun ini. Yang perlu diketahui
+    /// sebelum memilihnya: siapa pun yang tahu nama presetnya bisa mengunggah ke
+    /// akun Cloudinary ini. Nama itu jauh kurang berbahaya daripada api_secret —
+    /// ia tidak bisa menghapus atau membaca apa pun — tapi ia tetap izin menulis
+    /// yang diberikan kepada sebuah nama, bukan kepada sebuah rahasia.
+    /// </summary>
+    [JsonProperty("cloudinary_upload_preset")]
+    public string CloudinaryUploadPreset { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True kalau ada cara untuk mengunggah: nama cloud, plus tanda tangan
+    /// (api_key + api_secret) atau sebuah unsigned preset.
+    /// </summary>
     // JsonIgnore because this is derived, not configured. Without it, Save()
     // writes `"HasCloudinary": true` into the file a person is meant to edit —
     // a line that looks like a switch, does nothing when changed, and sends
@@ -111,8 +130,13 @@ public sealed class AddinConfig
     [JsonIgnore]
     public bool HasCloudinary =>
         !string.IsNullOrWhiteSpace(CloudinaryCloudName)
-        && !string.IsNullOrWhiteSpace(CloudinaryApiKey)
-        && !string.IsNullOrWhiteSpace(CloudinaryApiSecret);
+        && (UsesUploadPreset
+            || (!string.IsNullOrWhiteSpace(CloudinaryApiKey)
+                && !string.IsNullOrWhiteSpace(CloudinaryApiSecret)));
+
+    /// <summary>Preset menang atas tanda tangan kalau keduanya diisi.</summary>
+    [JsonIgnore]
+    public bool UsesUploadPreset => !string.IsNullOrWhiteSpace(CloudinaryUploadPreset);
 
     [JsonProperty("language")]
     public string Language { get; set; } = "id";
@@ -202,6 +226,7 @@ public sealed class AddinConfig
         CloudinaryApiKey = other.CloudinaryApiKey;
         CloudinaryApiSecret = other.CloudinaryApiSecret;
         CloudinaryFolder = other.CloudinaryFolder;
+        CloudinaryUploadPreset = other.CloudinaryUploadPreset;
         Language = other.Language;
         StartPollingOnLaunch = other.StartPollingOnLaunch;
     }

@@ -294,6 +294,19 @@ public sealed class ModelInfoDto
 
     [JsonProperty("is_workshared")] public bool IsWorkshared { get; set; }
 
+    /// <summary>
+    /// Versi DLL add-in yang menjawab. Ditampilkan website supaya "sudah
+    /// terpasang atau belum" berhenti jadi tebakan.
+    /// </summary>
+    [JsonProperty("addin_version")] public string AddinVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Cara add-in ini akan mengunggah hasil export: "signed",
+    /// "preset:&lt;nama&gt;", atau "none" kalau Cloudinary belum diisi. Menjawab
+    /// pertanyaan "apakah setelan yang saya ubah benar-benar terbaca".
+    /// </summary>
+    [JsonProperty("upload_mode")] public string UploadMode { get; set; } = string.Empty;
+
     [JsonProperty("printable_sheets")] public int PrintableSheets { get; set; }
 
     /// <summary>Names of the saved Print Setups. Empty when the model has none.</summary>
