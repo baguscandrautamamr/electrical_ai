@@ -501,6 +501,17 @@ this system generates. This prints the drawing.
 |---|---|---|---|
 | `sheets` | string | **required** | Sheet number, a comma-separated list, or a pattern |
 | `combine` | boolean | true | One PDF holding every sheet, rather than a file per sheet |
+| `setup` | string | — | Name of a Print Setup saved in the model |
+
+`setup` takes the settings an office has already agreed on rather than a
+near-copy of them. Only what means the same thing in both dialogs is carried
+across: orientation, colour depth, raster quality, the hide flags, coincident-line
+masking, blue view links, and zoom. **Paper size is deliberately not**, because
+PDF export takes one paper format while a drawing set is normally a mix of sizes
+that each title block already states — forcing them all onto the setup's one size
+would rescale drawings that were correct. Margins are left alone for the same
+reason. A name the model does not have is refused, and the reply names the setups
+it does have; `/model_info` lists them too.
 
 ```
 /print_pdf E-101
@@ -530,6 +541,102 @@ rather have a link.
 
 A viewer may run this — it reads the model and writes a file, and changes
 neither.
+
+### `/export_cad <sheets>`
+
+Exports the chosen sheets to DWG, using a DWG Export Setup saved in the model.
+
+Not the same as `/export format=dwg`, which exports whichever view happens to be
+active. That answers "give me a DWG of what I am looking at"; this answers what a
+drawing set actually asks — "give me these sheets, exported the way this office
+exports them".
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `sheets` | string | **required** | Same selection as `/print_pdf` — number, list, pattern, or `all` |
+| `setup` | string | — | Name of a DWG Export Setup saved in the model |
+
+```
+/export_cad E-101,E-102 setup="DWG 2018"
+/export_cad E-1* setup="Client issue"
+```
+
+The setup is what decides layer mapping, line weights, and text handling — the
+things a client settles once and rejects a drawing over. A name the model does
+not have is refused rather than quietly replaced by Revit's defaults: a DWG with
+the wrong layers looks finished, and the person who finds out is the one who
+receives it. Running without `setup` at all is allowed, and says so in the notes.
+
+One file per sheet, each named after its sheet number. Exporting them in one call
+leaves Revit to name the files from a rule most projects have never set.
+
+A viewer may run this — it reads the model and writes files, and changes neither.
+
+### `/model_info`
+
+Reports the model that is open right now.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| — | | | Takes nothing |
+
+Answers three questions in one round trip, because they are always asked
+together and each one otherwise costs its own trip through the queue:
+
+- `title` and `path` — the `.rvt` actually open in Revit. The website shows this
+  beside the project selector: a project here is a row in a database, and the
+  expensive moment is the one where the two are not the same model.
+- `printable_sheets` — how many sheets could be printed or exported.
+- `print_setups` and `cad_setups` — the names of the Print Setups and DWG Export
+  Setups saved in that model, which is what fills the dropdowns for `/print_pdf`
+  and `/export_cad`.
+
+A model with no saved setups returns empty lists. That is normal — Revit only
+creates them once somebody saves one — and means Revit's own defaults apply.
+
+Opens no transaction, so a viewer may run it.
+
+### `/import_table`
+
+Draws a spreadsheet into the model as a table, keeping its shape.
+
+A different question from `/import_excel`, which writes cell values onto elements
+that already exist. This one brings in a table with no elements behind it at all:
+a schedule kept in Excel, a supplier's cable list, a legend of symbols.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `file_url` | string | **required** | Where the workbook can be downloaded from |
+| `target` | string | `schedule` | `schedule` for a drafting view, `legend` for a legend |
+| `sheet` | string | — | Which worksheet; the first one with anything on it by default |
+| `name` | string | — | View name; the worksheet's own name by default |
+
+Column widths, row heights, and merged cells come across. Interior grid lines are
+drawn once rather than once per neighbouring cell, and lines that would cross a
+merged region are skipped — which is what makes a merge look merged.
+
+**It draws the table; it does not make a Revit schedule.** A Revit schedule
+reports the model: its columns are model parameters, and there is no way to give
+it a column of numbers that came from a spreadsheet. Asking for "the same table
+as in Excel" and receiving a schedule means receiving a different table. The cost
+of drawing it is worth stating plainly: the result is a picture of the data, not
+the data. Changing it means changing the spreadsheet and importing again.
+
+`target=legend` needs the model to hold at least one legend already. The Revit
+API cannot create the first one — duplicating an existing legend is the only way
+in — so a model with none is told to make one rather than handed a drafting view
+under a name suggesting otherwise.
+
+The view is drawn at 1:1, so a millimetre in the spreadsheet is a millimetre on
+paper. Excel measures column width in characters of its default font, which has
+no exact length; the conversion keeps the columns in proportion, which is what
+"the same table" means to the eye.
+
+A sheet larger than 5,000 cells is refused with its size in the message. Each
+cell costs a text note and up to four detail lines, and Revit slows to a stop
+long before it refuses.
+
+Needs the editor role: it adds a view to the model.
 
 ### `/query [room]`
 

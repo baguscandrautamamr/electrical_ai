@@ -29,10 +29,13 @@ public sealed class CommandProcessor
             new SecurityHandler(),
             new CommunicationHandler(),
             new ExportHandler(),
+            new ExportCadHandler(),
             new PrintPdfHandler(),
             new DeleteDevicesHandler(),
             new QueryHandler(),
+            new ModelInfoHandler(),
             new ImportExcelHandler(),
+            new ImportTableHandler(),
         };
 
         _handlers = handlers.ToDictionary(
