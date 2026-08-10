@@ -144,7 +144,7 @@ public static class CloudinaryUploader
             // Cloudinary. api_secret tetap tidak pernah dikirim ke mana pun, dan
             // tanda tangannya hanya berlaku untuk satu unggahan ini.
             var endpoint = $"https://api.cloudinary.com/v1_1/{Uri.EscapeDataString(cloudName)}/raw/upload";
-            var url = $"{endpoint}?{QueryString(parameters)}";
+            var requestUrl = $"{endpoint}?{QueryString(parameters)}";
 
             using var form = MultipartBody(parameters, Path.GetFileName(localPath), bytes);
 
@@ -153,7 +153,7 @@ public static class CloudinaryUploader
                 + $"public_id '{publicId}', parameter [{string.Join(", ", parameters.Select(p => p.Key))}], "
                 + $"berkas {bytes.Length} byte.");
 
-            using var response = await Http.PostAsync(url, form, ct).ConfigureAwait(false);
+            using var response = await Http.PostAsync(requestUrl, form, ct).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
