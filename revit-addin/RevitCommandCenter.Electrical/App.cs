@@ -1,3 +1,5 @@
+using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
 using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Database;
@@ -38,6 +40,11 @@ public sealed class App : IExternalApplication
             Config = AddinConfig.Load();
             RibbonHelper.Build(application);
 
+            // Keeps the project list honest about which model is open. See
+            // OnDocumentOpened.
+            application.ControlledApplication.DocumentOpened += OnDocumentOpened;
+            application.ViewActivated += OnViewActivated;
+
             if (Config.IsUsable && Config.StartPollingOnLaunch)
             {
                 Connect();
@@ -60,11 +67,89 @@ public sealed class App : IExternalApplication
         }
     }
 
+    /// <summary>
+    /// Registers a model as a project the moment it is opened.
+    ///
+    /// Registration used to happen only when Connect was pressed, using whatever
+    /// document happened to be active at that second. Open a second model, or
+    /// start the add-in before opening anything, and the project list kept
+    /// naming a file nobody had on screen — which is exactly the complaint that
+    /// the names in the website did not match the model being worked on.
+    ///
+    /// Opening a document is the honest moment to say "this exists".
+    /// </summary>
+    private void OnDocumentOpened(object? sender, DocumentOpenedEventArgs e)
+    {
+        RegisterProject(e.Document);
+    }
+
+    /// <summary>
+    /// Catches switching between models that are already open, which raises no
+    /// DocumentOpened. Registration is an upsert keyed on the file name, so a
+    /// model seen before costs one no-op write and changes nothing.
+    /// </summary>
+    private void OnViewActivated(object? sender, Autodesk.Revit.UI.Events.ViewActivatedEventArgs e)
+    {
+        RegisterProject(e.Document);
+    }
+
+    /// <summary>
+    /// Announces a document as a project, off the UI thread and without ever
+    /// throwing into Revit's event pump.
+    ///
+    /// Silent before Connect: with no Supabase client there is nowhere to write,
+    /// and a model opened by someone who never connects is not this add-in's
+    /// business to publish.
+    /// </summary>
+    private void RegisterProject(Document? document)
+    {
+        try
+        {
+            var supabase = Supabase;
+            var title = document?.Title;
+
+            if (supabase is null || string.IsNullOrWhiteSpace(title)) return;
+
+            // Same model as last time: skip the round trip. Revit raises
+            // ViewActivated on every view change, and that is a lot of writes
+            // for a fact that has not changed.
+            if (string.Equals(_lastRegisteredTitle, title, StringComparison.OrdinalIgnoreCase)) return;
+            _lastRegisteredTitle = title;
+
+            // Fire and forget: an event handler that awaits a network call
+            // freezes Revit for as long as the network takes.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await ProjectRegistrar.RegisterAsync(supabase, title!).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Already tolerant inside RegisterAsync; this only catches a
+                    // client disposed mid-flight by Disconnect.
+                    Logger.Debug($"Project registration for '{title}' did not finish: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not register the open document: {ex.Message}");
+        }
+    }
+
+    /// <summary>Guards against re-registering on every view change.</summary>
+    private string? _lastRegisteredTitle;
+
     public Result OnShutdown(UIControlledApplication application)
     {
         try
         {
             Logger.Info("Shutting down");
+
+            application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
+            application.ViewActivated -= OnViewActivated;
+
             Disconnect();
             _externalEvent?.Dispose();
         }
