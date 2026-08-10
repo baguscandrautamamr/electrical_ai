@@ -95,10 +95,10 @@ public static class CloudinaryUploader
 
             foreach (var (key, value) in signed)
             {
-                form.Add(new StringContent(value), key);
+                form.Add(Field(value), key);
             }
-            form.Add(new StringContent(apiKey), "api_key");
-            form.Add(new StringContent(Sign(signed, apiSecret)), "signature");
+            form.Add(Field(apiKey), "api_key");
+            form.Add(Field(Sign(signed, apiSecret)), "signature");
 
             var bytes = await ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
             var file = new ByteArrayContent(bytes);
@@ -154,6 +154,30 @@ public static class CloudinaryUploader
     {
         public static UploadOutcome Uploaded(string url) => new(url, null);
         public static UploadOutcome Failed(string error) => new(null, error);
+    }
+
+    /// <summary>
+    /// Satu ruas biasa dalam form multipart — teks, bukan berkas.
+    ///
+    /// INILAH sebab "Upload preset must be whitelisted for unsigned uploads".
+    ///
+    /// `new StringContent(...)` memasang header `Content-Type: text/plain` pada
+    /// ruasnya. Bagian multipart yang membawa Content-Type dibaca sebagian
+    /// server — Cloudinary termasuk — sebagai berkas yang diunggah, bukan
+    /// sebagai parameter biasa. Akibatnya `api_key` dan `signature` tidak pernah
+    /// terbaca sebagai parameter; Cloudinary melihat permintaan tanpa tanda
+    /// tangan, menyimpulkan ini unggahan unsigned, lalu menuntut upload preset
+    /// yang memang tidak pernah kita punya.
+    ///
+    /// Pesannya tidak pernah menyebut tanda tangan, dan itu yang membuat sebab
+    /// ini bertahan lama: yang terbaca adalah keluhan tentang fitur yang tidak
+    /// sedang dipakai, jadi yang dicurigai justru kuncinya.
+    /// </summary>
+    private static StringContent Field(string value)
+    {
+        var content = new StringContent(value);
+        content.Headers.ContentType = null;
+        return content;
     }
 
     /// <summary>
