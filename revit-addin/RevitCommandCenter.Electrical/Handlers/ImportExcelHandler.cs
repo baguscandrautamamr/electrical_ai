@@ -112,9 +112,21 @@ public sealed class ImportExcelHandler : ICommandHandler
 
         if (idColumn.Column == 0 && markColumn.Column == 0)
         {
+            // What the file DOES have is the useful half of this message. Told
+            // only what is missing, the natural next move is to open the file
+            // and compare its headers by eye — and the usual cause is a header
+            // row that is not row 1, which reads back here as no headers at all.
+            var found = headers.Count == 0
+                ? "row 1 of this sheet has no headers at all — the header row must be the first row"
+                : $"row 1 has: {string.Join(", ", headers.Select(h => h.Name).Take(15))}"
+                  + (headers.Count > 15 ? $" (+{headers.Count - 15} more)" : string.Empty);
+
             return CommandResult.Fail(
-                $"No column identifies the elements. Add one of: {string.Join(", ", IdColumns)}, "
-                + $"{string.Join(", ", MarkColumns)}.",
+                $"No column identifies the elements — {found}. "
+                + $"Add one of: {string.Join(", ", IdColumns)}, {string.Join(", ", MarkColumns)}. "
+                + "A schedule exported straight from Revit's UI has no Element Id column; "
+                + "use /export to get one, or use /import_table if the sheet is not "
+                + "meant to update elements at all.",
                 retryable: false);
         }
 

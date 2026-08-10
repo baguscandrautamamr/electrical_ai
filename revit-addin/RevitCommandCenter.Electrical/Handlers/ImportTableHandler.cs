@@ -67,8 +67,13 @@ public sealed class ImportTableHandler : ICommandHandler
     /// Each cell costs a text note and up to four lines, and Revit slows to a
     /// stop long before it refuses. Failing in a second with a number in the
     /// message beats a Revit that stops answering for ten minutes.
+    ///
+    /// Set from what real schedules look like rather than from caution: a cable
+    /// tray fitting schedule of 142 rows by 67 columns is ordinary, and 5,000
+    /// refused it. Empty cells cost nothing — only cells with text become notes —
+    /// so the count that matters is far below the grid size for most sheets.
     /// </summary>
-    private const int MaxCells = 5_000;
+    private const int MaxCells = 60_000;
 
     public CommandResult Execute(HandlerContext context, CommandModel command)
     {
