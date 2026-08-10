@@ -58,18 +58,41 @@ public static class CloudinaryUploader
         {
             // Unix seconds; Cloudinary rejects a signature more than an hour old.
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-            var publicId = PublicIdFor(localPath);
+
+            // Foldernya ikut di dalam public_id, bukan sebagai parameter
+            // terpisah.
+            //
+            // Cloudinary menerima kedua bentuk, tapi yang ini menandatangani
+            // satu parameter lebih sedikit — dan tiap parameter bertanda tangan
+            // adalah satu kesempatan lagi bagi tanda tangan dan isi permintaan
+            // untuk berbeda. Garis miring di public_id membuat foldernya persis
+            // seperti diminta.
+            var publicId = string.IsNullOrWhiteSpace(folder)
+                ? PublicIdFor(localPath)
+                : $"{folder.Trim().Trim('/')}/{PublicIdFor(localPath)}";
 
             // Signed parameters, sorted by name — the order is part of the
             // signature, so this dictionary must stay sorted.
             var signed = new SortedDictionary<string, string>(StringComparer.Ordinal)
             {
-                ["folder"] = folder,
                 ["public_id"] = publicId,
                 ["timestamp"] = timestamp,
             };
 
-            using var form = new MultipartFormDataContent();
+            // Boundary tanpa tanda kutip.
+            //
+            // MultipartFormDataContent milik .NET menulis header sebagai
+            // `boundary="…"`, dan sebagian server — Cloudinary termasuk yang
+            // pernah dilaporkan begitu — membaca tanda kutipnya sebagai bagian
+            // dari boundary, lalu tidak menemukan satu pun bagian di badan
+            // permintaan. Gejalanya persis seperti tanda tangan yang salah:
+            // ditolak, tanpa menyebut boundary sama sekali.
+            var boundary = $"----RevitCommandCenter{Guid.NewGuid():N}";
+            using var form = new MultipartFormDataContent(boundary);
+            form.Headers.Remove("Content-Type");
+            form.Headers.TryAddWithoutValidation(
+                "Content-Type", $"multipart/form-data; boundary={boundary}");
+
             foreach (var (key, value) in signed)
             {
                 form.Add(new StringContent(value), key);
@@ -91,7 +114,13 @@ public static class CloudinaryUploader
             if (!response.IsSuccessStatusCode)
             {
                 Logger.Warn($"Cloudinary refused the upload (HTTP {(int)response.StatusCode}): {Trim(body)}");
-                return UploadOutcome.Failed($"Cloudinary refused it (HTTP {(int)response.StatusCode}): {Reason(body)}");
+
+                var reason = Reason(body);
+                var skew = ClockSkew(response);
+                if (skew is not null) reason += $" {skew}";
+
+                return UploadOutcome.Failed(
+                    $"Cloudinary refused it (HTTP {(int)response.StatusCode}): {reason}");
             }
 
             var url = JObject.Parse(body)["secure_url"]?.ToString();
@@ -125,6 +154,30 @@ public static class CloudinaryUploader
     {
         public static UploadOutcome Uploaded(string url) => new(url, null);
         public static UploadOutcome Failed(string error) => new(null, error);
+    }
+
+    /// <summary>
+    /// Selisih jam mesin ini dengan jam Cloudinary, kalau cukup besar untuk
+    /// menjadi sebab.
+    ///
+    /// Cloudinary menolak tanda tangan yang timestamp-nya meleset lebih dari
+    /// satu jam, dan pesannya ("Stale request") tidak menyebut jam sama sekali.
+    /// Jam PC yang salah adalah sebab yang tidak pernah terpikirkan justru
+    /// karena segala hal lain di komputer itu tampak berjalan normal — Telegram,
+    /// misalnya, tidak memakai tanda tangan bertimestamp dan tetap bekerja.
+    ///
+    /// Jawabannya sendiri membawa jam server di header Date, jadi selisihnya
+    /// bisa dihitung tanpa memanggil apa pun lagi.
+    /// </summary>
+    private static string? ClockSkew(HttpResponseMessage response)
+    {
+        if (response.Headers.Date is not { } serverTime) return null;
+
+        var drift = DateTimeOffset.UtcNow - serverTime.ToUniversalTime();
+        if (Math.Abs(drift.TotalMinutes) < 5) return null;
+
+        return $"(Jam PC ini meleset {drift.TotalMinutes:F0} menit dari jam Cloudinary — "
+            + "itu sendiri sudah cukup untuk membuat setiap unggahan ditolak.)";
     }
 
     /// <summary>Cloudinary's own message, when its body carries one.</summary>
