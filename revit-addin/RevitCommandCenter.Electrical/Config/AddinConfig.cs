@@ -104,6 +104,11 @@ public sealed class AddinConfig
     public string CloudinaryFolder { get; set; } = "electrical-ai/exports";
 
     /// <summary>True when the three Cloudinary credentials are all present.</summary>
+    // JsonIgnore because this is derived, not configured. Without it, Save()
+    // writes `"HasCloudinary": true` into the file a person is meant to edit —
+    // a line that looks like a switch, does nothing when changed, and sends
+    // whoever is debugging their setup looking in the wrong place.
+    [JsonIgnore]
     public bool HasCloudinary =>
         !string.IsNullOrWhiteSpace(CloudinaryCloudName)
         && !string.IsNullOrWhiteSpace(CloudinaryApiKey)
@@ -119,6 +124,7 @@ public sealed class AddinConfig
     /// ProjectId is deliberately not required: an instance with none serves
     /// every project.
     /// </summary>
+    [JsonIgnore]
     public bool IsUsable =>
         !string.IsNullOrWhiteSpace(SupabaseUrl)
         && !string.IsNullOrWhiteSpace(SupabaseKey);
@@ -166,6 +172,51 @@ public sealed class AddinConfig
         {
             Utils.Logger.Error($"Failed to read {ConfigPath}: {ex.Message}");
             return new AddinConfig();
+        }
+    }
+
+    /// <summary>
+    /// Copies every configured value from another instance into this one.
+    ///
+    /// In place rather than by replacement because this object is shared: the
+    /// poller, the queue worker, and every handler hold the same reference, and
+    /// handing a new instance to one of them would leave the rest reading the
+    /// values the add-in started with. That is exactly the failure this exists
+    /// to remove — Cloudinary keys filled in while Revit is open, and exports
+    /// still coming back as local paths because the code doing the upload never
+    /// saw them.
+    /// </summary>
+    public void ApplyFrom(AddinConfig other)
+    {
+        SupabaseUrl = other.SupabaseUrl;
+        SupabaseKey = other.SupabaseKey;
+        ProjectId = other.ProjectId;
+        PollingIntervalSeconds = other.PollingIntervalSeconds;
+        CommandTimeoutSeconds = other.CommandTimeoutSeconds;
+        HangerFamilyName = other.HangerFamilyName;
+        ExportDirectory = other.ExportDirectory;
+        ExportBaseUrl = other.ExportBaseUrl;
+        SendFilesToTelegram = other.SendFilesToTelegram;
+        TelegramBotToken = other.TelegramBotToken;
+        CloudinaryCloudName = other.CloudinaryCloudName;
+        CloudinaryApiKey = other.CloudinaryApiKey;
+        CloudinaryApiSecret = other.CloudinaryApiSecret;
+        CloudinaryFolder = other.CloudinaryFolder;
+        Language = other.Language;
+        StartPollingOnLaunch = other.StartPollingOnLaunch;
+    }
+
+    /// <summary>When config.json was last written, or null when it is missing.</summary>
+    public static DateTime? LastWrittenAt()
+    {
+        try
+        {
+            return File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : null;
+        }
+        catch (Exception ex)
+        {
+            Utils.Logger.Debug($"Could not stat {ConfigPath}: {ex.Message}");
+            return null;
         }
     }
 

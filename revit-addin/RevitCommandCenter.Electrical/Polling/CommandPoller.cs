@@ -33,6 +33,9 @@ public sealed class CommandPoller : IDisposable
     private int _consecutiveFailures;
     private bool _disposed;
 
+    /// <summary>Timestamp of config.json as it was last read into <see cref="_config"/>.</summary>
+    private DateTime? _configWrittenAt = AddinConfig.LastWrittenAt();
+
     public CommandPoller(
         AddinConfig config,
         SupabaseClient supabase,
@@ -166,6 +169,8 @@ public sealed class CommandPoller : IDisposable
         {
             LastPollAt = DateTime.Now;
 
+            ReloadConfigIfChanged();
+
             var command = await _repository.ClaimNextAsync(token).ConfigureAwait(false);
             if (command is null)
             {
@@ -257,6 +262,37 @@ public sealed class CommandPoller : IDisposable
             // Do not drain into a failing endpoint — the backoff above exists
             // precisely so the next attempt waits.
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Picks up edits to config.json without restarting Revit.
+    ///
+    /// The add-in used to read this file once, at load. Filling in the
+    /// Cloudinary keys while Revit was open therefore changed nothing, and the
+    /// only symptom was exports still coming back as paths on the Revit PC —
+    /// with the file on disk plainly showing the keys were there. Nothing in
+    /// the product said "restart Revit", because nothing knew it needed to.
+    ///
+    /// Compared by write time so the file is only parsed when it actually
+    /// changed; a poll every few seconds must not re-read and re-parse it each
+    /// time. Never throws: a config that has been saved half-written by an
+    /// editor should delay the change to the next cycle, not stop the queue.
+    /// </summary>
+    private void ReloadConfigIfChanged()
+    {
+        var writtenAt = AddinConfig.LastWrittenAt();
+        if (writtenAt is null || writtenAt == _configWrittenAt) return;
+
+        try
+        {
+            _config.ApplyFrom(AddinConfig.Load());
+            _configWrittenAt = writtenAt;
+            Logger.Info("config.json changed on disk; reloaded.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not reload config.json: {ex.Message}");
         }
     }
 
