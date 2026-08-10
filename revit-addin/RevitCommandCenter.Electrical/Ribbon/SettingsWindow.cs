@@ -306,6 +306,21 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
+        // Baca ulang berkasnya sebelum menimpanya.
+        //
+        // Save() menulis seluruh objek, dan jendela ini hanya punya field untuk
+        // sebagian isinya. Kunci Cloudinary — yang memang diisi dengan tangan,
+        // karena tidak ada tempatnya di sini — hilang jadi string kosong setiap
+        // kali tombol ini ditekan setelah berkasnya diedit di luar. Gejalanya
+        // yang paling menyesatkan: file yang barusan diisi terlihat benar, lalu
+        // add-in melaporkan konfigurasi yang tidak ada, dan yang dicurigai
+        // adalah ketikannya.
+        //
+        // Di sini, bukan di Save(): yang tahu field mana milik jendela ini
+        // hanyalah jendela ini, dan nilai form ditulis setelahnya supaya tetap
+        // menang atas isi berkas.
+        _config.ApplyFrom(AddinConfig.Load());
+
         _config.SupabaseUrl = url;
         _config.SupabaseKey = key;
         _config.PollingIntervalSeconds = Math.Clamp(interval, 2, 300);
