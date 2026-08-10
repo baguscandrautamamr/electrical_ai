@@ -134,9 +134,18 @@ public sealed class AddinConfig
             || (!string.IsNullOrWhiteSpace(CloudinaryApiKey)
                 && !string.IsNullOrWhiteSpace(CloudinaryApiSecret)));
 
-    /// <summary>Preset menang atas tanda tangan kalau keduanya diisi.</summary>
+    /// <summary>
+    /// Preset hanya dipakai kalau tidak ada kunci untuk menandatangani.
+    ///
+    /// Bukan sebaliknya: preset biasanya ditambahkan sebagai percobaan waktu
+    /// unggahan bertanda tangan ditolak, dan kalau ia menang, ia mematikan jalur
+    /// bertanda tangan untuk selamanya — termasuk setelah jalur itu diperbaiki.
+    /// </summary>
     [JsonIgnore]
-    public bool UsesUploadPreset => !string.IsNullOrWhiteSpace(CloudinaryUploadPreset);
+    public bool UsesUploadPreset =>
+        !string.IsNullOrWhiteSpace(CloudinaryUploadPreset)
+        && (string.IsNullOrWhiteSpace(CloudinaryApiKey)
+            || string.IsNullOrWhiteSpace(CloudinaryApiSecret));
 
     [JsonProperty("language")]
     public string Language { get; set; } = "id";
