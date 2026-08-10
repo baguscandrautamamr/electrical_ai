@@ -32,6 +32,7 @@ public sealed class CommandProcessor
             new PrintPdfHandler(),
             new DeleteDevicesHandler(),
             new QueryHandler(),
+            new ImportExcelHandler(),
         };
 
         _handlers = handlers.ToDictionary(

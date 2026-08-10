@@ -75,6 +75,40 @@ public sealed class AddinConfig
     [JsonProperty("telegram_bot_token")]
     public string TelegramBotToken { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Cloudinary account that generated files are uploaded to.
+    ///
+    /// This is what makes an export reach the website. A command from the
+    /// website carries no chat_id, so there is no chat to push a file into;
+    /// without an upload the file only ever exists on this machine and the
+    /// reply names a path nobody else can open. Fill these in and the export
+    /// shows up on the website's history page as a download instead.
+    ///
+    /// Leave them empty and nothing changes: files stay local, as before.
+    /// </summary>
+    [JsonProperty("cloudinary_cloud_name")]
+    public string CloudinaryCloudName { get; set; } = string.Empty;
+
+    [JsonProperty("cloudinary_api_key")]
+    public string CloudinaryApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Treat like the Supabase key above: it signs uploads to your account and
+    /// belongs only in this file, on this machine.
+    /// </summary>
+    [JsonProperty("cloudinary_api_secret")]
+    public string CloudinaryApiSecret { get; set; } = string.Empty;
+
+    /// <summary>Folder inside the Cloudinary account to keep exports in.</summary>
+    [JsonProperty("cloudinary_folder")]
+    public string CloudinaryFolder { get; set; } = "electrical-ai/exports";
+
+    /// <summary>True when the three Cloudinary credentials are all present.</summary>
+    public bool HasCloudinary =>
+        !string.IsNullOrWhiteSpace(CloudinaryCloudName)
+        && !string.IsNullOrWhiteSpace(CloudinaryApiKey)
+        && !string.IsNullOrWhiteSpace(CloudinaryApiSecret);
+
     [JsonProperty("language")]
     public string Language { get; set; } = "id";
 

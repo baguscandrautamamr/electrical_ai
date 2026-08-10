@@ -1,4 +1,5 @@
 using Autodesk.Revit.UI;
+using Newtonsoft.Json.Linq;
 using RevitCommandCenter.Electrical.Config;
 using RevitCommandCenter.Electrical.Database;
 using RevitCommandCenter.Electrical.Models;
@@ -213,7 +214,14 @@ public sealed class CommandPoller : IDisposable
             // Persist device rows first so a Telegram reply never describes
             // state the database does not have.
             await FlushPendingRowsAsync(outcome.PendingRows, token).ConfigureAwait(false);
-            await _repository.ReportAsync(command, outcome.Result, token).ConfigureAwait(false);
+
+            // Uploading before the result is written, not after, because the URL
+            // has to travel *inside* result_json — that is the only channel the
+            // website reads. Doing it afterwards would mean a second write, and
+            // a window where the command reads as finished with nothing to open.
+            var result = await AttachUploadedFilesAsync(outcome, token).ConfigureAwait(false);
+
+            await _repository.ReportAsync(command, result, token).ConfigureAwait(false);
 
             // Files go after the result, so the chat reads "printed E-101" and
             // then the drawing, rather than a document arriving out of nowhere.
@@ -249,6 +257,82 @@ public sealed class CommandPoller : IDisposable
             // Do not drain into a failing endpoint — the backoff above exists
             // precisely so the next attempt waits.
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Uploads whatever the handler wrote and puts the URLs into the result.
+    ///
+    /// Telegram gets its files pushed into the chat; the website has no chat to
+    /// push into, so its only way to reach an export is a link inside
+    /// result_json. That is what this adds — a `files` array of
+    /// `{ name, url }` beside whatever the handler already returned.
+    ///
+    /// Without Cloudinary configured this returns the result untouched, and an
+    /// export stays a path on this machine exactly as before. Nothing here can
+    /// fail the command: an export that ran is still an export that ran.
+    /// </summary>
+    private async Task<CommandResult> AttachUploadedFilesAsync(
+        CommandQueueWorker.ExecutionOutcome outcome,
+        CancellationToken token)
+    {
+        var result = outcome.Result;
+
+        if (!result.Success || outcome.PendingUploads.Count == 0 || !_config.HasCloudinary)
+        {
+            return result;
+        }
+
+        var files = new JArray();
+
+        foreach (var upload in outcome.PendingUploads)
+        {
+            var url = await CloudinaryUploader
+                .UploadAsync(
+                    _config.CloudinaryCloudName,
+                    _config.CloudinaryApiKey,
+                    _config.CloudinaryApiSecret,
+                    _config.CloudinaryFolder,
+                    upload.LocalPath,
+                    token)
+                .ConfigureAwait(false);
+
+            if (url is null) continue;
+
+            files.Add(new JObject
+            {
+                ["name"] = Path.GetFileName(upload.LocalPath),
+                ["url"] = url,
+            });
+        }
+
+        if (files.Count == 0) return result;
+
+        try
+        {
+            // A handler's Data is an object in every case today, but wrapping a
+            // non-object rather than assuming keeps a future scalar result from
+            // losing its value here.
+            var data = result.Data is null ? new JObject() : JToken.FromObject(result.Data);
+            var payload = data as JObject ?? new JObject { ["data"] = data };
+            payload["files"] = files;
+
+            return new CommandResult
+            {
+                Success = result.Success,
+                Data = payload,
+                Error = result.Error,
+                Stack = result.Stack,
+                Retryable = result.Retryable,
+                ExecutionTimeMs = result.ExecutionTimeMs,
+            };
+        }
+        catch (Exception ex)
+        {
+            // The upload succeeded; only the merge did not. Reporting the
+            // original result keeps the command correct and loses a link.
+            Logger.Warn($"Could not attach file links to the result: {ex.Message}");
+            return result;
         }
     }
 
