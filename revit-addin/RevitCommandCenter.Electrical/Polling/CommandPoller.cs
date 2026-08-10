@@ -394,6 +394,12 @@ public sealed class CommandPoller : IDisposable
                 continue;
             }
 
+            // Tautan yang ada tapi ditolak saat dibuka tetap dilaporkan sebagai
+            // tautan, dengan alasannya di sebelahnya. Menyembunyikannya berarti
+            // menghilangkan satu-satunya hal yang bisa diklik untuk membuktikan
+            // masalahnya, dan berkasnya sendiri memang benar-benar ada di sana.
+            firstError ??= attempt.Warning;
+
             files.Add(new JObject
             {
                 ["name"] = Path.GetFileName(upload.LocalPath),
@@ -428,7 +434,7 @@ public sealed class CommandPoller : IDisposable
             var payload = data as JObject ?? new JObject { ["data"] = data };
             payload["files"] = files;
 
-            return new CommandResult
+            var withFiles = new CommandResult
             {
                 Success = result.Success,
                 Data = payload,
@@ -437,6 +443,11 @@ public sealed class CommandPoller : IDisposable
                 Retryable = result.Retryable,
                 ExecutionTimeMs = result.ExecutionTimeMs,
             };
+
+            // Ada tautannya, dan ada yang perlu dikatakan tentangnya.
+            return firstError is null
+                ? withFiles
+                : WithNote(withFiles, "export.upload_undeliverable", firstError);
         }
         catch (Exception ex)
         {
