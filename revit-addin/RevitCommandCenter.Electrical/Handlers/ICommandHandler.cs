@@ -60,7 +60,19 @@ public sealed class HandlerContext
         // Cloudinary account the website reads from. A command from the website
         // has no chat at all, so gating this on Telegram alone left its exports
         // with nowhere to go.
-        if (telegramReady || Config.HasCloudinary)
+        // Sekali per berkas, sebanyak apa pun ia disebut.
+        //
+        // Sebuah jawaban menyebut berkas yang sama lebih dari sekali dengan
+        // wajar: print_pdf menaruhnya di baris sheet-nya DAN di daftar berkas,
+        // dan tiap sebutan lewat sini. Tanpa penyaring ini satu perintah cetak
+        // mengunggah satu PDF dua kali, dan yang terlihat di website adalah dua
+        // tautan untuk satu gambar — seakan dua berkas berbeda telah dibuat.
+        //
+        // Dibandingkan tanpa peduli besar-kecil huruf: ini path Windows, dan
+        // dua sebutan berkas yang sama bisa datang dengan huruf yang berbeda.
+        if ((telegramReady || Config.HasCloudinary)
+            && !PendingUploads.Any(upload =>
+                string.Equals(upload.LocalPath, localPath, StringComparison.OrdinalIgnoreCase)))
         {
             PendingUploads.Add(new PendingUpload(localPath, ContentTypeOf(fileName)));
         }
