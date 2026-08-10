@@ -58,7 +58,7 @@ public sealed class ImportExcelHandler : ICommandHandler
         string? tempPath = null;
         try
         {
-            tempPath = Download(url);
+            tempPath = TempWorkbook.Download(url);
 
             using var package = new ExcelPackage(new FileInfo(tempPath));
 
@@ -90,7 +90,7 @@ public sealed class ImportExcelHandler : ICommandHandler
         }
         finally
         {
-            TryDelete(tempPath);
+            TempWorkbook.TryDelete(tempPath);
         }
     }
 
@@ -327,36 +327,4 @@ public sealed class ImportExcelHandler : ICommandHandler
         }
     }
 
-    /// <summary>
-    /// Fetches the workbook to a temp file.
-    /// </summary>
-    /// <remarks>
-    /// This blocks Revit's UI thread, which handlers normally must not do — the
-    /// upload path defers its network work for exactly that reason. It is
-    /// accepted here because the file cannot be read before it arrives and the
-    /// queue has no pre-fetch step: a schedule is a few hundred kilobytes, and
-    /// the timeout bounds the worst case at a minute rather than forever.
-    /// </remarks>
-    private static string Download(string url)
-    {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-
-        var bytes = http.GetByteArrayAsync(url).GetAwaiter().GetResult();
-        var path = Path.Combine(Path.GetTempPath(), $"import-{Guid.NewGuid():N}.xlsx");
-        File.WriteAllBytes(path, bytes);
-        return path;
-    }
-
-    private static void TryDelete(string? path)
-    {
-        if (path is null) return;
-        try
-        {
-            if (File.Exists(path)) File.Delete(path);
-        }
-        catch (Exception ex)
-        {
-            Logger.Debug($"Could not delete temp file '{path}': {ex.Message}");
-        }
-    }
 }

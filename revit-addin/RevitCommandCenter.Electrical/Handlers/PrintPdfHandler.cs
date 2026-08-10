@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using RevitCommandCenter.Electrical.Models;
 using RevitCommandCenter.Electrical.Utils;
@@ -25,7 +24,7 @@ public sealed class PrintPdfHandler : ICommandHandler
             return CommandResult.Fail("No sheet number given.", retryable: false);
         }
 
-        var patterns = SplitPatterns(requested);
+        var patterns = SheetMatcher.SplitPatterns(requested);
         if (patterns.Count == 0)
         {
             return CommandResult.Fail($"'{requested}' names no sheet.", retryable: false);
@@ -44,7 +43,7 @@ public sealed class PrintPdfHandler : ICommandHandler
             return CommandResult.Fail("This model has no printable sheets.", retryable: false);
         }
 
-        var (matched, unmatched) = Match(sheets, patterns);
+        var (matched, unmatched) = SheetMatcher.Match(sheets, patterns);
         if (matched.Count == 0)
         {
             // Naming what does exist turns "no sheet matched" into something the
@@ -64,11 +63,30 @@ public sealed class PrintPdfHandler : ICommandHandler
         var combine = command.GetBool("combine", true);
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
 
+        // A named Print Setup, if one was asked for. Offices settle on how their
+        // drawings print and save it here; printing "nearly like that" is worse
+        // than refusing, so an unknown name fails rather than falling back.
+        var setupName = command.GetString("setup");
+        PrintSetting? setup = null;
+        if (!string.IsNullOrWhiteSpace(setupName))
+        {
+            setup = FindSetup(context.Doc, setupName!);
+            if (setup is null)
+            {
+                var available = Setups(context.Doc);
+                return CommandResult.Fail(
+                    available.Count == 0
+                        ? $"This model has no saved print setup named '{setupName}' — it has none at all."
+                        : $"No print setup named '{setupName}'. This model has: {string.Join(", ", available)}",
+                    retryable: false);
+            }
+        }
+
         try
         {
             var files = combine
-                ? PrintCombined(context.Doc, matched, directory, stamp)
-                : PrintSeparately(context.Doc, matched, directory, stamp);
+                ? PrintCombined(context.Doc, matched, directory, stamp, setup)
+                : PrintSeparately(context.Doc, matched, directory, stamp, setup);
 
             if (files.Count == 0)
             {
@@ -123,84 +141,67 @@ public sealed class PrintPdfHandler : ICommandHandler
         };
     }
 
-    // ------------------------------------------------------------- selection
+    // -------------------------------------------------------------- printing
 
-    /// <summary>
-    /// Splits what the engineer typed into sheet patterns.
-    ///
-    /// "E-101, E-102" and "E-101 E-102" and "E-101;E-102" all mean the same
-    /// thing to the person typing them, so they mean the same thing here.
-    /// </summary>
-    private static List<string> SplitPatterns(string requested) =>
-        requested
-            .Split(new[] { ',', ';', ' ', '\t', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Trim().Trim('"', '\''))
-            .Where(part => part.Length > 0)
+    /// <summary>Saved print setups in this model, by name.</summary>
+    private static List<string> Setups(Document doc) =>
+        new FilteredElementCollector(doc)
+            .OfClass(typeof(PrintSetting))
+            .Cast<PrintSetting>()
+            .Select(setting => setting.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    private static (List<ViewSheet> Matched, List<string> Unmatched) Match(
-        List<ViewSheet> sheets,
-        List<string> patterns)
-    {
-        // "all" is what someone types when they want the set, and it is not a
-        // sheet number anywhere.
-        if (patterns.Any(pattern => pattern.Equals("all", StringComparison.OrdinalIgnoreCase)))
-        {
-            return (Ordered(sheets), new List<string>());
-        }
-
-        var matched = new List<ViewSheet>();
-        var unmatched = new List<string>();
-
-        foreach (var pattern in patterns)
-        {
-            var regex = ToRegex(pattern);
-            var hits = sheets
-                .Where(sheet => regex.IsMatch(sheet.SheetNumber) || regex.IsMatch(sheet.Name))
-                .ToList();
-
-            if (hits.Count == 0)
-            {
-                unmatched.Add(pattern);
-                continue;
-            }
-
-            // Two patterns can name the same sheet ("E-101" and "E-1*"), and
-            // printing it twice is a wasted page, not a second copy anyone asked for.
-            foreach (var hit in hits.Where(hit => matched.All(seen => seen.Id != hit.Id)))
-            {
-                matched.Add(hit);
-            }
-        }
-
-        return (Ordered(matched), unmatched);
-    }
-
-    /// <summary>Sheet order, so a printed set collates the way the drawing set does.</summary>
-    private static List<ViewSheet> Ordered(IEnumerable<ViewSheet> sheets) =>
-        sheets.OrderBy(sheet => sheet.SheetNumber, StringComparer.OrdinalIgnoreCase).ToList();
+    private static PrintSetting? FindSetup(Document doc, string name) =>
+        new FilteredElementCollector(doc)
+            .OfClass(typeof(PrintSetting))
+            .Cast<PrintSetting>()
+            .FirstOrDefault(setting =>
+                string.Equals(setting.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// A sheet pattern as a regex. `*` and `?` mean what they mean in a file
-    /// dialog; everything else is literal, so "E-101" cannot be read as a
-    /// character class by a sheet numbering scheme that uses brackets.
+    /// Export options for one run, carrying a saved print setup when there is one.
+    ///
+    /// Only the settings that mean the same thing in both dialogs are carried
+    /// across. Paper size is deliberately NOT one of them: PDF export takes a
+    /// fixed paper format, while a drawing set is normally a mix of sizes that
+    /// each title block already states. Forcing every sheet onto the setup's one
+    /// size would rescale drawings that were correct before.
+    ///
+    /// Margins are left alone for the same reason — they are expressed against a
+    /// paper size this export is not setting.
     /// </summary>
-    private static Regex ToRegex(string pattern)
+    private static PDFExportOptions Options(string fileName, PrintSetting? setup)
     {
-        var escaped = Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".");
-        return new Regex($"^{escaped}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
+        var options = new PDFExportOptions { Combine = true, FileName = fileName };
+        if (setup is null) return options;
 
-    // -------------------------------------------------------------- printing
+        var p = setup.PrintParameters;
+
+        options.PaperOrientation = p.PageOrientation;
+        options.ColorDepth = p.ColorDepth;
+        options.RasterQuality = p.RasterQuality;
+        options.HideCropBoundaries = p.HideCropBoundaries;
+        options.HideScopeBoxes = p.HideScopeBoxes;
+        options.HideUnreferencedViewTags = p.HideUnreferencedViewTags;
+        options.MaskCoincidentLines = p.MaskCoincidentLines;
+        options.ViewLinksInBlue = p.ViewLinksinBlue;
+        options.ZoomType = p.ZoomType;
+        options.ZoomPercentage = p.Zoom;
+
+        return options;
+    }
 
     private static List<string> PrintCombined(
         Document doc,
         List<ViewSheet> sheets,
         string directory,
-        string stamp)
+        string stamp,
+        PrintSetting? setup)
     {
         var name = $"sheets-{stamp}";
-        var options = new PDFExportOptions { Combine = true, FileName = name };
+        var options = Options(name, setup);
 
         var ok = doc.Export(directory, sheets.Select(sheet => sheet.Id).ToList(), options);
         if (!ok) return new List<string>();
@@ -220,14 +221,15 @@ public sealed class PrintPdfHandler : ICommandHandler
         Document doc,
         List<ViewSheet> sheets,
         string directory,
-        string stamp)
+        string stamp,
+        PrintSetting? setup)
     {
         var files = new List<string>();
 
         foreach (var sheet in sheets)
         {
             var name = $"{Sanitize(sheet.SheetNumber)}-{stamp}";
-            var options = new PDFExportOptions { Combine = true, FileName = name };
+            var options = Options(name, setup);
 
             if (!doc.Export(directory, new List<ElementId> { sheet.Id }, options))
             {

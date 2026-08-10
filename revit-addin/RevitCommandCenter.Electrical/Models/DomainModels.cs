@@ -273,3 +273,77 @@ public sealed class TraySegment
     public double WidthMm { get; init; }
     public double HeightMm { get; init; }
 }
+
+/// <summary>
+/// Which model is open, and what it can be printed and exported with.
+///
+/// Read by the website to label the project with the file actually open in
+/// Revit, and to fill the print-setup and CAD-setup dropdowns from the setups
+/// saved in that model.
+/// </summary>
+public sealed class ModelInfoDto
+{
+    [JsonProperty("kind")] public string Kind => "model";
+
+    /// <summary>File name without its extension — what Revit's title bar shows.</summary>
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
+
+    /// <summary>Full path, or null while the model has never been saved.</summary>
+    [JsonProperty("path", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Path { get; set; }
+
+    [JsonProperty("is_workshared")] public bool IsWorkshared { get; set; }
+
+    [JsonProperty("printable_sheets")] public int PrintableSheets { get; set; }
+
+    /// <summary>Names of the saved Print Setups. Empty when the model has none.</summary>
+    [JsonProperty("print_setups")] public List<string> PrintSetups { get; set; } = new();
+
+    /// <summary>Names of the saved DWG/DXF Export Setups. Empty when the model has none.</summary>
+    [JsonProperty("cad_setups")] public List<string> CadSetups { get; set; } = new();
+}
+
+/// <summary>Result of exporting chosen sheets to DWG or DXF.</summary>
+public sealed class CadExportResultDto
+{
+    [JsonProperty("kind")] public string Kind => "cad_export";
+
+    [JsonProperty("format")] public string Format { get; set; } = "dwg";
+
+    /// <summary>The setup used, or null when the model's defaults were used.</summary>
+    [JsonProperty("setup", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Setup { get; set; }
+
+    [JsonProperty("sheets")] public List<string> Sheets { get; set; } = new();
+
+    [JsonProperty("files")] public List<string> Files { get; set; } = new();
+
+    [JsonProperty("not_found", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? NotFound { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}
+
+/// <summary>Result of drawing a spreadsheet into a view.</summary>
+public sealed class ImportTableResultDto
+{
+    [JsonProperty("kind")] public string Kind => "import_table";
+
+    /// <summary>Name of the view that was created.</summary>
+    [JsonProperty("view")] public string View { get; set; } = string.Empty;
+
+    /// <summary>"schedule" (a drafting view) or "legend".</summary>
+    [JsonProperty("target")] public string Target { get; set; } = "schedule";
+
+    [JsonProperty("source_sheet")] public string SourceSheet { get; set; } = string.Empty;
+
+    [JsonProperty("rows")] public int Rows { get; set; }
+
+    [JsonProperty("columns")] public int Columns { get; set; }
+
+    [JsonProperty("merged_cells")] public int MergedCells { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}
