@@ -301,6 +301,17 @@ public sealed class ModelInfoDto
 
     /// <summary>Names of the saved DWG/DXF Export Setups. Empty when the model has none.</summary>
     [JsonProperty("cad_setups")] public List<string> CadSetups { get; set; } = new();
+
+    /// <summary>
+    /// Family type names present in the model, keyed by the category name the
+    /// website's command catalogue uses ("lighting", "receptacle", …).
+    /// Each entry reads "Family: Type", the way Revit's own Type Selector shows it.
+    /// </summary>
+    [JsonProperty("family_types")]
+    public Dictionary<string, List<string>> FamilyTypes { get; set; } = new();
+
+    /// <summary>Room names in the model, for the fields that take one.</summary>
+    [JsonProperty("rooms")] public List<string> Rooms { get; set; } = new();
 }
 
 /// <summary>Result of exporting chosen sheets to DWG or DXF.</summary>

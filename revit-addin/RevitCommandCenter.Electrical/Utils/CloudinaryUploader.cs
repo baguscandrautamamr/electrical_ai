@@ -33,7 +33,7 @@ public static class CloudinaryUploader
     /// wrote its file. The caller reports the local path in that case, which is
     /// what it did before this existed.
     /// </summary>
-    public static async Task<string?> UploadAsync(
+    public static async Task<UploadOutcome> UploadAsync(
         string cloudName,
         string apiKey,
         string apiSecret,
@@ -45,13 +45,13 @@ public static class CloudinaryUploader
             || string.IsNullOrWhiteSpace(apiKey)
             || string.IsNullOrWhiteSpace(apiSecret))
         {
-            return null;
+            return UploadOutcome.Failed("Cloudinary credentials are incomplete.");
         }
 
         if (!File.Exists(localPath))
         {
             Logger.Warn($"Cannot upload '{localPath}': the file is not there.");
-            return null;
+            return UploadOutcome.Failed("The exported file was gone before it could be uploaded.");
         }
 
         try
@@ -91,24 +91,56 @@ public static class CloudinaryUploader
             if (!response.IsSuccessStatusCode)
             {
                 Logger.Warn($"Cloudinary refused the upload (HTTP {(int)response.StatusCode}): {Trim(body)}");
-                return null;
+                return UploadOutcome.Failed($"Cloudinary refused it (HTTP {(int)response.StatusCode}): {Reason(body)}");
             }
 
             var url = JObject.Parse(body)["secure_url"]?.ToString();
             if (string.IsNullOrWhiteSpace(url))
             {
                 Logger.Warn($"Cloudinary accepted the upload but returned no secure_url: {Trim(body)}");
-                return null;
+                return UploadOutcome.Failed("Cloudinary accepted it but returned no URL.");
             }
 
             Logger.Info($"Uploaded '{Path.GetFileName(localPath)}' to Cloudinary.");
-            return url;
+            return UploadOutcome.Uploaded(url!);
         }
         catch (Exception ex)
         {
             Logger.Warn($"Could not upload '{Path.GetFileName(localPath)}': {ex.Message}");
-            return null;
+            return UploadOutcome.Failed(ex.Message);
         }
+    }
+
+
+    /// <summary>
+    /// What came of one upload — the URL, or why there is not one.
+    ///
+    /// The reason used to go only to the log file on the Revit PC. That is the
+    /// one place nobody looks: the person who notices is on a phone, looking at
+    /// a result that says the file is on a computer they are not sitting at.
+    /// "Cloudinary refused it (HTTP 401): Invalid Signature" tells them their
+    /// keys were rotated; silence tells them nothing.
+    /// </summary>
+    public readonly record struct UploadOutcome(string? Url, string? Error)
+    {
+        public static UploadOutcome Uploaded(string url) => new(url, null);
+        public static UploadOutcome Failed(string error) => new(null, error);
+    }
+
+    /// <summary>Cloudinary's own message, when its body carries one.</summary>
+    private static string Reason(string body)
+    {
+        try
+        {
+            var message = JObject.Parse(body)["error"]?["message"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(message)) return message!;
+        }
+        catch
+        {
+            // Not JSON — a proxy or a gateway answered instead. Fall through.
+        }
+
+        return Trim(body);
     }
 
     /// <summary>

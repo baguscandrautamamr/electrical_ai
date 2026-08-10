@@ -42,6 +42,8 @@ public sealed class ModelInfoHandler : ICommandHandler
             PrintableSheets = sheets,
             PrintSetups = Names<PrintSetting>(doc),
             CadSetups = Names<ExportDWGSettings>(doc),
+            FamilyTypes = FamilyTypesByCategory(doc),
+            Rooms = RoomNames(doc),
         };
 
         Logger.Info(
@@ -59,6 +61,79 @@ public sealed class ModelInfoHandler : ICommandHandler
     /// saves one — so an empty list is an answer, not a failure. The website
     /// falls back to Revit's own defaults when it gets one.
     /// </summary>
+    /// <summary>
+    /// Kategori yang punya field "tipe" di form website, dan nama yang dipakai
+    /// katalog perintah untuk masing-masing.
+    /// </summary>
+    private static readonly (string Key, BuiltInCategory Category)[] TypeCategories =
+    {
+        ("lighting", BuiltInCategory.OST_LightingFixtures),
+        ("lighting_device", BuiltInCategory.OST_LightingDevices),
+        ("receptacle", BuiltInCategory.OST_ElectricalFixtures),
+        ("fire_alarm", BuiltInCategory.OST_FireAlarmDevices),
+        ("telephone", BuiltInCategory.OST_TelephoneDevices),
+        ("lan", BuiltInCategory.OST_DataDevices),
+        ("security", BuiltInCategory.OST_SecurityDevices),
+        ("communication", BuiltInCategory.OST_CommunicationDevices),
+        ("cable_tray", BuiltInCategory.OST_CableTray),
+    };
+
+    /// <summary>
+    /// Nama tipe family yang benar-benar ada di model, per kategori.
+    ///
+    /// Field seperti "Tipe armatur" sebelumnya kolom teks kosong: orangnya
+    /// mengetik nama family dari ingatan, dan salah satu huruf membuat
+    /// perintahnya gagal setelah menunggu Revit menjawab. Nama-nama itu ada di
+    /// model dan tidak ada di tempat lain — hanya add-in yang bisa membacanya.
+    ///
+    /// Format "Family: Type", sama dengan yang terlihat di Project Browser dan
+    /// di Type Selector, supaya yang dipilih di website terbaca sama dengan
+    /// yang dilihat di Revit.
+    /// </summary>
+    private static Dictionary<string, List<string>> FamilyTypesByCategory(Document doc)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, category) in TypeCategories)
+        {
+            var names = new FilteredElementCollector(doc)
+                .OfCategory(category)
+                .WhereElementIsElementType()
+                .OfClass(typeof(FamilySymbol))
+                .Cast<FamilySymbol>()
+                .Select(symbol => $"{symbol.FamilyName}: {symbol.Name}")
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (names.Count > 0) result[key] = names;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Nama ruangan di model.
+    ///
+    /// Ikut di sini, bukan menunggu perintah query terpisah: setiap perintah
+    /// adalah satu putaran antrean, dan nama ruangan dibutuhkan pada form yang
+    /// sama dengan nama tipe. Ruangan tak bernama dibuang — ia tidak bisa
+    /// disebut dalam sebuah perintah, jadi menawarkannya cuma memberi pilihan
+    /// yang pasti gagal.
+    /// </summary>
+    private static List<string> RoomNames(Document doc) =>
+        new FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_Rooms)
+            .WhereElementIsNotElementType()
+            .ToElements()
+            .Select(room => room.Name?.Trim() ?? string.Empty)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Take(500)
+            .ToList();
+
     private static List<string> Names<T>(Document doc) where T : Element =>
         new FilteredElementCollector(doc)
             .OfClass(typeof(T))
