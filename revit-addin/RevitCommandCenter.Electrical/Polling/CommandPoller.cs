@@ -363,6 +363,20 @@ public sealed class CommandPoller : IDisposable
 
         foreach (var upload in outcome.PendingUploads)
         {
+            // Ditunggu selesai dulu.
+            //
+            // Revit mengembalikan kendali sebelum byte terakhir PDF-nya sampai
+            // di disk, dan unggahan yang mendahuluinya berhasil sepenuhnya —
+            // yang rusak cuma isinya. Kegagalannya lalu muncul sejauh mungkin
+            // dari sebabnya: "Gagal memuat dokumen PDF" di peramban, dari
+            // berkas yang di PC ini sudah lengkap beberapa detik kemudian.
+            var notReady = await ExportedFile.SettleAsync(upload.LocalPath, token).ConfigureAwait(false);
+            if (notReady is not null)
+            {
+                firstError ??= notReady;
+                continue;
+            }
+
             var attempt = await CloudinaryUploader
                 .UploadAsync(
                     _config.CloudinaryCloudName,
