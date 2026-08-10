@@ -28,13 +28,13 @@ public sealed class SecurityHandler : DevicePlacementHandler
         _ => 15.0,
     };
 
-    protected override int ResolveCount(CommandModel command, Room room) =>
+    protected override int ResolveCount(CommandModel command, SpatialElement room) =>
         Math.Max(1, command.GetInt("count", 1));
 
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count)
     {
         // Cameras go high; ceiling-mounted at 2.8 m unless told otherwise.
@@ -60,7 +60,7 @@ public sealed class SecurityHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point)
@@ -92,7 +92,7 @@ public sealed class SecurityHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         var fov = command.GetDouble("coverage_fov", 90);

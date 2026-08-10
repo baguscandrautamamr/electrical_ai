@@ -41,7 +41,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
         _ => SmokeSpacingM, // smoke and dual
     };
 
-    protected override int ResolveCount(CommandModel command, Room room)
+    protected override int ResolveCount(CommandModel command, SpatialElement room)
     {
         // "1 unit" means one. The coverage calculation is how many detectors a
         // room needs when nobody has said; it is not a correction to apply to
@@ -55,7 +55,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
     }
 
     /// <summary>Detectors this room needs for NFPA 72 coverage.</summary>
-    private static int CoverageCount(CommandModel command, Room room)
+    private static int CoverageCount(CommandModel command, SpatialElement room)
     {
         var areaSqM = RevitUtils.AreaSqM(command, room);
         var deviceType = command.GetString("type", "dual");
@@ -76,7 +76,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count)
     {
         var mountHeightM = command.GetDouble("height", 2.8);
@@ -121,7 +121,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point)
@@ -157,7 +157,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         var deviceType = command.GetString("type", "dual");

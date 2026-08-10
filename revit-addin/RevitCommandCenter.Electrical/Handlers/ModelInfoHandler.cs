@@ -149,19 +149,22 @@ public sealed class ModelInfoHandler : ICommandHandler
     }
 
     /// <summary>
-    /// Nama ruangan di model.
+    /// Nama ruangan di model — Room arsitektur maupun Space MEP.
     ///
     /// Ikut di sini, bukan menunggu perintah query terpisah: setiap perintah
     /// adalah satu putaran antrean, dan nama ruangan dibutuhkan pada form yang
     /// sama dengan nama tipe. Ruangan tak bernama dibuang — ia tidak bisa
     /// disebut dalam sebuah perintah, jadi menawarkannya cuma memberi pilihan
     /// yang pasti gagal.
+    ///
+    /// Space ikut karena daftar inilah yang menjadi isi dropdown di website dan
+    /// yang dibaca AI sebelum menyusun perintah. Selama ia hanya berisi Room,
+    /// model yang ruangannya dibuat sebagai Space MEP tampil seolah tidak punya
+    /// ruangan sama sekali, dan satu-satunya nama yang bisa diketik orangnya
+    /// adalah nama yang pasti tidak ditemukan.
     /// </summary>
     private static List<string> RoomNames(Document doc) =>
-        new FilteredElementCollector(doc)
-            .OfCategory(BuiltInCategory.OST_Rooms)
-            .WhereElementIsNotElementType()
-            .ToElements()
+        RevitUtils.Enclosures(doc)
             .Select(room => room.Name?.Trim() ?? string.Empty)
             .Where(name => name.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)

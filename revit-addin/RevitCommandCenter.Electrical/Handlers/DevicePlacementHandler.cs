@@ -30,7 +30,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
     protected abstract string TableName { get; }
 
     /// <summary>How many devices this command should place.</summary>
-    protected abstract int ResolveCount(CommandModel command, Room room);
+    protected abstract int ResolveCount(CommandModel command, SpatialElement room);
 
     /// <summary>
     /// Where they go, and what they host on.
@@ -42,7 +42,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
     protected abstract List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count);
 
     /// <summary>Family type to place.</summary>
@@ -57,7 +57,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
     protected abstract object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point);
@@ -67,7 +67,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
     }
@@ -82,7 +82,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
             // The lookup's own wording says which of the two it was, and what to
             // type instead — silently picking a room that merely starts with
             // what was typed is how "meeting 1" ended up equipping MEETING 2.
-            return CommandResult.Fail(lookup.Problem ?? $"Room '{roomName}' not found.", retryable: false);
+            return CommandResult.Fail(lookup.Problem ?? $"No room or space called '{roomName}' in the model.", retryable: false);
         }
 
         var room = lookup.Room;

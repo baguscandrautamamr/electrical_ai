@@ -27,14 +27,14 @@ public sealed class LANHandler : DevicePlacementHandler
 
     private int _startPort = 1;
 
-    protected override int ResolveCount(CommandModel command, Room room) =>
+    protected override int ResolveCount(CommandModel command, SpatialElement room) =>
         Math.Max(1, command.GetInt("count", 4));
 
     /// <summary>Data outlets host on the wall's vertical face.</summary>
     protected override List<DevicePlacement> ResolvePlacements(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         int count) =>
         RevitUtils.GeneratePerimeterPlacements(
             room, count, RevitUnits.MToFeet(command.GetDouble("height", 0.4)));
@@ -58,7 +58,7 @@ public sealed class LANHandler : DevicePlacementHandler
     protected override object BuildRow(
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         string deviceId,
         FamilyInstance instance,
         XYZ point)
@@ -89,7 +89,7 @@ public sealed class LANHandler : DevicePlacementHandler
         PlacementResultDto result,
         HandlerContext context,
         CommandModel command,
-        Room room,
+        SpatialElement room,
         List<FamilyInstance> placed)
     {
         var poe = command.GetBool("poe_enabled");
