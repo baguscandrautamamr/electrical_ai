@@ -134,7 +134,8 @@ the lamps; these are what turn them on.
 | `mounting` | ceiling\|wall\|floor | wall | |
 | `placement` | door\|walls\|manual | door | Beside the door, or spread along the walls |
 | `controls` | string | — | What it switches: a circuit id, a fixture mark, or a group name |
-| `family` | string | Switch | Revit family name |
+| `family` | string | — | Revit family name; obeyed exactly or refused |
+| `door_offset` | number | 300 | Distance from the door leaf's edge (mm) |
 
 ```
 /place_lighting_device Meeting_1 type=three_gang count=1 height=1.2 controls=LF-001
@@ -162,7 +163,36 @@ failed compliance line listing what *is* loaded, rather than a silent
 substitution you find out about later.
 
 `family` still wins outright when you name one — you have looked at the project
-browser and this has not.
+browser and this has not. It is now obeyed **or refused**: a name that matches
+nothing in the model fails with the list of families that are loaded, rather than
+placing the first one in the category. That substitution is silent by nature —
+the count is right, the command succeeds, and only the drawing shows it.
+
+`door_offset` moves the switch off the 300 mm standard for the rooms that cannot
+take it: a double leaf, a jamb wider than usual, a wall too short for the plate
+to land clear of the frame. Leave it out and the standard applies, which is why
+`/pasang_saklar pantry` needs nothing else.
+
+### Naming a family, on any device command
+
+Every `place_*` command accepts `family`, and all of them treat it the same way:
+the named family is used, or the command fails saying which families the model
+does have. Nothing is substituted.
+
+That is deliberately stricter than the per-category hints (`type`, `camera_type`,
+`fixture_type`), which stay lenient because they ARE guesses at what an office
+calls its families. `family` is not a guess: it is picked from the list this
+add-in itself reported through `/model_info`.
+
+Every device reply now also carries **`family_used`** — the `Family: Type`
+actually placed, not the name that was asked for. The two differ exactly when it
+matters most, and until now nothing said so.
+
+Names arrive in the form `/model_info` reports them, `Family: Type`. That whole
+string is matched first, then an exact type name, then an exact family name, and
+only then a partial match. Before that order existed, `Family: Type` matched
+nothing at all — no symbol contains the whole of it — and the fallback placed the
+first family in the category.
 
 ### `/place_receptacle <room>`
 
@@ -607,7 +637,7 @@ a schedule kept in Excel, a supplier's cable list, a legend of symbols.
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
 | `file_url` | string | **required** | Where the workbook can be downloaded from |
-| `target` | string | `schedule` | `schedule` for a drafting view, `legend` for a legend |
+| `target` | string | `schedule` | `schedule` for a drafting view, `legend` for a legend, `schedule_view` for a real Schedules/Quantities view |
 | `sheet` | string | — | Which worksheet; the first one with anything on it by default |
 | `name` | string | — | View name; the worksheet's own name by default |
 
@@ -615,12 +645,60 @@ Column widths, row heights, and merged cells come across. Interior grid lines ar
 drawn once rather than once per neighbouring cell, and lines that would cross a
 merged region are skipped — which is what makes a merge look merged.
 
-**It draws the table; it does not make a Revit schedule.** A Revit schedule
-reports the model: its columns are model parameters, and there is no way to give
-it a column of numbers that came from a spreadsheet. Asking for "the same table
-as in Excel" and receiving a schedule means receiving a different table. The cost
-of drawing it is worth stating plainly: the result is a picture of the data, not
-the data. Changing it means changing the spreadsheet and importing again.
+**`schedule` and `legend` draw the table; they do not make a Revit schedule.** A
+Revit schedule reports the model: its columns are model parameters, and there is
+no way to write a spreadsheet's cell into one. Asking for "the same table as in
+Excel" and receiving a schedule means receiving a different table. The cost of
+drawing it is worth stating plainly: the result is a picture of the data, not the
+data. Changing it means changing the spreadsheet and importing again.
+
+#### `target=schedule_view` — a real schedule
+
+A Schedules/Quantities view, the kind that can be filtered, sorted, grouped, and
+placed on a sheet as a live schedule. It is a different thing from the two above,
+and it is built the only way a schedule can be built:
+
+1. **First row is the header.** A schedule column has to be named, and the only
+   name a spreadsheet offers is the one at the top of the column.
+2. **One shared parameter per column**, prefixed `RCC ` and bound to Generic
+   Models. Shared rather than project parameters because only shared parameters
+   can be schedule fields. Their GUIDs are derived from the parameter name, so
+   re-importing reuses them instead of adding a second set Revit considers
+   unrelated. They live in `%APPDATA%\RevitCommandCenter\shared-parameters.txt`;
+   the machine's own shared parameter file is pointed at ours only while the
+   definitions are read, then put back.
+3. **One geometry-less `DirectShape` per row**, in Generic Models, carrying that
+   row's values plus `RCC Tabel` (which table it belongs to) and `RCC Baris` (its
+   spreadsheet row number). DirectShape rather than a family instance because it
+   needs no `.rft` template and no family file to install first.
+4. **The schedule** is created over Generic Models, filtered to `RCC Tabel` =
+   this table, and sorted by `RCC Baris` so the rows keep the spreadsheet's
+   order. Column headings are set back to the spreadsheet's own wording, so the
+   `RCC ` prefix never reaches a reader.
+
+What it costs, stated because it cannot be undone by looking at the result:
+
+- **The rows become elements in the model.** They appear in a Generic Models
+  schedule, in quantity takeoffs, and in IFC exports. The reply says how many.
+- **Excel's formatting is gone** — merged cells, column widths, colours. A
+  schedule has formatting of its own. Anyone who wants the table to look like the
+  spreadsheet wants `target=schedule`.
+- **Every cell is text**, including numbers: one cell says `12` and the next says
+  `12 (tentative)`, and a Number parameter would refuse the second and lose it.
+  Sorting a numeric column therefore sorts it as words — which is why the row
+  order is kept in its own integer parameter and used as the schedule's sort.
+- **Re-importing the same table replaces it.** Rows carrying the same `RCC Tabel`
+  are deleted first and the schedule is rebuilt, because the columns can change
+  between imports. The reply says how many rows were replaced.
+
+Limits: 5,000 rows (each is an element) and 60 columns. A sheet past either is
+refused with its size in the message.
+
+Not multi-category. A multi-category schedule restricts its fields to shared
+parameters — which these already are — and buys nothing while every row is a
+Generic Model. Where multi-category earns its keep is a schedule over real
+devices from several categories at once, which reads the model rather than a
+spreadsheet.
 
 `target=legend` needs the model to hold at least one legend already. The Revit
 API cannot create the first one — duplicating an existing legend is the only way

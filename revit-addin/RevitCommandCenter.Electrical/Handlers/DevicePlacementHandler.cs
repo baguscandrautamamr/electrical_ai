@@ -87,11 +87,26 @@ public abstract class DevicePlacementHandler : ICommandHandler
 
         var room = lookup.Room;
 
-        var symbol = ResolveSymbol(context, command);
+        // A family named in the command is obeyed or refused — never quietly
+        // swapped. `family` does not arrive from a guess: it is picked from the
+        // list this add-in itself reported through /model_info, so a name that
+        // matches nothing means the model changed or the name is wrong, and
+        // placing a different family instead is the failure that only shows up
+        // in the drawing. The per-category hints below (type, camera_type,
+        // fixture_type) stay lenient, because those ARE guesses at what an
+        // office calls its families.
+        var namedFamily = command.GetString("family").Trim();
+
+        var symbol = namedFamily.Length > 0
+            ? RevitUtils.FindNamedSymbol(context.Doc, Category, namedFamily)
+            : ResolveSymbol(context, command);
+
         if (symbol is null)
         {
             return CommandResult.Fail(
-                $"No suitable family found for {CommandType} in category {Category}.",
+                namedFamily.Length > 0
+                    ? RevitUtils.NoSuchFamily(context.Doc, Category, namedFamily)
+                    : $"No suitable family found for {CommandType} in category {Category}.",
                 retryable: false);
         }
 
@@ -194,6 +209,11 @@ public abstract class DevicePlacementHandler : ICommandHandler
             // tidak ada setelah transaksinya dibatalkan, dan Id yang menunjuk ke
             // ketiadaan lebih buruk daripada tidak ada Id sama sekali.
             DeviceIds = dryRun ? new List<string>() : deviceIds,
+            // Di sini, sekali, untuk kedelapan kategori: yang dilaporkan adalah
+            // simbol yang dipakai, bukan nama yang diminta. Keduanya berbeda
+            // persis pada saat perbedaannya paling mahal — ketika nama yang
+            // diminta tidak ada di model dan pencariannya jatuh ke tipe pertama.
+            FamilyUsed = RevitUtils.DescribeSymbol(symbol),
         };
 
         // Dilewati pada uji coba: elemennya sudah tidak ada.
