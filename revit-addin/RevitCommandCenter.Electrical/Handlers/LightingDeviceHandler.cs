@@ -37,10 +37,15 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
         // "door" is the default because it is where a switch goes. The
         // alternative spreads them along the walls, which is what you want in a
         // corridor or a room whose doors are not modelled yet.
+        // Jarak dari tepi daun pintu, dalam milimeter. Kosong berarti standar
+        // 300 mm — argumen ini ada untuk ruangan yang tidak bisa memakainya.
+        var doorOffsetMm = command.GetDouble("door_offset", 0);
+        var doorOffsetFeet = doorOffsetMm > 0 ? RevitUnits.MToFeet(doorOffsetMm / 1000.0) : (double?)null;
+
         return command.GetString("placement", "door").ToLowerInvariant() switch
         {
             "walls" or "perimeter" => RevitUtils.GeneratePerimeterPlacements(room, count, heightFeet),
-            _ => RevitUtils.GenerateSwitchPlacements(room, count, heightFeet),
+            _ => RevitUtils.GenerateSwitchPlacements(room, count, heightFeet, doorOffsetFeet),
         };
     }
 
@@ -58,15 +63,10 @@ public sealed class LightingDeviceHandler : DevicePlacementHandler
         var symbols = RevitUtils.Symbols(context.Doc, Category);
         if (symbols.Count == 0) return null;
 
-        // An explicitly named family wins outright: the engineer has looked at
-        // the project browser, and this code has not.
-        var family = command.GetString("family");
-        if (!string.IsNullOrWhiteSpace(family) && !family.Equals("Switch", StringComparison.OrdinalIgnoreCase))
-        {
-            var named = RevitUtils.FindSymbol(context.Doc, Category, family);
-            if (named is not null) return named;
-        }
-
+        // Sebuah family yang disebut namanya sudah ditangani kelas induk —
+        // diterima apa adanya atau ditolak, tanpa diam-diam diganti. Yang
+        // tersisa di sini adalah menerka dari `type`, dan terkaan memang boleh
+        // meleset ke tipe yang paling mendekati.
         var type = command.GetString("type", "single_gang");
         var best = symbols
             .Select(symbol => (Symbol: symbol, Score: ScoreFor(symbol, type)))

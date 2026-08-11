@@ -160,6 +160,7 @@ public sealed class ModifyDevicesHandler : ICommandHandler
         foreach (var name in new[]
                  {
                      "count", "grid", "height", "type", "fixture_type", "family", "mounting",
+                     "door_offset",
                      "spacing", "placement", "lux_target", "space", "controls", "voltage",
                      "breaker_size", "load_per_outlet", "circuit_type", "poe_enabled",
                      "switch_panel", "camera_type", "resolution", "coverage_fov", "system",

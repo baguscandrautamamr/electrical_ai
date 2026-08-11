@@ -524,9 +524,16 @@ public static class RevitUtils
     public static List<DevicePlacement> GenerateSwitchPlacements(
         SpatialElement room,
         int count,
-        double heightFeet)
+        double heightFeet,
+        double? offsetFeet = null)
     {
         if (count <= 0) return new List<DevicePlacement>();
+
+        // 300 mm unless the command says otherwise. The standard is the default
+        // precisely so that nobody has to state it; what the argument buys is the
+        // room that cannot take it — a double leaf, a jamb wider than usual, a
+        // wall too short for the switch to land clear of the frame.
+        var offset = offsetFeet is > 0 ? offsetFeet.Value : SwitchOffsetFeet;
 
         var doc = room.Document;
         var baseZ = (RoomCenter(room)?.Z ?? 0) + heightFeet;
@@ -544,7 +551,7 @@ public static class RevitUtils
                 // door's centre plus a guessed half-leaf. That guess, projected
                 // onto the wrong segment of a wall the door had split in two,
                 // is what put a switch in the middle of the doorway.
-                var at = perimeter.BesideOpening(door, SwitchOffsetFeet, OpeningClearanceFeet);
+                var at = perimeter.BesideOpening(door, offset, OpeningClearanceFeet);
                 if (at is null)
                 {
                     Logger.Debug($"No wall clear of the opening beside door {door.Id} in '{room.Name}'.");
@@ -918,9 +925,22 @@ public static class RevitUtils
         symbol is null ? string.Empty : $"{symbol.Family?.Name ?? "?"} : {symbol.Name}";
 
     /// <summary>
-    /// First placeable <see cref="FamilySymbol"/> in a category whose family or
-    /// type name contains <paramref name="nameHint"/>; otherwise any symbol in
-    /// the category.
+    /// The family type a name hint asks for, or any type in the category when
+    /// the hint matches nothing.
+    ///
+    /// The hint comes from a person or from an assistant, so it arrives in every
+    /// shape a name can take. The one that mattered most was the one this add-in
+    /// itself hands out: /model_info reports types as "Family: Type", the website
+    /// puts that string in its dropdown, and the assistant copies it into
+    /// fixture_type. Matching only by Contains, no symbol contains the whole
+    /// "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT" — so the match failed, the
+    /// fallback below placed the first family in the category, and the command
+    /// reported ten fixtures placed. The wrong ones. Nothing anywhere said so.
+    ///
+    /// So the exact forms are tried first, in the order that makes a wrong answer
+    /// least likely: the full "Family: Type", then an exact type name, then an
+    /// exact family name, and only then Contains — which is what lets somebody
+    /// type "downlight" and get the downlight.
     /// </summary>
     public static FamilySymbol? FindSymbol(Document doc, BuiltInCategory category, string nameHint)
     {
@@ -930,15 +950,85 @@ public static class RevitUtils
 
         if (!string.IsNullOrWhiteSpace(nameHint))
         {
-            var match = symbols.FirstOrDefault(symbol =>
-                symbol.Name.Contains(nameHint, StringComparison.OrdinalIgnoreCase)
-                || (symbol.Family?.Name.Contains(nameHint, StringComparison.OrdinalIgnoreCase) ?? false));
+            var match = MatchSymbol(symbols, nameHint);
             if (match is not null) return match;
 
-            Logger.Warn($"No family matching '{nameHint}' in {category}; using '{symbols[0].Name}'.");
+            // Still a fallback, because a command that places nothing helps
+            // nobody — but it is now the loudest line in the log, and the reply
+            // carries the family that was actually used (see
+            // DevicePlacementHandler), so "why is this the wrong lamp" has an
+            // answer that does not require opening a log file.
+            Logger.Warn(
+                $"No family matching '{nameHint}' in {category}; "
+                + $"using '{DescribeSymbol(symbols[0])}' instead.");
         }
 
         return symbols[0];
+    }
+
+    /// <summary>
+    /// The family a command NAMED, or null — never a substitute.
+    ///
+    /// Different question from <see cref="FindSymbol"/>, and the difference is
+    /// the whole point. A hint like "dome" or "smoke" is this system's guess at
+    /// what the office calls its families, so falling back to whatever is loaded
+    /// is the right answer. A `family` argument is not a guess: somebody read the
+    /// project browser, or picked from a list this add-in itself reported. There
+    /// is no such thing as a near miss for that, and placing the first family in
+    /// the category instead is how ten downlights became ten recessed panels
+    /// with nothing anywhere saying so.
+    /// </summary>
+    public static FamilySymbol? FindNamedSymbol(Document doc, BuiltInCategory category, string name)
+    {
+        var symbols = Symbols(doc, category);
+        return symbols.Count == 0 ? null : MatchSymbol(symbols, name);
+    }
+
+    /// <summary>Why a named family could not be used, and what the model does have.</summary>
+    public static string NoSuchFamily(Document doc, BuiltInCategory category, string name)
+    {
+        var available = Symbols(doc, category)
+            .Select(symbol => symbol.FamilyName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(family => family, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+
+        return available.Count == 0
+            ? $"No family called '{name}' — this model has no {category} family loaded at all."
+            : $"No family called '{name}' in {category}. This model has: {string.Join(", ", available)}.";
+    }
+
+    /// <summary>The symbol a hint names, or null when nothing in the model answers to it.</summary>
+    private static FamilySymbol? MatchSymbol(List<FamilySymbol> symbols, string nameHint)
+    {
+        var wanted = nameHint.Trim();
+
+        // "Family: Type" — the form /model_info reports, and therefore the form
+        // that comes back from the website and the assistant.
+        var colon = wanted.IndexOf(':');
+        if (colon > 0)
+        {
+            var familyPart = wanted[..colon].Trim();
+            var typePart = wanted[(colon + 1)..].Trim();
+
+            var exact = symbols.FirstOrDefault(symbol =>
+                string.Equals(symbol.FamilyName, familyPart, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(symbol.Name, typePart, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+
+            // The type half may have been renamed since the list was read; the
+            // family half is the more stable of the two, so it gets the next try.
+            if (familyPart.Length > 0) wanted = familyPart;
+        }
+
+        return symbols.FirstOrDefault(symbol =>
+                   string.Equals(symbol.Name, wanted, StringComparison.OrdinalIgnoreCase))
+               ?? symbols.FirstOrDefault(symbol =>
+                   string.Equals(symbol.FamilyName, wanted, StringComparison.OrdinalIgnoreCase))
+               ?? symbols.FirstOrDefault(symbol =>
+                   symbol.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase)
+                   || (symbol.Family?.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
     /// <summary>Level nearest to a room, for hosting new instances.</summary>

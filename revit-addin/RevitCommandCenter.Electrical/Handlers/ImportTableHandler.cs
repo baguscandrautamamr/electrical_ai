@@ -84,10 +84,10 @@ public sealed class ImportTableHandler : ICommandHandler
         }
 
         var target = command.GetString("target", "schedule").ToLowerInvariant();
-        if (target is not ("schedule" or "legend"))
+        if (target is not ("schedule" or "legend" or "schedule_view"))
         {
             return CommandResult.Fail(
-                $"Unknown target '{target}'. Use 'schedule' or 'legend'.",
+                $"Unknown target '{target}'. Use 'schedule', 'legend', or 'schedule_view'.",
                 retryable: false);
         }
 
@@ -116,6 +116,11 @@ public sealed class ImportTableHandler : ICommandHandler
 
             var table = Table.Read(worksheet);
 
+            if (target == "schedule_view")
+            {
+                return BuildSchedule(context, table, viewName);
+            }
+
             if (table.Rows * table.Columns > MaxCells)
             {
                 return CommandResult.Fail(
@@ -140,6 +145,94 @@ public sealed class ImportTableHandler : ICommandHandler
         {
             TempWorkbook.TryDelete(tempPath);
         }
+    }
+
+    // ---------------------------------------------------------------- schedule
+
+    /// <summary>
+    /// The spreadsheet as a real Schedules/Quantities view.
+    ///
+    /// Everything the drawn targets keep — merged cells, column widths, row
+    /// heights, alignment — is lost here, and that is not a shortfall to
+    /// apologise for: a schedule has formatting of its own, and asking for one
+    /// is asking for rows that can be filtered and sorted rather than a picture
+    /// that cannot. What IS worth saying out loud is that the rows become
+    /// elements in the model, so the reply says how many.
+    ///
+    /// The first row is the header. There is no way around that: a schedule
+    /// column has to be named, and the only name a spreadsheet offers is the one
+    /// at the top of the column.
+    /// </summary>
+    private static CommandResult BuildSchedule(HandlerContext context, Table table, string? viewName)
+    {
+        if (table.Rows < 2)
+        {
+            return CommandResult.Fail(
+                "A schedule needs a header row and at least one row under it; "
+                + "that sheet has "
+                + (table.Rows == 0 ? "nothing on it." : "only one row."),
+                retryable: false);
+        }
+
+        var headers = new List<string>(table.Columns);
+        for (var column = 0; column < table.Columns; column++)
+        {
+            headers.Add(table.Text(0, column) ?? string.Empty);
+        }
+
+        var rows = new List<IReadOnlyList<string>>(table.Rows - 1);
+        for (var row = 1; row < table.Rows; row++)
+        {
+            var cells = new List<string>(table.Columns);
+            for (var column = 0; column < table.Columns; column++)
+            {
+                cells.Add(table.Text(row, column) ?? string.Empty);
+            }
+            rows.Add(cells);
+        }
+
+        // Said before the work starts, because it cannot be undone by looking at
+        // the result: a merged cell in the spreadsheet has no counterpart in a
+        // schedule, and the value simply lands in the first column it spanned.
+        if (table.Merges.Count > 0) context.Warn("import_table.merges_lost");
+
+        var doc = context.Doc;
+        using var transaction = new Transaction(doc, "Import table as schedule");
+        transaction.Start();
+
+        TableSchedule.Result built;
+        try
+        {
+            built = TableSchedule.Build(doc, headers, rows, viewName ?? table.Name);
+        }
+        catch (InvalidOperationException ex)
+        {
+            transaction.RollBack();
+            return CommandResult.Fail(ex.Message, retryable: false);
+        }
+        catch (Exception ex)
+        {
+            // Rolled back deliberately: half a table is worse than none, because
+            // the schedule would look complete and be short some rows.
+            transaction.RollBack();
+            Logger.Error("import_table could not build the schedule", ex);
+            return CommandResult.FromException(ex, retryable: false);
+        }
+
+        transaction.Commit();
+
+        return CommandResult.Ok(new ImportTableResultDto
+        {
+            View = built.ViewName,
+            Target = "schedule_view",
+            SourceSheet = table.Name,
+            Rows = built.Rows,
+            Columns = built.Columns,
+            MergedCells = table.Merges.Count,
+            Elements = built.Rows,
+            ReplacedRows = built.ReplacedRows,
+            Notes = context.Warnings.Count > 0 ? context.Warnings : null,
+        });
     }
 
     // ----------------------------------------------------------------- drawing

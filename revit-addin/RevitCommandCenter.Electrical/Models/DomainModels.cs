@@ -116,6 +116,18 @@ public sealed class PlacementResultDto
     public bool? DryRun { get; set; }
     [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
 
+    /// <summary>
+    /// Family dan tipe yang BENAR-BENAR dipasang, "Family: Type".
+    ///
+    /// Bukan yang diminta. Kalau nama yang diminta tidak ada di model, pencarian
+    /// family jatuh ke tipe pertama di kategorinya — sepuluh armatur tetap
+    /// terpasang, perintahnya tetap sukses, dan yang terpasang bukan yang
+    /// diminta. Satu-satunya tempat perbedaan itu pernah muncul adalah gambar
+    /// yang sudah jadi. Sekarang ia ada di jawabannya.
+    /// </summary>
+    [JsonProperty("family_used", NullValueHandling = NullValueHandling.Ignore)]
+    public string? FamilyUsed { get; set; }
+
     [JsonProperty("total_load_w", NullValueHandling = NullValueHandling.Ignore)]
     public double? TotalLoadW { get; set; }
 
@@ -192,6 +204,7 @@ public sealed class DeleteResultDto
     [JsonProperty("dry_run", NullValueHandling = NullValueHandling.Ignore)]
     public bool? DryRun { get; set; }
     [JsonProperty("device_ids")] public List<string> DeviceIds { get; set; } = new();
+
     [JsonProperty("groups")] public List<QueryGroupDto> Groups { get; set; } = new();
 }
 
@@ -372,7 +385,7 @@ public sealed class ImportTableResultDto
     /// <summary>Name of the view that was created.</summary>
     [JsonProperty("view")] public string View { get; set; } = string.Empty;
 
-    /// <summary>"schedule" (a drafting view) or "legend".</summary>
+    /// <summary>"schedule" (a drafting view), "legend", or "schedule_view" (a real schedule).</summary>
     [JsonProperty("target")] public string Target { get; set; } = "schedule";
 
     [JsonProperty("source_sheet")] public string SourceSheet { get; set; } = string.Empty;
@@ -382,6 +395,21 @@ public sealed class ImportTableResultDto
     [JsonProperty("columns")] public int Columns { get; set; }
 
     [JsonProperty("merged_cells")] public int MergedCells { get; set; }
+
+    /// <summary>
+    /// How many elements the model gained, for target=schedule_view.
+    ///
+    /// A schedule's rows ARE elements — there is no other way for a spreadsheet
+    /// row to appear in one. That is a change to the model, not just to a view,
+    /// so it is reported as a number rather than left to be discovered in a
+    /// quantity takeoff.
+    /// </summary>
+    [JsonProperty("elements", NullValueHandling = NullValueHandling.Ignore)]
+    public int? Elements { get; set; }
+
+    /// <summary>Rows from a previous import of the same table that were removed first.</summary>
+    [JsonProperty("replaced_rows", NullValueHandling = NullValueHandling.Ignore)]
+    public int? ReplacedRows { get; set; }
 
     [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
     public List<string>? Notes { get; set; }
