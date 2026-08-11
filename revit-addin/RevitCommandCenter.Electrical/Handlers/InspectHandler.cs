@@ -525,8 +525,13 @@ public sealed class InspectHandler : ICommandHandler
         {
             if (element is FamilyInstance instance)
             {
-                var room = instance.Room ?? instance.Space;
-                if (room is not null) return room.Name ?? string.Empty;
+                // Keduanya turunan SpatialElement tapi bukan tipe yang sama, jadi
+                // wadahnya harus dinyatakan — Room arsitektur dan Space MEP
+                // sama-sama "ruangan" bagi yang bertanya, dan model MEP yang
+                // sungguhan hampir selalu punya keduanya.
+                SpatialElement? enclosure = instance.Room;
+                enclosure ??= instance.Space;
+                if (enclosure is not null) return enclosure.Name ?? string.Empty;
             }
         }
         catch (Exception ex)
