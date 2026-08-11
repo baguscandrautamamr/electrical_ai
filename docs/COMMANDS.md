@@ -728,13 +728,28 @@ Omit the room to search the whole model.
 |---|---|---|---|
 | `what` | all, lighting, lighting_device, receptacle, cable_tray, hanger, fire_alarm, telephone, lan, security, communication, panel, room, sheet | all | `all` covers every device category; rooms and sheets are reported only when asked for by name |
 | `level` | string | | Restrict to one level, e.g. `"Level 1"` |
+| `family` | string | | Restrict to one family — `family="ACT_E_DOWNLIGHT 22WATT"`. Matches the family name, the type name, or `Family: Type`; exact first, then contains, so `family=downlight` finds the downlight |
 | `detail` | summary\|list | summary | `list` also names each element |
 | `limit` | integer | 30 | Most items to name when `detail=list`; the cap is per query, not per category |
 
 ```
 /query Office_A what=lighting detail=list
 /query what=hanger level="Level 1"
+/query "LOUNGE 5" what=lighting family="ACT_E_DOWNLIGHT 22WATT"
 ```
+
+`family` is what makes "how many 22 W downlights on level 1" a question this can
+answer. Without it the reply was the count of every lighting fixture on level 1 —
+a number that is correct about a question nobody asked, and that reads exactly
+like the answer. The family that was filtered on is named in the reply, so a
+narrowed count cannot be mistaken for a whole-category one. When it matches
+nothing, the reply lists the families that ARE in scope: `0` on its own cannot
+distinguish "this model has none" from "that is not how this model spells it".
+
+`level` reads Reference Level, Schedule Level, and Base Constraint when `LevelId`
+is empty — the usual case for cable tray, conduit, and hosted families. It used to
+compare `LevelId` alone, which dropped most of the tray from a tray count with
+nothing to mark the number as wrong.
 
 The reply leads with what was searched, because a count means nothing without
 it. A room name that matches nothing is reported as such rather than answered
@@ -773,9 +788,9 @@ comes back in.
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
 | `what` | categories\|parameters\|elements | elements | |
-| `category` | string | | Revit's name (`Doors`), its OST name (`OST_Doors`), or the short key the other commands use (`lighting`). Required except for `what=categories` |
+| `category` | string | | Revit's name (`Doors`), its OST name (`OST_Doors`), or the short key the other commands use (`lighting`). **Several, comma separated** — `category="lighting, receptacle"`. Required except for `what=categories` |
 | `params` | string | Id, Mark, Type, Level | Columns, comma separated |
-| `where` | string | | One condition: `Width>800`, `Mark~LF-`, `Comments!=`. `~` is "contains" |
+| `where` | string | | Conditions: `Width>800`, `Mark~LF-`, `Comments!=`. `~` is "contains". **Several, comma separated, all of which must hold** — `where="Family=ACT_E_DOWNLIGHT 22WATT, Width>800"` |
 | `total` | string | | Numeric parameters to sum, comma separated |
 | `group_by` | string | | One parameter; the answer is how many elements per value |
 | `room` | string | | Same room resolution as `/query` |
@@ -787,6 +802,8 @@ comes back in.
 /inspect what=parameters category=Doors
 /inspect category=Doors params=Mark,Width where=Width>800 total=Width
 /inspect category=cable_tray total=Length level="Level 1"
+/inspect category=lighting room="LOUNGE 5" level="LANTAI 1" where="Family=ACT_E_DOWNLIGHT 22WATT"
+/inspect category="lighting, lighting_device, receptacle" room="LOUNGE 5" group_by=Family
 ```
 
 **Units.** Revit stores lengths in internal feet. Everything summed here is
@@ -800,10 +817,25 @@ not one. How many elements had no value to add is reported beside it, because a
 total that quietly covers half the set answers a question nobody asked.
 
 **Columns that are not parameters.** `Id`, `Category`, `Family`, `Type`, `Level`,
-`Room` and `Name` are always available. `Length` falls back to the element's own
+`Room` and `Name` are always available, and every one of them can be filtered on
+and grouped by as well as printed. `Length` falls back to the element's own
 geometry when no parameter answers to that name — which is how a cable tray says
 how long it is, and what makes this work on a model whose Revit speaks another
 language.
+
+`Family` answers for system families too — cable tray, conduit, pipe, duct, walls
+— reading the family name Revit prints in the project browser rather than only
+the loadable-family instances. `Room` falls back to the element's midpoint when
+the element itself does not name a room, so tray can be grouped by room and not
+only filtered by it. `Level` reads Reference Level, Schedule Level, and Base
+Constraint when `LevelId` is empty, which is the usual case for tray and hosted
+families: filtering by level used to drop them silently, and a smaller number
+looks exactly like a correct one.
+
+**When nothing matches**, the reply names the values that ARE in scope for the
+parameter you filtered on. An empty table answers "this model has no downlights"
+and "that is not how this model spells downlight" in exactly the same way, and the
+second is far more common.
 
 Limits, reported when they bite: 20,000 elements scanned, 200 rows returned, 50
 groups named. A federated model has millions of elements, and reading a parameter

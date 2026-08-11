@@ -362,6 +362,17 @@ public sealed class QueryResultDto
     [JsonProperty("room")] public string? Room { get; set; }
     [JsonProperty("room_matched")] public bool RoomMatched { get; set; } = true;
     [JsonProperty("level")] public string? Level { get; set; }
+
+    /// <summary>
+    /// The family the count was narrowed to, when one was named.
+    ///
+    /// Reported rather than merely applied: a count of six that was filtered by
+    /// family and does not say so is indistinguishable from a count of the whole
+    /// category, and the person reading it has no way to tell.
+    /// </summary>
+    [JsonProperty("family", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Family { get; set; }
+
     [JsonProperty("total")] public int Total { get; set; }
     [JsonProperty("groups")] public List<QueryGroupDto> Groups { get; set; } = new();
 

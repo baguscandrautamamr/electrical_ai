@@ -1031,6 +1031,112 @@ public static class RevitUtils
                    || (symbol.Family?.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
+    /// <summary>
+    /// Where an element keeps its level when <c>LevelId</c> does not.
+    ///
+    /// Order matters only in that the more specific names come first; any one
+    /// element carries at most one or two of these.
+    /// </summary>
+    private static readonly BuiltInParameter[] LevelParameters =
+    {
+        BuiltInParameter.FAMILY_LEVEL_PARAM,
+        BuiltInParameter.SCHEDULE_LEVEL_PARAM,
+        BuiltInParameter.FAMILY_BASE_LEVEL_PARAM,
+        BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+        BuiltInParameter.RBS_START_LEVEL_PARAM,
+        BuiltInParameter.LEVEL_PARAM,
+        BuiltInParameter.WALL_BASE_CONSTRAINT,
+        BuiltInParameter.ROOM_LEVEL_ID,
+    };
+
+    /// <summary>
+    /// The level an element is on, however that element happens to say so.
+    ///
+    /// <c>Element.LevelId</c> is empty on a great deal of what a real model
+    /// contains: cable tray and conduit keep their level in Reference Level,
+    /// hosted families in Schedule Level, walls in Base Constraint. Comparing
+    /// <c>LevelId</c> to a level and dropping whatever does not match therefore
+    /// does not answer "on level 2" — it answers "on level 2, among the elements
+    /// that happen to expose LevelId", and leaves out the rest without saying so.
+    ///
+    /// That is the worst shape a wrong answer can take here. No error, no empty
+    /// result, nothing to notice: just a smaller number that looks exactly like a
+    /// correct one. Tray filtered by level came back missing most of the tray, and
+    /// the only way to find out was to count it again in Revit.
+    ///
+    /// Deterministic — a parameter is either there or it is not. Nothing is
+    /// inferred from elevation: a level guessed from a Z coordinate is a different
+    /// kind of claim, and not one this can make honestly.
+    /// </summary>
+    public static ElementId LevelIdOf(Document doc, Element element)
+    {
+        if (element.LevelId != ElementId.InvalidElementId) return element.LevelId;
+
+        foreach (var name in LevelParameters)
+        {
+            var parameter = element.get_Parameter(name);
+            if (parameter is null || parameter.StorageType != StorageType.ElementId) continue;
+
+            var id = parameter.AsElementId();
+            if (id != ElementId.InvalidElementId && doc.GetElement(id) is Level) return id;
+        }
+
+        return ElementId.InvalidElementId;
+    }
+
+    /// <summary>
+    /// The family name of anything, loadable or not.
+    ///
+    /// <c>FamilyInstance.Symbol.FamilyName</c> covers lamps, switches, and doors,
+    /// and returns nothing at all for cable tray, conduit, pipe, duct, or walls —
+    /// those are system families and have no FamilyInstance to ask. So a filter on
+    /// the family name matched none of them, and "how many metres of the
+    /// perforated tray" could not be asked about the one thing in this model that
+    /// is measured in metres.
+    ///
+    /// Both kinds answer to <c>ElementType.FamilyName</c>, which is also the name
+    /// Revit prints in the project browser — so the name somebody reads there is
+    /// the name that matches here.
+    /// </summary>
+    public static string FamilyNameOf(Document doc, Element element)
+    {
+        if (element is FamilyInstance instance && instance.Symbol is { } symbol)
+        {
+            return symbol.FamilyName ?? string.Empty;
+        }
+
+        return doc.GetElement(element.GetTypeId()) is ElementType type
+            ? type.FamilyName ?? string.Empty
+            : string.Empty;
+    }
+
+    /// <summary>
+    /// The room or space a point falls in, asked of Revit rather than of every
+    /// room in turn.
+    ///
+    /// Testing a point against each room is what <see cref="Contains"/> does, and
+    /// that is the right shape for "is this element in THAT room". It is the wrong
+    /// shape for "which room is this element in" asked of twenty thousand
+    /// elements: two hundred rooms times twenty thousand elements is four million
+    /// boundary tests on Revit's UI thread, which is to say Revit stops.
+    /// </summary>
+    public static SpatialElement? EnclosureAt(Document doc, XYZ point)
+    {
+        try
+        {
+            SpatialElement? at = doc.GetRoomAtPoint(point);
+            at ??= doc.GetSpaceAtPoint(point);
+            return at;
+        }
+        catch (Exception ex)
+        {
+            // A model with no phase map, or a point outside every volume. Not
+            // worth failing a whole table over one blank cell.
+            Logger.Debug($"No enclosure at {point}: {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>Level nearest to a room, for hosting new instances.</summary>
     public static Level? LevelOf(Document doc, SpatialElement room)
     {

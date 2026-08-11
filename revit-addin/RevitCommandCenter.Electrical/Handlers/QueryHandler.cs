@@ -77,6 +77,15 @@ public sealed class QueryHandler : ICommandHandler
         var what = asSheetList ? "sheet" : command.GetString("what", "all").ToLowerInvariant();
         var roomName = asSheetList ? string.Empty : command.GetString("room");
         var levelName = command.GetString("level");
+        // Which family, out of the several a category holds.
+        //
+        // Without this, "how many 22W downlights on level 1" was answered with the
+        // count of every lighting fixture on level 1 — a number that is right about
+        // a question nobody asked, and indistinguishable from the answer. The one
+        // way to ask it was /inspect, which needs a category name, a parameter
+        // name, and a filter, and which nobody reaches for when /query is right
+        // there and appears to have answered.
+        var familyName = asSheetList ? string.Empty : command.GetString("family");
         // A count of sheets answers nothing — the numbers are the answer, and
         // they are what /print_pdf takes. So sheets are always listed.
         var wantsList = what == "sheet"
@@ -107,6 +116,10 @@ public sealed class QueryHandler : ICommandHandler
             // zero — the reply says so and falls back to the whole model.
             RoomMatched = string.IsNullOrWhiteSpace(roomName) || room is not null,
             Level = level?.Name ?? (string.IsNullOrWhiteSpace(levelName) ? null : levelName),
+            // Reported back, not just applied. A count that was narrowed by a
+            // family and does not say so is a count of the whole category as far
+            // as anybody reading it can tell.
+            Family = string.IsNullOrWhiteSpace(familyName) ? null : familyName,
         };
 
         var notes = new List<string>();
@@ -124,13 +137,41 @@ public sealed class QueryHandler : ICommandHandler
 
         var items = wantsList ? new List<QueryItemDto>() : null;
         var matched = 0;
+        // What the model DOES have, gathered as we go, in case the family named
+        // matches nothing. Cheap here and impossible afterwards: the elements are
+        // in hand exactly once.
+        var familiesSeen = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var target in selected)
         {
-            var elements = Collect(context, target)
+            var inScope = Collect(context, target)
                 .Where(element => InRoom(element, room))
                 .Where(element => OnLevel(doc, element, level))
                 .ToList();
+
+            var elements = inScope;
+
+            if (!string.IsNullOrWhiteSpace(familyName))
+            {
+                var kept = new List<Element>();
+
+                // One pass, one read of the family name per element: it is a type
+                // lookup, and doing it twice over twenty thousand elements is time
+                // Revit spends frozen for no reason.
+                foreach (var element in inScope)
+                {
+                    var family = RevitUtils.FamilyNameOf(doc, element);
+
+                    if (!string.IsNullOrWhiteSpace(family) && familiesSeen.Count < MaxFamiliesScanned)
+                    {
+                        familiesSeen.Add(family);
+                    }
+
+                    if (FamilyMatches(doc, element, familyName, family)) kept.Add(element);
+                }
+
+                elements = kept;
+            }
 
             matched += elements.Count;
             if (elements.Count == 0 && what == "all") continue;
@@ -153,12 +194,27 @@ public sealed class QueryHandler : ICommandHandler
             }
         }
 
+        // Zero for a named family is the one zero here that is usually about
+        // spelling rather than about the model. An empty count cannot say which,
+        // so the names that are actually there say it instead.
+        if (matched == 0 && !string.IsNullOrWhiteSpace(familyName))
+        {
+            notes.Add(familiesSeen.Count == 0
+                ? $"No element at all in scope, so nothing could carry family '{familyName}'."
+                : $"No '{familyName}' here. The families in scope are: "
+                  + string.Join(", ", familiesSeen.Take(MaxFamilyNames))
+                  + (familiesSeen.Count > MaxFamilyNames ? ", …" : string.Empty)
+                  + ".");
+        }
+
         result.Total = matched;
         result.Items = items is { Count: > 0 } ? items : null;
         result.ItemsOmitted = items is not null && matched > items.Count ? matched - items.Count : null;
         result.Notes = notes.Count > 0 ? notes : null;
 
-        Logger.Info($"Query {what} (room='{roomName}', level='{levelName}') matched {matched}");
+        Logger.Info(
+            $"Query {what} (room='{roomName}', level='{levelName}', family='{familyName}') "
+            + $"matched {matched}");
         return CommandResult.Ok(result);
     }
 
@@ -234,10 +290,77 @@ public sealed class QueryHandler : ICommandHandler
         return RevitUtils.Contains(room, point);
     }
 
+    /// <summary>
+    /// On this level — asked of every way an element states which level it is on.
+    ///
+    /// This compared <c>LevelId</c> only, which cable tray, conduit, and hosted
+    /// families leave empty; they keep their level in a parameter instead. So
+    /// `level=` quietly dropped most of the tray from a tray count, and the answer
+    /// was a smaller number with nothing to mark it as wrong.
+    /// </summary>
     private static bool OnLevel(Document doc, Element element, Level? level)
     {
         if (level is null) return true;
-        return element.LevelId == level.Id;
+        return RevitUtils.LevelIdOf(doc, element) == level.Id;
+    }
+
+    /// <summary>How many family names a "no such family" note will list.</summary>
+    private const int MaxFamilyNames = 12;
+
+    /// <summary>
+    /// How many distinct names are collected for that note before it stops.
+    ///
+    /// Larger than the note needs, so "and more" is honest, and bounded so a model
+    /// with a thousand families does not build a thousand-entry set to print twelve
+    /// of them.
+    /// </summary>
+    private const int MaxFamiliesScanned = MaxFamilyNames * 4;
+
+    /// <summary>
+    /// Whether an element belongs to the family that was named.
+    ///
+    /// Exact first, then contains — the same order <see cref="RevitUtils.FindSymbol"/>
+    /// uses, and for the same reason. A name picked from the list this add-in
+    /// reported must match exactly and nothing else; a name somebody typed
+    /// ("downlight") should find the downlight. The type name counts too, because
+    /// "22WATT" is as likely to be the type as the family and the person asking has
+    /// no reason to know which.
+    /// </summary>
+    private static bool FamilyMatches(Document doc, Element element, string wanted, string family)
+    {
+        var name = wanted.Trim();
+        if (name.Length == 0) return true;
+
+        var type = element is FamilyInstance instance
+            ? instance.Symbol?.Name ?? string.Empty
+            : doc.GetElement(element.GetTypeId())?.Name ?? string.Empty;
+
+        // "Family: Type", the form /model_info reports and therefore the form that
+        // comes back from the website and the assistant. Both halves were named, so
+        // both have to hold — otherwise asking for one type out of a family counts
+        // every type in it.
+        var colon = name.IndexOf(':');
+        if (colon > 0)
+        {
+            var familyPart = name[..colon].Trim();
+            var typePart = name[(colon + 1)..].Trim();
+
+            if (string.Equals(family, familyPart, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(type, typePart, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // The type half may have been renamed since the list was read; the
+            // family half is the more stable of the two, so it gets the next try.
+            if (familyPart.Length > 0) name = familyPart;
+        }
+
+        if (string.Equals(family, name, StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(type, name, StringComparison.OrdinalIgnoreCase)) return true;
+
+        return family.Contains(name, StringComparison.OrdinalIgnoreCase)
+               || type.Contains(name, StringComparison.OrdinalIgnoreCase);
     }
 
     private static XYZ? LocationOf(Element element) => element.Location switch
@@ -328,7 +451,9 @@ public sealed class QueryHandler : ICommandHandler
         }
 
         var mark = ParameterMapper.GetStringParameter(element, "Mark");
-        var levelName = doc.GetElement(element.LevelId)?.Name;
+        // The same reading the level filter uses: a listed item whose level column
+        // is blank on a query that filtered BY level reads as a contradiction.
+        var levelName = doc.GetElement(RevitUtils.LevelIdOf(doc, element))?.Name;
 
         return new QueryItemDto
         {
