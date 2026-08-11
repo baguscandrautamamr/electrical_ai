@@ -27,6 +27,13 @@ namespace RevitCommandCenter.Electrical.Handlers;
 /// an empty column is indistinguishable from a model that has no lengths, which
 /// is the failure this whole system keeps having to design away.
 ///
+/// `category` and `where` both take several, comma separated: several categories
+/// because "every device in this room, by family" is eight of them, and asked one
+/// command at a time it is eight waits on Revit and eight tables for somebody to
+/// add up by hand; several conditions because a filter naming two parameters could
+/// not be written at all, and family-and-room-and-level only worked because room
+/// and level happen to have arguments of their own.
+///
 /// Read-only, like /query: no transaction is opened and nothing is persisted, so
 /// however a request is phrased it cannot change the drawing. Viewers may run it.
 /// </summary>
@@ -154,7 +161,7 @@ public sealed class InspectHandler : ICommandHandler
         var category = ResolveCategory(doc, categoryName);
         if (category is null) return UnknownCategory(doc, categoryName);
 
-        var elements = Collect(doc, category, out _);
+        var elements = Collect(doc, new List<Category> { category }, out _);
         var sample = elements.FirstOrDefault();
 
         if (sample is null)
@@ -226,10 +233,23 @@ public sealed class InspectHandler : ICommandHandler
                 retryable: false);
         }
 
-        var category = ResolveCategory(doc, categoryName);
-        if (category is null) return UnknownCategory(doc, categoryName);
+        // Several categories at once, because a question rarely stops at one.
+        // "Every device in this room, by family" is eight categories; asked one
+        // command at a time it is eight waits on Revit and eight tables to add up
+        // by hand, and the total nobody computes is the one that was asked for.
+        var wanted = Split(categoryName);
+        var categories = new List<Category>();
 
-        var elements = Collect(doc, category, out var truncated);
+        foreach (var name in wanted)
+        {
+            var resolved = ResolveCategory(doc, name);
+            if (resolved is null) return UnknownCategory(doc, name);
+
+            // A model may spell two of the asked names as the same category.
+            if (!categories.Any(seen => seen.Id == resolved.Id)) categories.Add(resolved);
+        }
+
+        var elements = Collect(doc, categories, out var truncated);
 
         // Room and level narrow the set exactly the way /query does, so the same
         // question asked either way cannot come back with two different answers.
@@ -240,11 +260,13 @@ public sealed class InspectHandler : ICommandHandler
         var levelName = command.GetString("level");
         var level = string.IsNullOrWhiteSpace(levelName) ? null : FindLevel(doc, levelName);
 
+        var categoryLabel = string.Join(", ", categories.Select(one => one.Name));
+
         var notes = new List<string>();
         if (truncated)
         {
             notes.Add(
-                $"This model has more than {MaxScanned} elements in '{category.Name}'; "
+                $"This model has more than {MaxScanned} elements in '{categoryLabel}'; "
                 + "the figures below cover the first ones found, not all of them.");
         }
         if (!string.IsNullOrWhiteSpace(roomName) && room is null)
@@ -256,20 +278,34 @@ public sealed class InspectHandler : ICommandHandler
             notes.Add($"Level '{levelName}' not found; searched every level.");
         }
 
-        var condition = Condition.Parse(command.GetString("where"));
-        if (condition is null && !string.IsNullOrWhiteSpace(command.GetString("where")))
+        var raw = command.GetString("where");
+        var filter = Filter.Parse(raw);
+
+        if (filter is null && !string.IsNullOrWhiteSpace(raw))
         {
             return CommandResult.Fail(
                 "`where` reads as Parameter=Value — also != for not, ~ for contains, "
-                + "and > or < for numbers. For example: where=\"Width>800\".",
+                + "and > or < for numbers. Join several with a comma, all of which must "
+                + "hold: where=\"Family=ACT_E_DOWNLIGHT 22WATT, Width>800\".",
                 retryable: false);
         }
 
-        var matched = elements
+        var scoped = elements
             .Where(element => InRoom(element, room))
-            .Where(element => level is null || element.LevelId == level.Id)
-            .Where(element => condition is null || condition.Holds(doc, element))
+            .Where(element => level is null || RevitUtils.LevelIdOf(doc, element) == level.Id)
             .ToList();
+
+        var matched = filter is null
+            ? scoped
+            : scoped.Where(element => filter.Holds(doc, element)).ToList();
+
+        // Nothing matched, and the reason is almost never "this model has none".
+        // It is a name spelled the way somebody remembers it rather than the way
+        // Revit stores it — and an empty table says both of those the same way.
+        if (matched.Count == 0 && filter is not null)
+        {
+            notes.AddRange(NearMisses(doc, scoped, filter));
+        }
 
         var columns = Columns(command);
         var limit = Math.Clamp(command.GetInt("limit", 30), 1, MaxRows);
@@ -285,7 +321,7 @@ public sealed class InspectHandler : ICommandHandler
         return CommandResult.Ok(new InspectResultDto
         {
             What = "elements",
-            Category = category.Name,
+            Category = categoryLabel,
             Room = room?.Name,
             Level = level?.Name,
             // Over everything that matched, not over the rows shown. A total
@@ -379,6 +415,65 @@ public sealed class InspectHandler : ICommandHandler
             .ToList();
     }
 
+    /// <summary>Distinct values a near-miss note will name before it stops.</summary>
+    private const int MaxSuggestions = 12;
+
+    /// <summary>
+    /// What the model actually has, when the filter matched none of it.
+    ///
+    /// An empty table answers two completely different questions the same way:
+    /// "this model has no downlights" and "that is not how this model spells
+    /// downlight". The second is far more common — a name is remembered, or
+    /// half-remembered, or read off a drawing that was renamed since — and there
+    /// was no way to tell which had happened without opening Revit.
+    ///
+    /// So the values that ARE there get named. Only for text: a note listing every
+    /// distinct width in millimetres is not a suggestion, it is the table again.
+    /// And only for the parameter that was filtered on, which is the one whose
+    /// spelling is in question.
+    /// </summary>
+    private static List<string> NearMisses(Document doc, List<Element> scoped, Filter filter)
+    {
+        var notes = new List<string>();
+
+        if (scoped.Count == 0)
+        {
+            notes.Add("Nothing matched, and nothing was in scope either — the room, level, or category narrowed it to zero before `where` was applied.");
+            return notes;
+        }
+
+        foreach (var parameter in filter.Parameters.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var values = scoped
+                .Select(element => Read(doc, element, parameter))
+                // Numbers are excluded on purpose: their range is the answer, not
+                // their spelling, and there is nothing to suggest.
+                .Where(value => value.Number is null && !string.IsNullOrWhiteSpace(value.Text))
+                .Select(value => value.Text)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(text => text, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxSuggestions + 1)
+                .ToList();
+
+            if (values.Count == 0) continue;
+
+            var more = values.Count > MaxSuggestions ? ", …" : string.Empty;
+            notes.Add(
+                $"No element matched. '{parameter}' in scope reads: "
+                + string.Join(", ", values.Take(MaxSuggestions))
+                + $"{more}. Use ~ instead of = to match part of a name.");
+        }
+
+        if (notes.Count == 0)
+        {
+            notes.Add(
+                $"No element matched, and none of the {scoped.Count} elements in scope has a value "
+                + "for the parameter you filtered on — check the name against inspect what=parameters.");
+        }
+
+        return notes;
+    }
+
     // ------------------------------------------------------------------ read
 
     /// <summary>A parameter's value, as text for reading and as a number for summing.</summary>
@@ -409,11 +504,10 @@ public sealed class InspectHandler : ICommandHandler
             case "category":
                 return new Value(element.Category?.Name ?? string.Empty, null, null);
 
+            // Loadable or system — a tray has a family name too, and it is the
+            // name in the project browser.
             case "family":
-                return new Value(
-                    element is FamilyInstance instance ? instance.Symbol?.FamilyName ?? string.Empty : string.Empty,
-                    null,
-                    null);
+                return new Value(RevitUtils.FamilyNameOf(doc, element), null, null);
 
             case "type":
                 return new Value(
@@ -423,11 +517,17 @@ public sealed class InspectHandler : ICommandHandler
                     null,
                     null);
 
+            // The same reading the level FILTER uses. When these two disagree, a
+            // row appears in a table that says it was filtered out — or worse, is
+            // filtered out of a table whose Level column would have shown it.
             case "level":
-                return new Value(doc.GetElement(element.LevelId)?.Name ?? string.Empty, null, null);
+                return new Value(
+                    doc.GetElement(RevitUtils.LevelIdOf(doc, element))?.Name ?? string.Empty,
+                    null,
+                    null);
 
             case "room":
-                return new Value(RoomOf(element), null, null);
+                return new Value(RoomOf(doc, element), null, null);
 
             case "name":
                 return new Value(element.Name ?? string.Empty, null, null);
@@ -519,7 +619,19 @@ public sealed class InspectHandler : ICommandHandler
         }
     }
 
-    private static string RoomOf(Element element)
+    /// <summary>
+    /// The room an element stands in.
+    ///
+    /// This used to answer only for FamilyInstance, which meant the Room column
+    /// was blank for every cable tray, pipe, and wall — while the `room=` FILTER
+    /// answered for all of them, because it works from the element's midpoint. So
+    /// tray could be narrowed to a room and then reported as being in no room, in
+    /// the same table. The filter was right; the column was the one lying.
+    ///
+    /// Now both work from geometry when the instance has nothing to say, and
+    /// through the same helper the filter uses.
+    /// </summary>
+    private static string RoomOf(Document doc, Element element)
     {
         try
         {
@@ -532,6 +644,15 @@ public sealed class InspectHandler : ICommandHandler
                 SpatialElement? enclosure = instance.Room;
                 enclosure ??= instance.Space;
                 if (enclosure is not null) return enclosure.Name ?? string.Empty;
+            }
+
+            if (element is SpatialElement self) return self.Name ?? string.Empty;
+
+            var point = MidpointOf(element);
+            if (point is not null)
+            {
+                var at = RevitUtils.EnclosureAt(doc, point);
+                if (at is not null) return at.Name ?? string.Empty;
             }
         }
         catch (Exception ex)
@@ -547,17 +668,83 @@ public sealed class InspectHandler : ICommandHandler
     // ---------------------------------------------------------------- filter
 
     /// <summary>
+    /// Every condition asked for, all of which must hold.
+    ///
+    /// It was deliberately one condition, and the comment here said so: two joined
+    /// by "and" is the next request, and a query language is a different project.
+    /// The next request arrived, and it turned out not to be a language. Family and
+    /// room and level happened to work together only because room and level have
+    /// arguments of their own; "that family, with Mark starting LF-" had no way to
+    /// be asked at all, and neither did anything else naming two parameters.
+    ///
+    /// A comma joins them, and AND is the only joiner. There is no OR and no
+    /// bracket, because the moment there is either, this needs to explain its own
+    /// syntax errors — and an engineer typing a filter deserves to be told which
+    /// half of it was wrong, which is a bigger promise than it looks.
+    /// </summary>
+    private sealed record Filter(List<Condition> Conditions)
+    {
+        /// <summary>
+        /// Conditions split on commas — except a comma that is part of a value.
+        ///
+        /// `Comments=dipasang ulang, cek lagi` is one condition containing a comma,
+        /// not two conditions the second of which has no operator. Split blindly
+        /// and it becomes a syntax error on a filter that reads perfectly; the
+        /// piece with no operator is put back where it came from instead.
+        /// </summary>
+        public static Filter? Parse(string raw)
+        {
+            var text = (raw ?? string.Empty).Trim();
+            if (text.Length == 0) return null;
+
+            var pieces = new List<string>();
+
+            foreach (var piece in text.Split(','))
+            {
+                if (pieces.Count > 0 && !Condition.HasOperator(piece))
+                {
+                    pieces[^1] = $"{pieces[^1]},{piece}";
+                    continue;
+                }
+
+                pieces.Add(piece);
+            }
+
+            var conditions = new List<Condition>();
+
+            foreach (var piece in pieces)
+            {
+                if (string.IsNullOrWhiteSpace(piece)) continue;
+
+                var condition = Condition.Parse(piece);
+                // One unparseable half fails the whole filter. Dropping it would
+                // return MORE rows than asked for, under a filter that says
+                // otherwise — a wrong answer that reads as a right one.
+                if (condition is null) return null;
+
+                conditions.Add(condition);
+            }
+
+            return conditions.Count == 0 ? null : new Filter(conditions);
+        }
+
+        public bool Holds(Document doc, Element element) =>
+            Conditions.All(condition => condition.Holds(doc, element));
+
+        /// <summary>The parameters this filter names, for reporting a near miss.</summary>
+        public IEnumerable<string> Parameters => Conditions.Select(condition => condition.Parameter);
+    }
+
+    /// <summary>
     /// One condition, in the form an engineer would type it: `Width>800`,
     /// `Mark~LF-`, `Comments!=`.
-    ///
-    /// Deliberately one, not a language. Two conditions joined by "and" is the
-    /// next request and it is a small change; a query language is a different
-    /// project, and the first thing it would need is a way to explain its own
-    /// syntax errors.
     /// </summary>
     private sealed record Condition(string Parameter, string Operator, string Wanted)
     {
         private static readonly string[] Operators = { ">=", "<=", "!=", "~", "=", ">", "<" };
+
+        public static bool HasOperator(string raw) =>
+            Operators.Any(op => raw.IndexOf(op, StringComparison.Ordinal) > 0);
 
         public static Condition? Parse(string raw)
         {
@@ -612,13 +799,27 @@ public sealed class InspectHandler : ICommandHandler
 
     // ------------------------------------------------------------- gathering
 
-    private static List<Element> Collect(Document doc, Category category, out bool truncated)
+    /// <summary>
+    /// Everything in the asked-for categories, capped across all of them together.
+    ///
+    /// The cap is on the total rather than per category on purpose: it exists to
+    /// bound how long Revit is stopped, and eight categories each just under the
+    /// cap stops it eight times as long.
+    /// </summary>
+    private static List<Element> Collect(Document doc, List<Category> categories, out bool truncated)
     {
-        var elements = new FilteredElementCollector(doc)
-            .OfCategoryId(category.Id)
-            .WhereElementIsNotElementType()
-            .Take(MaxScanned + 1)
-            .ToList();
+        var elements = new List<Element>();
+
+        foreach (var category in categories)
+        {
+            var budget = MaxScanned + 1 - elements.Count;
+            if (budget <= 0) break;
+
+            elements.AddRange(new FilteredElementCollector(doc)
+                .OfCategoryId(category.Id)
+                .WhereElementIsNotElementType()
+                .Take(budget));
+        }
 
         truncated = elements.Count > MaxScanned;
         if (truncated) elements.RemoveAt(elements.Count - 1);
@@ -719,17 +920,26 @@ public sealed class InspectHandler : ICommandHandler
         if (room is null) return true;
         if (element.Id == room.Id) return true;
 
-        var point = element.Location switch
-        {
-            LocationPoint at => at.Point,
-            LocationCurve curve => curve.Curve.Evaluate(0.5, true),
-            _ => element.get_BoundingBox(null) is { } box
-                ? box.Min.Add(box.Max).Multiply(0.5)
-                : null,
-        };
-
+        var point = MidpointOf(element);
         return point is not null && RevitUtils.Contains(room, point);
     }
+
+    /// <summary>
+    /// The one point that stands for an element when asking which room it is in.
+    ///
+    /// Shared by the filter and the Room column deliberately: two readings of
+    /// "where is this" that can disagree is what made a tray belong to a room and
+    /// to no room at the same time.
+    /// </summary>
+    private static XYZ? MidpointOf(Element element) => element.Location switch
+    {
+        LocationPoint at => at.Point,
+        // A tray or conduit sits in whichever room its midpoint falls in.
+        LocationCurve curve => curve.Curve.Evaluate(0.5, true),
+        _ => element.get_BoundingBox(null) is { } box
+            ? box.Min.Add(box.Max).Multiply(0.5)
+            : null,
+    };
 
     private static List<string> Split(string raw) =>
         (raw ?? string.Empty)
