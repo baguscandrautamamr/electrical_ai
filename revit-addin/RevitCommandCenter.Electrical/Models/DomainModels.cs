@@ -192,6 +192,119 @@ public sealed class PrintResultDto
     public List<string>? Notes { get; set; }
 }
 
+/// <summary>
+/// Jawaban /inspect — bacaan generik atas isi model.
+///
+/// Satu DTO untuk ketiga modenya, dengan bagian yang tidak terpakai dihilangkan
+/// dari JSON-nya. Tiga DTO terpisah akan lebih rapi di sini dan lebih berantakan
+/// di seberangnya: website merender apa pun yang datang, dan tiga bentuk berarti
+/// tiga cabang di tempat yang tidak tahu-menahu soal Revit.
+/// </summary>
+public sealed class InspectResultDto
+{
+    [JsonProperty("kind")] public string Kind => "inspect";
+
+    /// <summary>"categories", "parameters", atau "elements".</summary>
+    [JsonProperty("what")] public string What { get; set; } = "elements";
+
+    [JsonProperty("category", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Category { get; set; }
+
+    [JsonProperty("room", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Room { get; set; }
+
+    [JsonProperty("level", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Level { get; set; }
+
+    /// <summary>Berapa yang cocok seluruhnya — bukan berapa yang ditampilkan.</summary>
+    [JsonProperty("total")] public int Total { get; set; }
+
+    [JsonProperty("shown", NullValueHandling = NullValueHandling.Ignore)]
+    public int? Shown { get; set; }
+
+    [JsonProperty("columns", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Columns { get; set; }
+
+    [JsonProperty("rows", NullValueHandling = NullValueHandling.Ignore)]
+    public List<Dictionary<string, string>>? Rows { get; set; }
+
+    [JsonProperty("totals", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectTotalDto>? Totals { get; set; }
+
+    [JsonProperty("groups", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectGroupDto>? Groups { get; set; }
+
+    [JsonProperty("categories", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectCategoryDto>? CategoryList { get; set; }
+
+    [JsonProperty("parameters", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectParameterDto>? ParameterList { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}
+
+/// <summary>Satu kategori yang benar-benar ada isinya di model ini.</summary>
+public sealed class InspectCategoryDto
+{
+    [JsonProperty("name")] public string Name { get; set; } = string.Empty;
+
+    /// <summary>Nama OST_-nya, untuk kategori yang dinamai Revit sendiri.</summary>
+    [JsonProperty("built_in", NullValueHandling = NullValueHandling.Ignore)]
+    public string? BuiltIn { get; set; }
+
+    [JsonProperty("count")] public int Count { get; set; }
+}
+
+/// <summary>Satu parameter yang bisa diminta, beserta contoh nilainya.</summary>
+public sealed class InspectParameterDto
+{
+    [JsonProperty("name")] public string Name { get; set; } = string.Empty;
+
+    /// <summary>"instance", "type", atau "built-in" untuk kolom bawaan /inspect.</summary>
+    [JsonProperty("scope")] public string Scope { get; set; } = "instance";
+
+    [JsonProperty("storage")] public string Storage { get; set; } = string.Empty;
+
+    [JsonProperty("unit", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Unit { get; set; }
+
+    /// <summary>Nilainya pada satu elemen sungguhan — yang membuat daftar ini terbaca.</summary>
+    [JsonProperty("sample", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Sample { get; set; }
+}
+
+/// <summary>Jumlah sebuah parameter atas seluruh elemen yang cocok.</summary>
+public sealed class InspectTotalDto
+{
+    [JsonProperty("parameter")] public string Parameter { get; set; } = string.Empty;
+
+    [JsonProperty("sum", NullValueHandling = NullValueHandling.Ignore)]
+    public double? Sum { get; set; }
+
+    [JsonProperty("unit", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Unit { get; set; }
+
+    /// <summary>Berapa elemen yang benar-benar punya angka untuk dijumlah.</summary>
+    [JsonProperty("counted")] public int Counted { get; set; }
+
+    /// <summary>
+    /// Berapa yang tidak punya.
+    ///
+    /// Disebutkan, bukan dibiarkan disimpulkan dari angka yang kekecilan: sebuah
+    /// total yang diam-diam hanya mencakup separuh elemen adalah jawaban untuk
+    /// pertanyaan yang tidak pernah ditanyakan siapa pun.
+    /// </summary>
+    [JsonProperty("missing")] public int Missing { get; set; }
+}
+
+/// <summary>Berapa elemen yang bernilai sama — hasil group_by.</summary>
+public sealed class InspectGroupDto
+{
+    [JsonProperty("value")] public string Value { get; set; } = string.Empty;
+    [JsonProperty("count")] public int Count { get; set; }
+}
+
 /// <summary>Matches the TypeScript <c>DeleteResult</c>.</summary>
 public sealed class DeleteResultDto
 {
