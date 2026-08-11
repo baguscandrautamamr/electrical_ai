@@ -56,7 +56,7 @@ first.
 
 | Role | Can |
 |---|---|
-| `viewer` | `/query`, `/export`, `/print_pdf`, `/list_sheets`, and all read-only admin commands |
+| `viewer` | `/query`, `/inspect`, `/export`, `/print_pdf`, `/list_sheets`, and all read-only admin commands |
 | `editor` | everything above, plus every device command and `/api connect` |
 | `admin` | everything above, plus `/user list` |
 
@@ -747,6 +747,67 @@ Lighting groups carry total wattage, cable tray total length, rooms total area.
 `what=lighting` reads each fixture's `Wattage`, `Apparent Load` or `Load`
 parameter and falls back to the wattage in the family name — the same reading
 `/place_lighting` used when it placed them.
+
+### `/inspect`
+
+Reads **anything** in the model, where `/query` reads the thirteen things it was
+built around. Same guarantee: no transaction is opened, so a `viewer` may run it
+and no phrasing of it can change the drawing.
+
+Three modes, and the order is the point:
+
+| `what` | Answers |
+|---|---|
+| `categories` | Which categories exist in this model, and how many elements each has |
+| `parameters` | What a category's elements can be asked about, with a real value beside each name |
+| `elements` | The rows themselves, with the columns you name *(default)* |
+
+The first two exist because the third cannot be used without them. A parameter
+has to be named exactly to be read, and nobody — engineer or assistant — can name
+one they have never seen. Guessing `Length` and getting an empty column is
+indistinguishable from a model that has no lengths, which is the failure this
+system keeps having to design away. The sample value in `parameters` settles both
+questions at once: whether this is the parameter you meant, and what unit it
+comes back in.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `what` | categories\|parameters\|elements | elements | |
+| `category` | string | | Revit's name (`Doors`), its OST name (`OST_Doors`), or the short key the other commands use (`lighting`). Required except for `what=categories` |
+| `params` | string | Id, Mark, Type, Level | Columns, comma separated |
+| `where` | string | | One condition: `Width>800`, `Mark~LF-`, `Comments!=`. `~` is "contains" |
+| `total` | string | | Numeric parameters to sum, comma separated |
+| `group_by` | string | | One parameter; the answer is how many elements per value |
+| `room` | string | | Same room resolution as `/query` |
+| `level` | string | | |
+| `limit` | integer | 30 | Rows returned, at most 200 |
+
+```
+/inspect what=categories
+/inspect what=parameters category=Doors
+/inspect category=Doors params=Mark,Width where=Width>800 total=Width
+/inspect category=cable_tray total=Length level="Level 1"
+```
+
+**Units.** Revit stores lengths in internal feet. Everything summed here is
+converted into the unit the project displays first, so a total of lengths is a
+total of metres — not `12.3` where the answer is `3.75 m`. Both are the same
+tray, and only one of them is an answer.
+
+**Totals cover everything that matched**, not the rows shown: a sum computed
+from the first thirty of two hundred is a number that looks like an answer and is
+not one. How many elements had no value to add is reported beside it, because a
+total that quietly covers half the set answers a question nobody asked.
+
+**Columns that are not parameters.** `Id`, `Category`, `Family`, `Type`, `Level`,
+`Room` and `Name` are always available. `Length` falls back to the element's own
+geometry when no parameter answers to that name — which is how a cable tray says
+how long it is, and what makes this work on a model whose Revit speaks another
+language.
+
+Limits, reported when they bite: 20,000 elements scanned, 200 rows returned, 50
+groups named. A federated model has millions of elements, and reading a parameter
+off each one happens on Revit's UI thread.
 
 ---
 
