@@ -165,6 +165,12 @@ public static class TableSchedule
             foreach (var parameterName in wanted) definitions.Add(Define(group, parameterName));
 
             Bind(doc, definitions);
+
+            // The bindings were made a moment ago, in a transaction that has not
+            // committed. GetSchedulableFields below reads what the document
+            // knows now — so the document is made to catch up first, rather than
+            // the schedule being built with the columns it had before.
+            doc.Regenerate();
         }
         finally
         {
