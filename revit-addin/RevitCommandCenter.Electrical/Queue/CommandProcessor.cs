@@ -33,6 +33,7 @@ public sealed class CommandProcessor
             new PrintPdfHandler(),
             new DeleteDevicesHandler(),
             new QueryHandler(),
+            new InspectHandler(),
             new ModelInfoHandler(),
             new ImportExcelHandler(),
             new ImportTableHandler(),
