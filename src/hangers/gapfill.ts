@@ -287,3 +287,88 @@ export function planGapFill(options: {
     totalCount: existing.length + gaps.length,
   };
 }
+
+/**
+ * Sebuah muka datar yang menghadap ke ATAS pada sebuah hanger.
+ *
+ * Cukup dua angka, karena hanya dua yang menentukan: setinggi apa muka itu, dan
+ * seluas apa. Sisi Revit-nya yang menyaring mana yang menghadap ke atas.
+ */
+export interface UpwardFace {
+  /** Ketinggian mutlak muka itu, dalam mm. */
+  zMm: number;
+  /** Luas muka itu, dalam mm². */
+  areaMm2: number;
+}
+
+/** Hasil pengukuran dudukan hanger terhadap dasar tray. */
+export interface BearingSeat {
+  /** Pergeseran tegak yang harus diterapkan, mm. Positif berarti naik. */
+  shiftMm: number;
+  /** Kenapa tidak digeser, ketika shiftMm nol. */
+  reason?: "no-faces" | "already-seated" | "implausible";
+  /** Ketinggian muka tumpu yang terukur, mm. */
+  bearingZMm?: number;
+}
+
+/**
+ * Muka yang luasnya kurang dari sekian bagian muka terluas bukan muka tumpu.
+ *
+ * Ujung batang gantung juga menghadap ke atas, dan pada trapeze ada dua. Tapi
+ * ujung batang ø10 luasnya ~78 mm² sementara punggung profil 300x40 luasnya
+ * ~12.000 — dua orde besaran berbeda, jadi ambang ini tidak sensitif.
+ */
+const BEARING_AREA_FRACTION = 0.6;
+
+/** Selisih di bawah ini tidak sepadan dengan memindahkan apa pun. */
+const SEATED_TOLERANCE_MM = 1.0;
+
+/**
+ * Berapa hanger harus digeser supaya punggungnya menempel dasar tray.
+ *
+ * Kenapa ini ada: penempatan hanger menaruh titik sisip keluarga tepat di dasar
+ * tray, dan itu benar HANYA kalau titik sisip keluarga itu berada persis di muka
+ * tumpunya. Keluarga tiap kantor tidak begitu — titik sisipnya bisa di tengah
+ * profil, di bawahnya, atau di ujung batang — dan selisihnya tampil sebagai
+ * hanger yang menggantung dengan celah di bawah tray, tidak menyentuh apa pun.
+ *
+ * Jadi selisih itu DIUKUR, bukan ditebak, persis seperti arah lintang profil
+ * yang sudah diukur dari kotak batasnya. Yang dicari muka menghadap atas yang
+ * cukup luas dan PALING DEKAT dengan titik sisipnya: yang diperbaiki di sini
+ * ketidaktepatan pemodelan yang kecil, bukan pencarian di seluruh keluarga.
+ *
+ * Tidak masuk akal berarti tidak dikerjakan. Kalau muka terdekat pun jauh —
+ * mis. keluarga yang muka luasnya justru pelat di pelat lantai, atau tiang
+ * berdiri yang pelat dasarnya di lantai — hasilnya nol, dan hanger tetap di
+ * tempat yang lama. Menggeser satu meter karena salah menebak muka jauh lebih
+ * buruk daripada celah beberapa milimeter.
+ */
+export function calculateBearingSeat(
+  faces: UpwardFace[],
+  insertionZMm: number,
+  maxShiftMm = 500,
+): BearingSeat {
+  const usable = faces.filter((face) => face.areaMm2 > 0);
+  if (usable.length === 0) return { shiftMm: 0, reason: "no-faces" };
+
+  const widest = Math.max(...usable.map((face) => face.areaMm2));
+  const candidates = usable.filter(
+    (face) => face.areaMm2 >= widest * BEARING_AREA_FRACTION,
+  );
+
+  const bearing = candidates.reduce((best, face) =>
+    Math.abs(face.zMm - insertionZMm) < Math.abs(best.zMm - insertionZMm) ? face : best,
+  );
+
+  const shiftMm = insertionZMm - bearing.zMm;
+
+  if (Math.abs(shiftMm) < SEATED_TOLERANCE_MM) {
+    return { shiftMm: 0, reason: "already-seated", bearingZMm: bearing.zMm };
+  }
+
+  if (Math.abs(shiftMm) > maxShiftMm) {
+    return { shiftMm: 0, reason: "implausible", bearingZMm: bearing.zMm };
+  }
+
+  return { shiftMm, bearingZMm: bearing.zMm };
+}

@@ -223,10 +223,30 @@ So every hanger drops half the tray's height below the location line, which puts
 it under the tray it carries. On a 300×300 tray routed at 3000, the hangers sit
 at 2850.
 
-Where that lands inside the hanger family depends on where the family's origin
-is. The rule here is the one that can be stated: **the family origin goes to the
-underside of the tray.** A trapeze drawn with its origin on the bearing surface
-therefore takes the tray exactly.
+Where that lands inside the hanger family used to depend on where the family's
+origin is, and only a family drawn with its origin exactly on its bearing
+surface took the tray. Everything else hung a few millimetres low, with a visible
+gap between the tray's base and the channel meant to carry it — the hanger
+touching nothing.
+
+So the origin is no longer trusted to be anywhere in particular. After the
+instances exist, each type is **measured once**: every upward-facing flat face of
+the family is collected, the ones too small to be a bearing surface are dropped
+(a ø10 rod end is ~78 mm² against ~12,000 mm² for a 300×40 channel back), and the
+remaining face nearest the insertion point is taken as the one the tray rests on.
+Every instance of that type is then moved vertically so that face meets the
+tray's underside.
+
+Two things it will not do. A discrepancy under 1 mm is left alone — moving it
+would record a change worth nothing. And a candidate further than 500 mm away is
+rejected outright: that is not a mis-drawn origin, it is a family whose widest
+face is its slab plate or a floor stanchion whose base plate is on the floor, and
+moving a hanger half a metre on a bad guess is far worse than a gap. In both
+cases the hanger stays where it was placed and the log says which case it was,
+with the numbers it measured.
+
+This is the same approach as the orientation fix below: ask the family what it
+actually is, rather than require every office to draw it the way we hoped.
 
 ### Which way the hanger faces
 
