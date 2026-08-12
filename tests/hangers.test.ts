@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_TOLERANCE_MM,
   buildHangerTypeName,
+  calculateBearingSeat,
   calculateExpectedPositions,
   calculateLoadPerHanger,
   estimateTotalLoadKg,
@@ -291,5 +292,75 @@ describe('matchHangerType', () => {
 
   it('ignores types that state no size at all', () => {
     expect(matchHangerType(['Standard', '300'], 300, 100)).toBe('300');
+  });
+});
+
+describe("calculateBearingSeat — hanger yang tidak menempel dasar tray", () => {
+  /**
+   * Yang dilaporkan: hanger tergantung dengan celah di bawah cable tray,
+   * punggungnya tidak menyentuh apa pun.
+   *
+   * Penempatannya menaruh titik sisip keluarga tepat di dasar tray, dan itu
+   * benar hanya kalau titik sisip keluarga itu ada di muka tumpunya. Keluarga
+   * kantor ini tidak begitu, dan selisihnya jadi celah.
+   */
+  it("mengangkat hanger yang punggungnya di bawah dasar tray", () => {
+    const seat = calculateBearingSeat(
+      [
+        { zMm: 2480, areaMm2: 12_000 }, // punggung profil, 20 mm di bawah tray
+        { zMm: 3000, areaMm2: 78 }, // ujung batang gantung kiri
+        { zMm: 3000, areaMm2: 78 }, // ujung batang gantung kanan
+      ],
+      2500,
+    );
+
+    expect(seat.shiftMm).toBe(20);
+    expect(seat.bearingZMm).toBe(2480);
+  });
+
+  it("ujung batang gantung tidak pernah dianggap muka tumpu", () => {
+    // Dua orde besaran lebih kecil dari punggung profilnya, jadi ambangnya
+    // tidak sensitif — tapi kalau ia sampai terpilih, hanger justru terbenam
+    // setengah meter ke dalam tray.
+    const seat = calculateBearingSeat(
+      [
+        { zMm: 2495, areaMm2: 9_600 },
+        { zMm: 2900, areaMm2: 60 },
+      ],
+      2500,
+    );
+
+    expect(seat.bearingZMm).toBe(2495);
+    expect(seat.shiftMm).toBe(5);
+  });
+
+  it("hanger yang sudah menempel tidak digeser", () => {
+    // Menggeser yang sudah benar berarti setiap perintah menghasilkan riwayat
+    // perubahan yang isinya nol.
+    const seat = calculateBearingSeat([{ zMm: 2500, areaMm2: 12_000 }], 2500);
+
+    expect(seat.shiftMm).toBe(0);
+    expect(seat.reason).toBe("already-seated");
+  });
+
+  it("yang jelas bukan muka tumpu tidak dikerjakan", () => {
+    // Tiang berdiri: muka terluasnya pelat dasar di lantai, 2,4 m di bawah
+    // tray. Menggeser sejauh itu jauh lebih buruk daripada tidak menggeser.
+    const seat = calculateBearingSeat([{ zMm: 100, areaMm2: 40_000 }], 2500);
+
+    expect(seat.shiftMm).toBe(0);
+    expect(seat.reason).toBe("implausible");
+    expect(seat.bearingZMm).toBe(100);
+  });
+
+  it("keluarga yang tidak bisa diukur dibiarkan apa adanya", () => {
+    expect(calculateBearingSeat([], 2500)).toEqual({ shiftMm: 0, reason: "no-faces" });
+    expect(calculateBearingSeat([{ zMm: 2400, areaMm2: 0 }], 2500).reason).toBe("no-faces");
+  });
+
+  it("hanger yang terlalu tinggi diturunkan, bukan cuma diangkat", () => {
+    // Titik sisip di bawah punggungnya: hanger memotong tray dari bawah.
+    const seat = calculateBearingSeat([{ zMm: 2530, areaMm2: 12_000 }], 2500);
+    expect(seat.shiftMm).toBe(-30);
   });
 });

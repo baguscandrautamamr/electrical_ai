@@ -131,6 +131,83 @@ public static class HangerPositionCalculator
         return loads;
     }
 
+
+    /// <summary>
+    /// A single upward-facing flat face on a hanger. Two numbers is all it takes:
+    /// how high it is, and how big it is. The Revit side does the filtering.
+    /// </summary>
+    public readonly record struct UpwardFace(double ZMm, double AreaMm2);
+
+    /// <summary>What the measurement found, and what to do about it.</summary>
+    /// <param name="ShiftMm">Vertical shift to apply, mm. Positive is up.</param>
+    /// <param name="Reason">Why nothing moved, when ShiftMm is zero.</param>
+    /// <param name="BearingZMm">The measured bearing face, mm.</param>
+    public sealed record BearingSeat(double ShiftMm, string? Reason = null, double? BearingZMm = null);
+
+    /// <summary>
+    /// A face smaller than this fraction of the widest one is not the bearing
+    /// surface.
+    ///
+    /// Hanger rod ends face upward too, and a trapeze has two of them. But a
+    /// ø10 rod end is ~78 mm² against ~12,000 mm² for a 300x40 channel back —
+    /// two orders of magnitude apart, so the threshold is not sensitive.
+    /// </summary>
+    private const double BearingAreaFraction = 0.6;
+
+    /// <summary>Below this, moving anything is not worth the change it records.</summary>
+    private const double SeatedToleranceMm = 1.0;
+
+    /// <summary>
+    /// How far a hanger must move for its back to meet the underside of the tray.
+    ///
+    /// Why this exists: placement puts the family's insertion point exactly at
+    /// the tray's underside, and that is only correct when the family's insertion
+    /// point sits exactly on its bearing face. Office families do not — the
+    /// insertion point can be mid-channel, under it, or at the rod ends — and the
+    /// difference shows up as a hanger hanging below the tray, touching nothing.
+    ///
+    /// So the difference is MEASURED, not assumed, the same way the cross-member
+    /// axis is already measured from the bounding box. What it looks for is the
+    /// upward face that is big enough and CLOSEST to the insertion point: what is
+    /// being corrected here is a small modelling discrepancy, not a search of the
+    /// whole family.
+    ///
+    /// Implausible means untouched. If even the nearest candidate is far away —
+    /// a family whose widest face is its slab plate, or a floor stanchion whose
+    /// base plate is on the floor — the answer is zero and the hanger stays put.
+    /// Moving something a metre on a bad guess is far worse than a few
+    /// millimetres of gap.
+    /// </summary>
+    public static BearingSeat CalculateBearingSeat(
+        IReadOnlyList<UpwardFace> faces,
+        double insertionZMm,
+        double maxShiftMm = 500.0)
+    {
+        var usable = faces.Where(face => face.AreaMm2 > 0).ToList();
+        if (usable.Count == 0) return new BearingSeat(0, "no-faces");
+
+        var widest = usable.Max(face => face.AreaMm2);
+
+        var bearing = usable
+            .Where(face => face.AreaMm2 >= widest * BearingAreaFraction)
+            .OrderBy(face => Math.Abs(face.ZMm - insertionZMm))
+            .First();
+
+        var shiftMm = insertionZMm - bearing.ZMm;
+
+        if (Math.Abs(shiftMm) < SeatedToleranceMm)
+        {
+            return new BearingSeat(0, "already-seated", bearing.ZMm);
+        }
+
+        if (Math.Abs(shiftMm) > maxShiftMm)
+        {
+            return new BearingSeat(0, "implausible", bearing.ZMm);
+        }
+
+        return new BearingSeat(shiftMm, null, bearing.ZMm);
+    }
+
     /// <summary>
     /// Estimated tray + cable mass, in kg, for one run.
     ///

@@ -50,6 +50,21 @@ public sealed class SmartHangerPlacement
     /// <summary>Which axis each type's cross-member spans. See CrossMemberIsAlongX.</summary>
     private readonly Dictionary<ElementId, bool> _crossMemberAlongX = new();
 
+    /// <summary>
+    /// How far each type must drop or rise for its back to meet the tray, in
+    /// feet. See SeatOnTray — measured once per type, like the axis above.
+    /// </summary>
+    private readonly Dictionary<ElementId, double> _bearingShiftFeet = new();
+
+    /// <summary>
+    /// What was reported for each instance placed this run.
+    ///
+    /// Seating happens after the reply lines are built, so the coordinates in
+    /// them would otherwise quote the position the hanger was created at rather
+    /// than the one it ended up at.
+    /// </summary>
+    private readonly Dictionary<ElementId, HangerInfo> _placed = new();
+
     public SmartHangerPlacement(Document doc, string hangerFamilyName)
     {
         _doc = doc;
@@ -221,7 +236,7 @@ public sealed class SmartHangerPlacement
                     spacingMm, fillPercentage, material, occupied, toTurn, outcome);
             }
 
-            TurnAcrossRuns(toTurn);
+            SeatAndTurn(toTurn);
 
             transaction.Commit();
         }
@@ -382,7 +397,7 @@ public sealed class SmartHangerPlacement
                     ["Calculated_Load"] = load,
                 });
 
-                outcome.Placed.Add(new HangerInfo
+                var placed = new HangerInfo
                 {
                     HangerId = $"H-{instance.Id}",
                     PositionMm = position,
@@ -399,7 +414,10 @@ public sealed class SmartHangerPlacement
                         Y = RevitUnits.FeetToMm(point.Y),
                         Z = RevitUnits.FeetToMm(point.Z),
                     },
-                });
+                };
+
+                outcome.Placed.Add(placed);
+                _placed[instance.Id] = placed;
 
                 Logger.Debug($"Placed hanger at {position:F0} mm (id {instance.Id})");
             }
@@ -488,6 +506,10 @@ public sealed class SmartHangerPlacement
     /// <summary>
     /// Turns every free-standing hanger so its cross-member spans its run.
     ///
+    /// Two things every free-standing hanger needs after it exists: to be sat
+    /// down onto the tray, and to be turned across the run. Both need geometry
+    /// Revit has not built yet, so both wait for the one regenerate here.
+    ///
     /// An unhosted instance is created facing whichever way the family was
     /// drawn — the same way for every hanger in the model, whatever direction
     /// the tray under it runs. On a north-south run that reads as correct and on
@@ -500,13 +522,20 @@ public sealed class SmartHangerPlacement
     /// family's X axis would be right for some offices' content and silently
     /// wrong for others.
     /// </summary>
-    private void TurnAcrossRuns(List<PendingTurn> pending)
+    private void SeatAndTurn(List<PendingTurn> pending)
     {
         if (pending.Count == 0) return;
 
         // One regenerate for the whole run: the instances were created this
         // transaction and have no geometry to measure until Revit builds it.
         _doc.Regenerate();
+
+        foreach (var turn in pending)
+        {
+            // Seating first, and it is independent of turning: the rotation axis
+            // is vertical, so neither move disturbs the other.
+            SeatOnTray(turn);
+        }
 
         foreach (var turn in pending)
         {
@@ -539,6 +568,122 @@ public sealed class SmartHangerPlacement
                 Logger.Warn($"Could not turn hanger {turn.Instance.Id} to its run: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// Drops or lifts a hanger so its back meets the underside of the tray.
+    ///
+    /// The placement point is the tray's underside, and that is only the right
+    /// place for the family's insertion point when the insertion point sits on
+    /// the bearing face. Office families put it elsewhere — mid-channel, under
+    /// the channel, at the rod ends — and the difference is exactly the reported
+    /// symptom: a hanger floating below the tray, carrying nothing, touching
+    /// nothing.
+    ///
+    /// So it is measured, in the same spirit as the cross-member axis: the family
+    /// is asked where its bearing face actually is, rather than assumed to have
+    /// drawn it where we hoped. A family that cannot be measured, or whose
+    /// nearest wide face is implausibly far, is left exactly where it was — the
+    /// old behaviour, and the log says which.
+    /// </summary>
+    private void SeatOnTray(PendingTurn turn)
+    {
+        try
+        {
+            if (!_bearingShiftFeet.TryGetValue(turn.Symbol.Id, out var shiftFeet))
+            {
+                var faces = UpwardFaces(turn.Instance);
+                var seat = HangerPositionCalculator.CalculateBearingSeat(
+                    faces, RevitUnits.FeetToMm(turn.Point.Z));
+
+                shiftFeet = RevitUnits.MmToFeet(seat.ShiftMm);
+                _bearingShiftFeet[turn.Symbol.Id] = shiftFeet;
+
+                var bearing = seat.BearingZMm is { } measured ? $"{measured:F1} mm" : "nowhere";
+                var verdict = seat.ShiftMm != 0
+                    ? $"seating every instance by {seat.ShiftMm:F1} mm."
+                    : $"left as placed ({seat.Reason}).";
+
+                Logger.Info(
+                    $"Hanger type '{turn.Symbol.Name}': {faces.Count} upward face(s), bearing at "
+                    + $"{bearing} against a tray underside of "
+                    + $"{RevitUnits.FeetToMm(turn.Point.Z):F1} mm — {verdict}");
+            }
+
+            if (shiftFeet == 0) return;
+
+            ElementTransformUtils.MoveElement(
+                _doc, turn.Instance.Id, XYZ.BasisZ.Multiply(shiftFeet));
+
+            // The reply quotes the coordinates it placed, so they have to be the
+            // coordinates that ended up in the model.
+            if (_placed.TryGetValue(turn.Instance.Id, out var info) && info.Coordinates is not null)
+            {
+                info.Coordinates.Z += RevitUnits.FeetToMm(shiftFeet);
+            }
+        }
+        catch (Exception ex)
+        {
+            // A hanger a few millimetres off is still worth more than no hanger,
+            // so this never undoes the placement.
+            Logger.Warn($"Could not seat hanger {turn.Instance.Id} on its tray: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Every upward-facing flat face of an instance, as height and area in mm.
+    ///
+    /// Only planar faces, and only ones facing very nearly straight up: a
+    /// sloping gusset is not what a tray rests on. Curved faces are skipped —
+    /// nothing bears on the side of a rod.
+    /// </summary>
+    private static List<HangerPositionCalculator.UpwardFace> UpwardFaces(FamilyInstance instance)
+    {
+        // 1 ft² in mm², for face areas — Revit reports them in square feet.
+        const double SquareFeetToMm2 = 92903.04;
+
+        var faces = new List<HangerPositionCalculator.UpwardFace>();
+
+        var options = new Options
+        {
+            ComputeReferences = false,
+            IncludeNonVisibleObjects = false,
+            DetailLevel = ViewDetailLevel.Fine,
+        };
+
+        void Walk(GeometryElement? geometry)
+        {
+            if (geometry is null) return;
+
+            foreach (var item in geometry)
+            {
+                switch (item)
+                {
+                    case GeometryInstance nested:
+                        // A family instance hands back its geometry in its own
+                        // coordinates; the instance transform is what puts it in
+                        // the model, and the heights here have to be the model's.
+                        Walk(nested.GetInstanceGeometry());
+                        break;
+
+                    case Solid solid:
+                        foreach (Face face in solid.Faces)
+                        {
+                            if (face is not PlanarFace planar) continue;
+                            if (planar.FaceNormal.Z < 0.99) continue;
+
+                            faces.Add(new HangerPositionCalculator.UpwardFace(
+                                RevitUnits.FeetToMm(planar.Origin.Z),
+                                planar.Area * SquareFeetToMm2));
+                        }
+                        break;
+                }
+            }
+        }
+
+        Walk(instance.get_Geometry(options));
+
+        return faces;
     }
 
     /// <summary>
