@@ -113,16 +113,32 @@ The two schedules above sit inside that limit, so the project deploys on Hobby
 as-is. Nothing needs to be removed or commented out.
 
 What the daily limit costs is *timeliness*, not correctness: a command stranded
-in `processing` is only failed and reported on the next sweep. To keep that
-prompt without upgrading, `.github/workflows/sweep.yml` calls the sweeper
-endpoint every 15 minutes from GitHub Actions — set the repository Actions
-variable `DEPLOYMENT_URL` to your deployment origin and it starts working; leave
-it unset and the workflow no-ops. Any external scheduler works just as well
-(cron-job.org, UptimeRobot, a machine you already leave on):
+in `processing` is only failed and reported on the next sweep. Keeping that
+prompt means calling the sweeper endpoint yourself, on whatever interval you
+want:
 
 ```bash
 curl "https://<your-deployment>.vercel.app/api/telegram/callback?limit=50"
 ```
+
+An external scheduler is the right home for it — cron-job.org, UptimeRobot, or a
+machine you already leave on. `.github/workflows/sweep.yml` makes the same call
+on `workflow_dispatch`, but it is **not** scheduled, and restoring a schedule
+there is a decision with two prerequisites and a bill attached:
+
+- **The variable has to exist.** Settings → Secrets and variables → Actions →
+  Variables, `DEPLOYMENT_URL` = your deployment origin. Unset, the workflow
+  fails without reaching curl. It sat unset while a `*/15` schedule ran 96 times
+  a day, so every run was a no-op that still started a runner.
+- **The endpoint has to answer.** Deployment Protection on this project covers
+  everything except custom domains, so a `*.vercel.app` origin returns 401 to a
+  runner. Point `DEPLOYMENT_URL` at a custom domain, or add the project's
+  protection bypass secret as the `VERCEL_AUTOMATION_BYPASS_SECRET` repository
+  secret — the workflow sends it as `x-vercel-protection-bypass` when present.
+- **The minutes are metered.** On a private repository Actions bills per started
+  minute against 2,000 free per month. `*/15` is ~2,880 of them; hourly is ~720.
+  Exhaust the quota and GitHub stops handing out runners for *every* workflow
+  here, including the add-in builds — each refusal arriving as a failure email.
 
 On a Pro plan, tighten `vercel.json` back to `0 */6 * * *` and delete the
 workflow.
