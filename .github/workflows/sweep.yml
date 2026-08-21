@@ -1,21 +1,38 @@
-## Frequent queue sweep — the free stand-in for a sub-daily Vercel cron.
+## Manual queue sweep — the stand-in for a sub-daily Vercel cron.
 ##
 ## Vercel's Hobby plan fires each cron once a day, which is fine for archiving
 ## but too slow for timeout notices and late results. This hits the sweeper
-## endpoint every 15 minutes instead. Delete this file if the project moves to a
-## Vercel plan that allows frequent crons.
+## endpoint on demand instead. Delete this file if the project moves to a Vercel
+## plan that allows frequent crons.
 ##
-## Setup: repository Settings -> Secrets and variables -> Actions -> Variables,
-## add DEPLOYMENT_URL = https://<your-deployment>.vercel.app
+## THE 15-MINUTE SCHEDULE IS GONE ON PURPOSE. It ran 96 times a day on a private
+## repository, and every one of those runs did nothing: `DEPLOYMENT_URL` was
+## never set, so the guard below skipped before curl was ever reached. What it
+## did spend was the account's Actions minutes, and once they ran out GitHub
+## stopped granting the job a runner — a failed run every 15 minutes, each one an
+## email, none of them about this project's code.
 ##
-## GitHub schedules are best-effort and can lag under load; the daily Vercel
-## cron stays in place as the backstop.
+## Two things must be true before a schedule is worth restoring:
+##
+##   1. `DEPLOYMENT_URL` exists. Settings -> Secrets and variables -> Actions ->
+##      Variables, set to https://<your-deployment>.vercel.app.
+##   2. The endpoint answers an unauthenticated request. Vercel Deployment
+##      Protection is on for this project (all except custom domains), so a
+##      *.vercel.app URL returns 401 to a runner no matter what the code does.
+##      Point DEPLOYMENT_URL at a custom domain, or add the project's protection
+##      bypass secret as the `VERCEL_AUTOMATION_BYPASS_SECRET` repository secret,
+##      which the request below sends when it is present.
+##
+## Even then, keep the interval honest about the quota: private-repo minutes are
+## billed per started minute, so `*/15` is ~2,880 minutes a month against 2,000
+## free. `0 * * * *` (hourly) is ~720 and leaves room for the add-in builds.
+##
+## An external scheduler costs no Actions minutes at all and is the better home
+## for this: cron-job.org, UptimeRobot, or any machine you already leave on.
 
 name: Queue sweep
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -30,11 +47,19 @@ jobs:
       - name: Flush finished results and reclaim stuck commands
         env:
           DEPLOYMENT_URL: ${{ vars.DEPLOYMENT_URL }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           if [ -z "$DEPLOYMENT_URL" ]; then
-            echo "DEPLOYMENT_URL is not set; skipping." >&2
-            exit 0
+            echo "DEPLOYMENT_URL is not set; nothing to sweep." >&2
+            exit 1
+          fi
+          # Deployment Protection answers 401 to anyone without this header, so a
+          # run without the secret is only meaningful on an unprotected domain.
+          if [ -n "$BYPASS" ]; then
+            set -- --header "x-vercel-protection-bypass: $BYPASS"
+          else
+            set --
           fi
           # --fail so a 5xx from the sweeper shows up as a failed run.
-          curl --fail --silent --show-error --max-time 60 \
+          curl --fail --silent --show-error --max-time 60 "$@" \
             "${DEPLOYMENT_URL%/}/api/telegram/callback?limit=50"
