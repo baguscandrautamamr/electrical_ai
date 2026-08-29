@@ -926,6 +926,17 @@ section box is a 3D-view thing; asking for one on a plan is a different question
 not a smaller version of this one, and answering it by cropping some other view
 the person is not looking at is worse than saying no.
 
+**With `view=3d`, the view already on screen wins.** If a 3D view is open, that
+is the one that gets the section box — nothing outranks the view somebody is
+looking at. Only when the active view is not a 3D view does it fall back, and
+then it prefers this user's own `{3D - username}` before the shared `{3D}`.
+
+That order matters on a shared model. Revit creates a default 3D view per user,
+so `{3D - bagus.utamaNWTTV}` sits beside a plain `{3D}` — and a name test for
+`{3D}` does not match `{3D - bagus.utamaNWTTV}`, because the brace closes after
+the name. Getting this wrong cuts a view nobody is looking at while the screen
+stays put, which reads exactly like a command that silently failed.
+
 An unenclosed room has no bounding box in Revit at all, and the reply says so
 rather than reporting a box it could not build. That is a modelling problem the
 engineer can go and fix.

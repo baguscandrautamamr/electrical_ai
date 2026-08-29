@@ -47,7 +47,9 @@ public sealed class SectionBoxHandler : ICommandHandler
         // The view is settled before anything is measured: switching views is
         // not a transaction, and doing it first means a failure to find a 3D
         // view costs nothing and leaves nothing half-applied.
-        var view = useCurrentView ? doc.ActiveView as View3D : Resolve3DView(doc, uidoc);
+        var view = useCurrentView
+            ? doc.ActiveView as View3D
+            : View3DPicker.Pick(doc) ?? View3DPicker.Create(doc);
 
         if (view is null)
         {
@@ -237,50 +239,6 @@ public sealed class SectionBoxHandler : ICommandHandler
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// A usable 3D view, created only when the model genuinely has none.
-    /// Same rule as <see cref="ShowElementHandler"/>: the "{3D}" name is a
-    /// preference, not a filter, or every model whose 3D views were renamed
-    /// grows another one.
-    /// </summary>
-    private static View3D? Resolve3DView(Document doc, UIDocument uidoc)
-    {
-        var candidates = new FilteredElementCollector(doc)
-            .OfClass(typeof(View3D))
-            .Cast<View3D>()
-            .Where(view => !view.IsTemplate && !view.IsLocked)
-            .ToList();
-
-        if (candidates.Count > 0)
-        {
-            return candidates.FirstOrDefault(view =>
-                       view.Name.Contains("{3D}", StringComparison.OrdinalIgnoreCase)
-                       || view.Name.Contains("Default 3D", StringComparison.OrdinalIgnoreCase))
-                   ?? candidates[0];
-        }
-
-        var viewType = new FilteredElementCollector(doc)
-            .OfClass(typeof(ViewFamilyType))
-            .Cast<ViewFamilyType>()
-            .FirstOrDefault(type => type.ViewFamily == ViewFamily.ThreeDimensional);
-
-        if (viewType is null) return null;
-
-        try
-        {
-            using var transaction = new Transaction(doc, "Create a 3D view");
-            transaction.Start();
-            var created = View3D.CreateIsometric(doc, viewType.Id);
-            transaction.Commit();
-            return created;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"section_box: could not create a 3D view ({ex.Message})");
-            return null;
-        }
     }
 
     /// <summary>

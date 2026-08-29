@@ -99,18 +99,18 @@ public sealed class ShowElementHandler : ICommandHandler
 
         if (wants3d)
         {
-            var view = FindView3D(doc);
+            var view = View3DPicker.Pick(doc);
 
             if (view is null)
             {
-                view = CreateView3D(doc);
+                view = View3DPicker.Create(doc);
                 viewCreated = view is not null;
             }
 
             if (view is not null)
             {
                 // Set OUTSIDE any transaction: Revit refuses to change the
-                // active view while one is open, and CreateView3D above has
+                // active view while one is open, and View3DPicker.Create above has
                 // already committed its own.
                 //
                 // Compared by id, not by object: the API hands back a fresh
@@ -139,78 +139,6 @@ public sealed class ShowElementHandler : ICommandHandler
             View = viewName,
             ViewCreated = viewCreated ? true : null,
         });
-    }
-
-    /// <summary>
-    /// A 3D view worth landing in: the default one if it is there, otherwise
-    /// any usable one.
-    ///
-    /// Templates and locked views are skipped — a locked 3D view cannot be
-    /// navigated, so scrolling to an element in one leaves the screen wherever
-    /// it already was, with nothing to say why.
-    ///
-    /// The name test is a preference, not a filter. Looking ONLY for "{3D}" or
-    /// "Default 3D" means a model whose 3D views were all renamed — which is
-    /// most models that anyone has worked in for a while — reports having no 3D
-    /// view at all, and then gets a brand new one created next to the several it
-    /// already had.
-    /// </summary>
-    private static View3D? FindView3D(Document doc)
-    {
-        var candidates = new FilteredElementCollector(doc)
-            .OfClass(typeof(View3D))
-            .Cast<View3D>()
-            .Where(view => !view.IsTemplate && !view.IsLocked)
-            .ToList();
-
-        if (candidates.Count == 0) return null;
-
-        return candidates.FirstOrDefault(view =>
-                   view.Name.Contains("{3D}", StringComparison.OrdinalIgnoreCase)
-                   || view.Name.Contains("Default 3D", StringComparison.OrdinalIgnoreCase))
-               ?? candidates[0];
-    }
-
-    /// <summary>
-    /// The one transaction in this handler, and only when the model has no 3D
-    /// view to open.
-    ///
-    /// Failing instead would be defensible — this command promises not to change
-    /// the model — but it fails exactly where the feature is needed most: a
-    /// model early enough in its life to have no 3D view is one whose elements
-    /// nobody can point at yet. An isometric view is also the least opinionated
-    /// thing that can be added: it holds no overrides, hides nothing, and is
-    /// what Revit's own Default 3D View button makes.
-    /// </summary>
-    private static View3D? CreateView3D(Document doc)
-    {
-        var viewType = new FilteredElementCollector(doc)
-            .OfClass(typeof(ViewFamilyType))
-            .Cast<ViewFamilyType>()
-            .FirstOrDefault(type => type.ViewFamily == ViewFamily.ThreeDimensional);
-
-        if (viewType is null)
-        {
-            Logger.Warn("show_element: the model has no 3D view family type, so none could be created");
-            return null;
-        }
-
-        try
-        {
-            using var transaction = new Transaction(doc, "Create a 3D view");
-            transaction.Start();
-            var view = View3D.CreateIsometric(doc, viewType.Id);
-            transaction.Commit();
-            return view;
-        }
-        catch (Exception ex)
-        {
-            // A read command must not turn into a failed command because the
-            // view it wanted could not be made. The caller falls back to the
-            // active view, which may well already show the element.
-            Logger.Warn($"show_element: could not create a 3D view ({ex.Message})");
-            return null;
-        }
     }
 
     /// <summary>
