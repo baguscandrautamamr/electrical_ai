@@ -57,6 +57,14 @@ internal static class Icons
             Accent, Ink, 1.2),
         Path("M 17.3,12.2 A 3.5,3.5 0 1 1 17.2,12.2 Z", Colors.White, Ink, 1.2));
 
+    /// <summary>A speech bubble: the chat panel.</summary>
+    public static ImageSource Chat() => Compose(
+        Path(
+            "M 5,7 L 27,7 L 27,21 L 15,21 L 9,26 L 9,21 L 5,21 Z",
+            Accent, Ink, 1.4),
+        Path("M 11,12 L 21,12", null, Ink, 1.8),
+        Path("M 11,16 L 18,16", null, Ink, 1.8));
+
     /// <summary>Warning triangle, for a ribbon that could not be configured.</summary>
     public static ImageSource Warning() => Compose(
         Path("M 16,5 L 28,26 L 4,26 Z", Danger),

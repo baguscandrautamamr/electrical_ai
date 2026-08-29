@@ -14,6 +14,40 @@ namespace RevitCommandCenter.Electrical.Ribbon;
 /// model directly — model changes happen inside the external event handler,
 /// which opens its own transactions.
 /// </summary>
+/// <summary>
+/// Shows the chat pane, or hides it when it is already up.
+///
+/// One button that toggles, rather than a button that only opens: a pane people
+/// close from its own X and then reopen from the ribbon is the normal rhythm,
+/// and a button that does nothing when the pane is already visible reads as a
+/// button that is broken.
+/// </summary>
+[Transaction(TransactionMode.Manual)]
+[Regeneration(RegenerationOption.Manual)]
+public sealed class ChatCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
+    {
+        try
+        {
+            var pane = data.Application.GetDockablePane(UI.ChatPaneProvider.PaneId);
+
+            if (pane.IsShown()) pane.Hide();
+            else pane.Show();
+
+            return Result.Succeeded;
+        }
+        catch (Exception ex)
+        {
+            // The pane is registered in OnStartup; failing here means it was not,
+            // and the reason is in the log rather than in this dialog.
+            Logger.Error($"Chat pane could not be shown: {ex}");
+            message = "Panel chat tidak bisa dibuka. Lihat Log di ribbon untuk sebabnya.";
+            return Result.Failed;
+        }
+    }
+}
+
 [Transaction(TransactionMode.Manual)]
 [Regeneration(RegenerationOption.Manual)]
 public sealed class ConnectCommand : IExternalCommand

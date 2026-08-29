@@ -172,6 +172,40 @@ public sealed class AddinConfig
     public bool StartPollingOnLaunch { get; set; } = false;
 
     /// <summary>
+    /// Alamat website Revit Command Center, untuk panel chat di dalam Revit.
+    ///
+    /// Kosong berarti panelnya tidak dibuka — bukan dibuka ke halaman kosong.
+    /// Sebuah panel putih tanpa keterangan tidak bisa dibedakan dari panel yang
+    /// rusak, dan yang sebenarnya kurang cuma satu baris di config.json.
+    ///
+    /// Tanpa nilai bawaan dengan sengaja: alamat deployment adalah sesuatu yang
+    /// hanya diketahui yang memasangnya, dan menebaknya berarti panel yang
+    /// membuka situs milik orang lain.
+    /// </summary>
+    [JsonProperty("website_url")]
+    public string WebsiteUrl { get; set; } = string.Empty;
+
+    /// <summary>Halaman yang dibuka panel; ganti kalau /inspect bukan yang dituju.</summary>
+    [JsonProperty("website_chat_path")]
+    public string WebsiteChatPath { get; set; } = "/inspect";
+
+    /// <summary>Alamat lengkap yang dibuka panel, atau null kalau belum diisi.</summary>
+    [JsonIgnore]
+    public string? ChatUrl
+    {
+        get
+        {
+            var baseUrl = WebsiteUrl?.Trim();
+            if (string.IsNullOrWhiteSpace(baseUrl)) return null;
+
+            var path = (WebsiteChatPath ?? string.Empty).Trim();
+            if (path.Length == 0) return baseUrl;
+
+            return $"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+        }
+    }
+
+    /// <summary>
     /// ProjectId is deliberately not required: an instance with none serves
     /// every project.
     /// </summary>
