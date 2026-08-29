@@ -69,6 +69,13 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+
+    <!-- Panel chat di dalam Revit memuat halaman website apa adanya, jadi yang
+         dibutuhkan sebuah kontrol browser. Paket ini hanya SDK-nya; runtime
+         Edge WebView2 dipasang terpisah dan sudah ada secara bawaan di Windows
+         10/11 modern. Kalau ternyata tidak ada, panelnya mengatakan itu alih-alih
+         tampil sebagai kotak putih. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
     <!-- Non-commercial licence; switch to a commercial licence before shipping. -->
     <PackageReference Include="EPPlus" Version="7.5.2" />
     <PackageReference Include="itext7" Version="8.0.5" />

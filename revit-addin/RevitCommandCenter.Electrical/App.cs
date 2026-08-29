@@ -40,6 +40,25 @@ public sealed class App : IExternalApplication
             Config = AddinConfig.Load();
             RibbonHelper.Build(application);
 
+            // Registered here and nowhere else: RegisterDockablePane is only
+            // legal during OnStartup. Registering it lazily when the button is
+            // pressed throws, and the panel would never open at all.
+            //
+            // Wrapped on its own so that a failure here costs the chat panel and
+            // nothing else — the queue polling that the rest of this add-in
+            // exists for must still come up.
+            try
+            {
+                application.RegisterDockablePane(
+                    UI.ChatPaneProvider.PaneId,
+                    UI.ChatPaneProvider.Title,
+                    new UI.ChatPaneProvider());
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Chat pane could not be registered: {ex.Message}");
+            }
+
             // Keeps the project list honest about which model is open. See
             // OnDocumentOpened.
             application.ControlledApplication.DocumentOpened += OnDocumentOpened;
@@ -161,6 +180,17 @@ public sealed class App : IExternalApplication
         Current = null;
         return Result.Succeeded;
     }
+
+    /// <summary>
+    /// Re-reads config.json without touching the poller.
+    ///
+    /// For the chat panel's Retry: the usual reason for pressing it is that
+    /// website_url was only just filled in, and a retry against the config
+    /// loaded at startup would report the same problem forever. Connect()
+    /// reloads too, but reconnecting to Supabase to pick up a URL the browser
+    /// needs would be a large side effect for a small ask.
+    /// </summary>
+    internal void ReloadConfig() => Config = AddinConfig.Load();
 
     /// <summary>Wires up the services and starts polling. Idempotent.</summary>
     internal void Connect()

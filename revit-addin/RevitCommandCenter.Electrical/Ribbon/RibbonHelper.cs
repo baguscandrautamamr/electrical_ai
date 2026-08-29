@@ -32,6 +32,13 @@ public static class RibbonHelper
 
         var assemblyPath = Assembly.GetExecutingAssembly().Location;
 
+        // First on the panel: it is what the add-in is FOR, while Connect and
+        // the rest are how it is kept running.
+        AddButton(panel, assemblyPath, typeof(ChatCommand),
+            "Chat", "Buka panel chat Revit Command Center di dalam Revit.", Icons.Chat());
+
+        panel.AddSeparator();
+
         AddButton(panel, assemblyPath, typeof(ConnectCommand),
             "Connect", "Start polling the command queue.", Icons.Connect());
 
