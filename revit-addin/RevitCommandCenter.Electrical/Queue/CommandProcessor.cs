@@ -37,6 +37,7 @@ public sealed class CommandProcessor
             new ModelInfoHandler(),
             new ImportExcelHandler(),
             new ImportTableHandler(),
+            new ShowElementHandler(),
         };
 
         _handlers = handlers.ToDictionary(
