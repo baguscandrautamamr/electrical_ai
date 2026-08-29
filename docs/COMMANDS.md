@@ -841,6 +841,55 @@ Limits, reported when they bite: 20,000 elements scanned, 200 rows returned, 50
 groups named. A federated model has millions of elements, and reading a parameter
 off each one happens on Revit's UI thread.
 
+### `/connect_circuit [room]`
+
+Builds circuits from devices already placed and assigns them to a panel. This is
+the step between "50 downlights are in the lounge" and "PP-1 shows the lounge
+load": placing a fixture gives it a connector, it does not wire it to anything,
+so a model can be full of fixtures while every panel reads 0 VA.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `panel` | string | *required* | Panel name as in the model. Partial names match; an ambiguous one is refused and names the candidates |
+| `what` | lighting\|receptacle | lighting | Lighting Fixtures or Electrical Fixtures. Ignored when `ids` is given |
+| `ids` | string | | Instead of a room: element ids, comma separated |
+| `per_circuit` | integer | | Empty = all on ONE circuit. A number splits them — 12 turns 50 fixtures into five circuits |
+| `dry_run` | boolean | false | Run then roll back: see the split and the skips without changing the model |
+
+```
+/connect_circuit "LOUNGE 5" panel=PP-1
+/connect_circuit "LOUNGE 5" panel=PP-1 what=lighting per_circuit=12
+/connect_circuit panel=PP-1 ids=384210,384215
+/connect_circuit "LOUNGE 5" panel=PP-1 dry_run=true
+```
+
+**Two kinds of device are skipped, and both are counted in the reply.** A device
+already on a circuit is left alone — circuiting it again either throws or feeds
+one fixture from two circuits, and the panel schedule then counts its load twice.
+A family with no electrical connector cannot be circuited at all, whatever its
+parameters claim about wattage.
+
+Both counts matter more than they look. "12 circuited" on its own is a number
+that reads as complete; "20 found, 12 circuited, 8 already on a circuit" is the
+state of the model, and it is what explains a panel total that comes out smaller
+than expected.
+
+**No default split is invented.** How many fixtures belong on one breaker is a
+decision about load against rating that this add-in has no basis to make, and a
+number chosen here would look authoritative while being a guess. Empty means one
+circuit, which is at least obviously one decision.
+
+An ambiguous panel name is refused rather than resolved. Picking whichever panel
+the collector yielded first would wire a room's whole load into the wrong board,
+and nothing in the reply would look wrong.
+
+Assigning the panel can fail on its own after the circuit already exists — a
+panel whose distribution system does not match the circuit's voltage is refused
+by Revit at that point. The half-made circuit is deleted again rather than left
+behind, so a failed attempt does not litter the model with orphans.
+
+---
+
 ### `/section_box [room]`
 
 Boxes a 3D view onto one room, or onto a set of elements. The rest of the model

@@ -659,3 +659,44 @@ public sealed class SectionBoxResultDto
     [JsonProperty("size_m", NullValueHandling = NullValueHandling.Ignore)]
     public SectionBoxSizeDto? SizeM { get; set; }
 }
+
+/// <summary>
+/// Hasil /connect_circuit.
+///
+/// Tiga angka, dan ketiganya harus ada. "12 disirkuitkan" sendirian adalah angka
+/// yang terlihat lengkap; "20 ditemukan, 12 disirkuitkan, 8 sudah punya sirkuit"
+/// adalah keadaan yang sebenarnya. Perangkat yang dilewati bukan detail teknis —
+/// ia yang menjelaskan kenapa beban di panel schedule tidak sebesar dugaan.
+/// </summary>
+public sealed class ConnectCircuitResultDto
+{
+    [JsonProperty("kind")] public string Kind => "connect_circuit";
+
+    [JsonProperty("panel")] public string Panel { get; set; } = string.Empty;
+
+    [JsonProperty("circuits_created")] public int CircuitsCreated { get; set; }
+
+    [JsonProperty("circuit_numbers", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? CircuitNumbers { get; set; }
+
+    /// <summary>Perangkat yang benar-benar masuk sebuah sirkuit yang jadi.</summary>
+    [JsonProperty("connected")] public int Connected { get; set; }
+
+    /// <summary>Dilewati karena sudah punya sirkuit — menyirkuitkannya lagi
+    /// membuat panel schedule menghitung bebannya dua kali.</summary>
+    [JsonProperty("already_circuited")] public int AlreadyCircuited { get; set; }
+
+    /// <summary>Dilewati karena family-nya tidak punya connector listrik sama
+    /// sekali, berapa pun watt yang tertulis di parameternya.</summary>
+    [JsonProperty("without_connector")] public int WithoutConnector { get; set; }
+
+    /// <summary>Hanya ada kalau perintahnya uji coba dan modelnya tidak diubah.</summary>
+    [JsonProperty("dry_run", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? DryRun { get; set; }
+
+    [JsonProperty("failures", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Failures { get; set; }
+
+    [JsonProperty("note", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Note { get; set; }
+}
