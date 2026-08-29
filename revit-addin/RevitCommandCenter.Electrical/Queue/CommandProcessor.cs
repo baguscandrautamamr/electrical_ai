@@ -38,6 +38,9 @@ public sealed class CommandProcessor
             new ImportExcelHandler(),
             new ImportTableHandler(),
             new ShowElementHandler(),
+            new ElectricalLoadsHandler(),
+            new PanelScheduleHandler(),
+            new CircuitBalanceHandler(),
         };
 
         _handlers = handlers.ToDictionary(
