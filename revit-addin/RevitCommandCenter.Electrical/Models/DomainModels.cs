@@ -621,3 +621,41 @@ public sealed class ElectricalResultDto
     [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
     public List<string>? Notes { get; set; }
 }
+
+/// <summary>Ukuran section box, dalam meter.</summary>
+public sealed class SectionBoxSizeDto
+{
+    [JsonProperty("x")] public double X { get; set; }
+    [JsonProperty("y")] public double Y { get; set; }
+    [JsonProperty("z")] public double Z { get; set; }
+}
+
+/// <summary>
+/// Hasil /section_box: apa yang dikurung, di view mana, dan sebesar apa.
+///
+/// `active` disebut eksplisit — termasuk saat ia false — karena mematikan
+/// section box dan menyetelnya adalah perintah yang sama, dan jawaban yang tidak
+/// menyebutkan yang mana tidak bisa dibedakan satu dari yang lain.
+/// </summary>
+public sealed class SectionBoxResultDto
+{
+    [JsonProperty("kind")] public string Kind => "section_box";
+
+    [JsonProperty("active")] public bool Active { get; set; }
+
+    [JsonProperty("view", NullValueHandling = NullValueHandling.Ignore)]
+    public string? View { get; set; }
+
+    /// <summary>Ruangan atau elemen yang dikurung; ikut menyebut ID yang tidak ketemu.</summary>
+    [JsonProperty("target", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Target { get; set; }
+
+    [JsonProperty("element_count", NullValueHandling = NullValueHandling.Ignore)]
+    public int? ElementCount { get; set; }
+
+    [JsonProperty("margin_mm", NullValueHandling = NullValueHandling.Ignore)]
+    public double? MarginMm { get; set; }
+
+    [JsonProperty("size_m", NullValueHandling = NullValueHandling.Ignore)]
+    public SectionBoxSizeDto? SizeM { get; set; }
+}
