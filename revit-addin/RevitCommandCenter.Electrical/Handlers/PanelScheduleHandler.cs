@@ -125,7 +125,7 @@ public sealed class PanelScheduleHandler : ICommandHandler
             ["id"] = panel.Id.Value,
             ["panel"] = name,
             ["distribution_system"] = CircuitReader.LookupString(panel, "Distribution System"),
-            ["mains_a"] = CircuitReader.LookupString(panel, "Mains"),
+            ["mains"] = CircuitReader.LookupString(panel, "Mains"),
             ["mounting"] = CircuitReader.LookupString(panel, "Mounting"),
             ["circuit_count"] = circuits.Count,
             ["used_slots"] = usedSlots,
