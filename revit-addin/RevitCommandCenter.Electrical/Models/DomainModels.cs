@@ -538,3 +538,86 @@ public sealed class ImportTableResultDto
     [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
     public List<string>? Notes { get; set; }
 }
+
+/// <summary>
+/// What /show_element did: which ids it landed on, which it could not find, and
+/// where it looked.
+///
+/// <c>not_found</c> is reported alongside a success rather than turning the
+/// command into a failure. Two ids out of three found is two elements the person
+/// can now see; failing the whole command would make them retype all three to
+/// get back what already worked.
+/// </summary>
+public sealed class ShowElementResultDto
+{
+    [JsonProperty("kind")] public string Kind => "show_element";
+
+    [JsonProperty("shown")] public List<long> Shown { get; set; } = new();
+
+    [JsonProperty("not_found", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? NotFound { get; set; }
+
+    /// <summary>The view the elements were shown in.</summary>
+    [JsonProperty("view", NullValueHandling = NullValueHandling.Ignore)]
+    public string? View { get; set; }
+
+    /// <summary>Only set when the model had no 3D view and one was made.</summary>
+    [JsonProperty("view_created", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? ViewCreated { get; set; }
+}
+
+/// <summary>
+/// Jawaban bersama tiga perintah baca kelistrikan.
+///
+/// Bentuknya sengaja sama dengan <see cref="InspectResultDto"/> — rows, total,
+/// shown, totals, groups — karena website sudah mengerti bentuk itu:
+/// summarizeResult merangkumnya jadi satu baris, dan digestResult menyiapkan
+/// isinya untuk dibaca model pada giliran berikutnya. Bentuk lain tetap tampil
+/// sebagai tabel, hanya tanpa keduanya.
+///
+/// `total` dan `shown` harus dibedakan sungguhan: `limit` memotong `rows`, tapi
+/// `totals` dihitung atas SELURUH yang cocok. Total beban yang ikut terpotong di
+/// baris ke-50 adalah angka yang salah, dan tidak ada apa pun di layar yang akan
+/// menyebutkan bahwa ia salah.
+/// </summary>
+public sealed class ElectricalResultDto
+{
+    [JsonProperty("kind")] public string Kind { get; set; } = string.Empty;
+
+    /// <summary>Seluruh yang cocok — bukan berapa yang ditampilkan.</summary>
+    [JsonProperty("total")] public int Total { get; set; }
+
+    [JsonProperty("shown", NullValueHandling = NullValueHandling.Ignore)]
+    public int? Shown { get; set; }
+
+    [JsonProperty("rows", NullValueHandling = NullValueHandling.Ignore)]
+    public List<Dictionary<string, object?>>? Rows { get; set; }
+
+    [JsonProperty("totals", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectTotalDto>? Totals { get; set; }
+
+    [JsonProperty("groups", NullValueHandling = NullValueHandling.Ignore)]
+    public List<InspectGroupDto>? Groups { get; set; }
+
+    /// <summary>Sirkuit yang belum punya panel. Ini yang menjelaskan kenapa
+    /// jumlah per panel tidak menjumlah ke total model.</summary>
+    [JsonProperty("unassigned_circuits", NullValueHandling = NullValueHandling.Ignore)]
+    public int? UnassignedCircuits { get; set; }
+
+    /// <summary>Panel satu fasa yang dilewati check_circuit_balance.</summary>
+    [JsonProperty("single_phase_skipped", NullValueHandling = NullValueHandling.Ignore)]
+    public int? SinglePhaseSkipped { get; set; }
+
+    [JsonProperty("tolerance_pct", NullValueHandling = NullValueHandling.Ignore)]
+    public double? TolerancePct { get; set; }
+
+    /// <summary>
+    /// Kalimat penuh, bukan kode: apa yang DITURUNKAN dan bukan dibaca dari
+    /// Revit. Satu-satunya yang membedakan angka fasa dari hasil ukur.
+    /// </summary>
+    [JsonProperty("assumption", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Assumption { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+}

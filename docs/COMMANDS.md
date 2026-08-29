@@ -841,6 +841,143 @@ Limits, reported when they bite: 20,000 elements scanned, 200 rows returned, 50
 groups named. A federated model has millions of elements, and reading a parameter
 off each one happens on Revit's UI thread.
 
+### `/get_electrical_loads [panel]`
+
+Every circuit in the model with what it carries and where it lands: connected
+load, voltage, current, breaker rating, panel. Opens no transaction, so a
+`viewer` may run it.
+
+Omit the panel to read the whole model; it matches part of the name, ignoring
+case, so `pp-1` finds `PP-1 LANTAI 2`.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `system_type` | all, power, lighting, data, telephone, security, fire_alarm, nurse_call, communication, controls | all | Mapped to Revit's `ElectricalSystemType`. `lighting` is the exception — see below |
+| `detail` | summary\|list | summary | `summary` gives totals per panel and per system type; `list` gives one row per circuit |
+| `limit` | integer | 200 | Rows returned when `detail=list`. Caps the ROWS, never the totals |
+| `include_element_ids` | boolean | false | The element ids wired to each circuit. Useful with `/show_element` |
+
+```
+/get_electrical_loads
+/get_electrical_loads PP-1 system_type=power detail=list
+```
+
+Loads come back in VA **and** W. They differ by the power factor, and calling
+either one "the load" on its own is the easiest way to size a breaker wrong.
+
+`lighting` has no Revit equivalent — Revit does not separate lighting circuits
+from power circuits. It is filtered by load and circuit NAME instead, and the
+reply says so. A lighting circuit whose name says nothing about lamps will not be
+counted, and a filter that quietly narrows by name is a count that is wrong for a
+reason nobody can see.
+
+A value the circuit could not answer for comes back as null, not `0`. Null means
+Revit refused the read; `0` means a circuit carrying nothing. Only the first is
+worth chasing.
+
+Circuits with no panel are counted separately as `unassigned_circuits`. That
+number is what explains a per-panel total that does not add up to the model's.
+
+Zero circuits is a real answer. A model whose fixtures exist but are not
+circuited has none, and that is a fact about the model rather than a failure.
+
+### `/get_panel_schedule [panel]`
+
+What is inside each panel: which slots are used and which are free, poles per
+breaker, connected load, and the panel's own metadata. Opens no transaction.
+
+This **reads** the panel data. It does not create a Revit Panel Schedule view;
+the two are easy to confuse by name and are not the same thing.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `detail` | summary\|list | summary | `summary` is one row per panel; `list` is the circuit directory, ordered by slot |
+| `include_empty` | boolean | true | Panels with no circuits yet |
+| `limit` | integer | 50 | Panels returned |
+
+```
+/get_panel_schedule
+/get_panel_schedule PP-1 detail=list
+```
+
+Every Electrical Equipment instance counts as a candidate panel, empty ones
+included. An empty panel that does not appear reads as a panel that does not
+exist — and somebody sizing a new circuit needs to know it is there.
+
+`max_slots` is read from the panel family, and comes back null when the family
+does not publish it. `free_slots` is then null too. Guessing 42 because panels
+are usually 42 produces a free-slot count that is wrong on exactly the panels
+worth checking.
+
+Slots are counted, not circuits: a three-pole breaker occupies three of them, and
+counting circuits reports a full panel as half empty.
+
+In `detail=list` the empty slots between breakers are rows of their own. A
+directory that lists only what is wired cannot answer the question it is usually
+opened for — where is there room for the circuit I am about to add.
+
+### `/check_circuit_balance [panel]`
+
+How evenly load sits across R-S-T in each panel. Opens no transaction.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `tolerance` | number | 10 | Percent the heaviest phase may sit above the average before the panel is flagged |
+| `limit` | integer | 50 | Panels returned |
+
+```
+/check_circuit_balance
+/check_circuit_balance PP-1 tolerance=5
+```
+
+**Per-phase load is not read from Revit. Revit does not store it.** It is
+derived, two assumptions deep:
+
+1. Each circuit's apparent load is split **evenly** across the phases its breaker
+   occupies. Real imbalance inside one three-pole breaker is invisible here.
+2. The starting phase is inferred from the slot number, assuming the standard
+   **A-A-B-B-C-C** panelboard arrangement — slots 1–2 on A, 3–4 on B, 5–6 on C,
+   7–8 back on A.
+
+A panel not wired that way produces wrong numbers with no error anywhere. That is
+why every reply carries an `assumption` field spelling this out: it is the only
+thing separating these figures from a measurement.
+
+Single-phase panels are skipped and **counted** (`single_phase_skipped`). A panel
+that vanishes from the list without explanation reads as a balanced one.
+
+### `/show_element <ids>`
+
+Opens a 3D view in Revit, selects the elements whose ids are given, and scrolls
+until they are on screen. Opens no transaction — the active view moves and the
+selection changes; the model does not.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `ids` | string | *required* | One id, or several separated by commas: `384210` or `384210,384215` |
+| `view` | 3d\|current | 3d | `current` leaves the active view alone; elements outside it will not become visible |
+
+```
+/show_element 384210
+/show_element 384210,384215 view=current
+```
+
+This is what a bare element id typed into the website's chat box turns into. The
+reading commands answer with numbers and names, and the next question is always
+"which one is that on the drawing?" — until this existed the only answer was to
+walk to the Revit PC and retype the id into Revit's own search box.
+
+Ids that are not in this model are reported alongside the ones that were found
+rather than failing the command. Two out of three found is two elements the person
+can now see; failing all three means retyping all three. Only when nothing at all
+is found does the command fail — and it names what it looked for, because an id
+from another model looks exactly like a typo.
+
+A model with no 3D view at all gets one isometric view created, and the reply says
+so (`view_created`). This is the one place these four commands touch the document,
+and refusing instead would fail precisely where the feature is needed most: a
+model with no 3D view is one whose elements nobody can point at yet.
+
 ---
 
 ## Standards mode
