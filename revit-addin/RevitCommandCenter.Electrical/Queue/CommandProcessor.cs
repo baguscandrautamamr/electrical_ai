@@ -41,6 +41,7 @@ public sealed class CommandProcessor
             new ElectricalLoadsHandler(),
             new PanelScheduleHandler(),
             new CircuitBalanceHandler(),
+            new SectionBoxHandler(),
         };
 
         _handlers = handlers.ToDictionary(

@@ -841,6 +841,48 @@ Limits, reported when they bite: 20,000 elements scanned, 200 rows returned, 50
 groups named. A federated model has millions of elements, and reading a parameter
 off each one happens on Revit's UI thread.
 
+### `/section_box [room]`
+
+Boxes a 3D view onto one room, or onto a set of elements. The rest of the model
+is hidden until the box is switched off again.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `ids` | string | | Instead of a room: one id, or several separated by commas |
+| `margin` | number | 500 | Millimetres of space around the extent. Zero hugs it exactly, and the room's own walls get sliced |
+| `view` | 3d\|current | 3d | `current` must already BE a 3D view — plans have no section box |
+| `off` | boolean | false | Puts the 3D view back to the whole model. Needs neither a room nor ids |
+
+```
+/section_box "LOUNGE 5"
+/section_box "LOUNGE 5" margin=1000
+/section_box ids=384210,384215
+/section_box off=true
+```
+
+This is the one command here that changes what a view **shows** rather than what
+the model **contains**. Nothing is placed, moved, or deleted — and it is still a
+document change, because the section box is stored on the view. Whoever opens
+that 3D view afterwards sees a cut-down model, and the way back is `off=true` or
+Ctrl+Z on the Revit PC. That is why it needs `editor` and why it sits with the
+commands that write.
+
+A room is boxed as **itself**, not as the things standing in it. Boxing the
+contents leaves the walls, floor, and ceiling that make it a room outside the
+crop — light fittings floating in an empty view, which is not what anybody means
+by "section box the lounge".
+
+`view=current` on a plan is refused by name rather than quietly redirected. A
+section box is a 3D-view thing; asking for one on a plan is a different question,
+not a smaller version of this one, and answering it by cropping some other view
+the person is not looking at is worse than saying no.
+
+An unenclosed room has no bounding box in Revit at all, and the reply says so
+rather than reporting a box it could not build. That is a modelling problem the
+engineer can go and fix.
+
+---
+
 ### `/get_electrical_loads [panel]`
 
 Every circuit in the model with what it carries and where it lands: connected
