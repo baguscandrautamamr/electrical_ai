@@ -77,8 +77,44 @@ public sealed class LightingHandler : DevicePlacementHandler
             .ToList();
     }
 
+    /// <summary>
+    /// The family this command named: <c>family</c>, or <c>fixture_type</c>.
+    /// </summary>
+    /// <remarks>
+    /// `fixture_type` yang TERISI adalah sebuah NAMA, bukan tebakan, dan itu
+    /// yang membedakannya dari `type` di tujuh perintah perangkat lainnya.
+    /// "dome", "smoke", "receptacle" adalah terkaan sistem ini tentang apa yang
+    /// dinamai sebuah kantor untuk family-nya, jadi jatuh ke family pertama di
+    /// kategori itu memang jawaban yang benar di sana. `fixture_type` datang
+    /// dari daftar yang dilaporkan add-in ini sendiri lewat /model_info, dari
+    /// project browser, atau diketik orangnya — dan untuk itu tidak ada yang
+    /// namanya "hampir cocok".
+    ///
+    /// Ini yang dilaporkan rusak: "modifikasi lampu downlight di receptionist"
+    /// berangkat membawa nama downlight, tidak cocok karena satu spasi atau satu
+    /// huruf, dan <see cref="RevitUtils.FindSymbol"/> memasang family PERTAMA di
+    /// OST_LightingFixtures — ACT_E_LIGHTING RECESSED. Perintahnya sukses,
+    /// enam armatur terpasang, dan yang terpasang bukan yang diminta. Yang
+    /// dialami orangnya: lampunya tidak berganti, berapa kali pun ia meminta.
+    /// Peringatannya memang ada, di log, di PC yang sedang menjalankan Revit.
+    ///
+    /// Kosong tetap berarti "pakai bawaan add-in" — itu yang tertulis di hint
+    /// kolomnya, dan satu-satunya pihak yang tahu apa yang termuat di file ini
+    /// memang add-in.
+    /// </remarks>
+    protected override string NamedFamily(CommandModel command)
+    {
+        var family = base.NamedFamily(command);
+        return family.Length > 0 ? family : command.GetString("fixture_type").Trim();
+    }
+
+    /// <summary>
+    /// Dipakai hanya kalau tidak ada nama yang disebut sama sekali: family
+    /// pertama di OST_LightingFixtures, yaitu bawaan add-in ini. Itu yang
+    /// dijanjikan hint kolomnya — "kosongkan untuk memakai bawaan add-in".
+    /// </summary>
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>
-        RevitUtils.FindSymbol(context.Doc, Category, command.GetString("fixture_type"));
+        RevitUtils.FindSymbol(context.Doc, Category, string.Empty);
 
     protected override object BuildRow(
         HandlerContext context,

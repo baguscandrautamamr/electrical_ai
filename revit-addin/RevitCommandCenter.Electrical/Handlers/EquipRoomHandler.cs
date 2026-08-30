@@ -114,12 +114,25 @@ public sealed class EquipRoomHandler : ICommandHandler
         var space = command.Has("space") ? command.GetDouble("space") : command.GetDouble("area");
 
         // Lighting is always placed; it is the reason to equip a room.
+        //
+        // TANPA `fixture_type`, dan itu perbaikan, bukan kelalaian. Nilainya
+        // dulu "LED_15W" — nama yang enak dibaca dan tidak ada di model mana
+        // pun — dan ia lolos selama pencarian family masih jatuh ke family
+        // pertama di kategorinya kalau namanya tidak cocok. Sejak
+        // `fixture_type` yang terisi diperlakukan sebagai NAMA (lihat
+        // LightingHandler.NamedFamily), nama yang tidak ada berarti perintahnya
+        // ditolak — dan /equip_room akan gagal memasang lampu di setiap proyek
+        // di dunia karena sebuah nilai bawaan yang dikarang di sini.
+        //
+        // Kosong berarti "pakai bawaan add-in", dan itu memang yang dimaksud
+        // /equip_room: satu dari tiap kategori, dengan family yang benar-benar
+        // termuat di file ini. Website sudah membuang default yang sama dari
+        // katalognya dengan alasan yang sama.
         var lighting = new JObject
         {
             ["room"] = room,
             ["height"] = height,
             ["lux_target"] = command.GetDouble("lux_target", 300),
-            ["fixture_type"] = "LED_15W",
             ["mounting"] = "ceiling",
         };
         if (space > 0) lighting["space"] = space;
