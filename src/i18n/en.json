@@ -334,5 +334,12 @@
       "rows": "Rows",
       "files": "Files"
     }
+  },
+  "move": {
+    "done": "Devices moved",
+    "moved": "Moved",
+    "already_correct": "Already in place",
+    "distance_after": "Distance to door afterwards",
+    "nothing_found": "No devices of that category in this room — nothing was moved."
   }
 }

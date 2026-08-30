@@ -314,6 +314,38 @@ export interface DeleteResult {
   groups: QueryGroup[];
 }
 
+/**
+ * Hasil /move_devices: perangkat yang digeser, bukan diganti.
+ */
+export interface MoveResult {
+  kind: 'move_devices';
+  room: string | null;
+  what: string;
+  /** Acuan yang dipakai. Sekarang selalu `door`. */
+  to: string;
+  /** Jarak yang DIMINTA dari tepi daun pintu, dalam milimeter. */
+  offset_mm: number;
+  devices_moved: number;
+  /**
+   * Yang sudah berada di tempatnya, jadi tidak disentuh. Selalu ada, walau nol:
+   * ini yang membuat "0 digeser" tidak terbaca sebagai kegagalan saat perintah
+   * yang sama dijalankan dua kali.
+   */
+  already_correct: number;
+  device_ids?: string[];
+  /**
+   * Jarak SESUDAHNYA, dibaca ulang dari model — bukan jarak yang diminta.
+   *
+   * Revit mengekang perpindahan instance yang menempel pada muka dinding, dan
+   * kekangan itu tidak selalu melempar. Angka yang diminta akan selalu berbunyi
+   * benar; angka yang dibaca ulang berbunyi apa adanya.
+   */
+  door_distance_mm?: number[];
+  failures?: string[];
+  notes?: string[];
+  dry_run?: boolean;
+}
+
 export interface ModifyResult {
   kind: 'modify';
   room: string | null;
@@ -381,6 +413,7 @@ export type CommandResult =
   | PrintResult
   | DeleteResult
   | ModifyResult
+  | MoveResult
   | QueryResult;
 
 // ---------------------------------------------------------------------------

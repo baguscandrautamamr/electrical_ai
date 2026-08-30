@@ -334,5 +334,12 @@
       "rows": "Baris",
       "files": "Berkas"
     }
+  },
+  "move": {
+    "done": "Perangkat digeser",
+    "moved": "Digeser",
+    "already_correct": "Sudah di tempatnya",
+    "distance_after": "Jarak ke pintu sesudahnya",
+    "nothing_found": "Tidak ada perangkat kategori itu di ruangan ini — tidak ada yang digeser."
   }
 }

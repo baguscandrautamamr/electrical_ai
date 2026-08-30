@@ -9,6 +9,7 @@ import type {
   CommandResult,
   ComplianceCheck,
   DeleteResult,
+  MoveResult,
   ModifyResult,
   EquipRoomResult,
   ExportLinks,
@@ -390,6 +391,51 @@ function appendNotes(b: MessageBuilder, t: Translate, notes: string[] | undefine
 // Removing and re-laying out
 // ---------------------------------------------------------------------------
 
+/**
+ * Balasan /move_devices.
+ *
+ * Yang disebut bukan jarak yang diminta melainkan jarak SESUDAHNYA, dibaca
+ * ulang dari model. Bedanya adalah seluruh gunanya perintah ini: sebuah
+ * balasan yang berbunyi "300 mm" karena 300 mm yang diminta tidak membuktikan
+ * apa pun, dan itu persis bentuk kegagalan yang perintah ini dibuat untuk
+ * memperbaiki.
+ */
+export function formatMove(result: MoveResult, ctx: FormatContext): string {
+  const t = translator(ctx.language);
+  const b = new MessageBuilder(ctx.theme);
+
+  b.title(t('common.success'), t('move.done'));
+
+  const rows: Row[] = [];
+  if (result.room) rows.push({ label: t('common.room'), value: result.room });
+  rows.push({ label: t('move.moved'), value: `${result.devices_moved} ${t('common.units')}` });
+
+  if (result.already_correct > 0) {
+    rows.push({
+      label: t('move.already_correct'),
+      value: `${result.already_correct} ${t('common.units')}`,
+    });
+  }
+
+  const after = (result.door_distance_mm ?? []).filter((mm: number) => Number.isFinite(mm));
+  if (after.length > 0) {
+    const low = Math.min(...after);
+    const high = Math.max(...after);
+    rows.push({
+      label: t('move.distance_after'),
+      value: low === high ? `${num(low, 0)} mm` : `${num(low, 0)}–${num(high, 0)} mm`,
+    });
+  }
+
+  b.tree(rows);
+  if (result.dry_run) b.blank().bullets([t('common.dry_run')]);
+
+  const notes = [...(result.notes ?? []), ...(result.failures ?? [])];
+  if (notes.length > 0) b.blank().bullets(notes.map((note) => maybeTranslate(t, note)));
+
+  return b.build();
+}
+
 export function formatDelete(result: DeleteResult, ctx: FormatContext): string {
   const t = translator(ctx.language);
   const b = new MessageBuilder(ctx.theme);
@@ -549,6 +595,8 @@ export function formatResult(result: CommandResult, ctx: FormatContext): string 
       return formatDelete(result, ctx);
     case 'modify':
       return formatModify(result, ctx);
+    case 'move_devices':
+      return formatMove(result, ctx);
     case 'query':
       return formatQuery(result, ctx);
     default:
