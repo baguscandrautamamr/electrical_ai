@@ -45,8 +45,32 @@ public abstract class DevicePlacementHandler : ICommandHandler
         SpatialElement room,
         int count);
 
-    /// <summary>Family type to place.</summary>
+    /// <summary>Family type to place, when the command named none.</summary>
     protected abstract FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command);
+
+    /// <summary>
+    /// The family this command NAMED, or empty when it only hinted.
+    /// </summary>
+    /// <remarks>
+    /// Yang membedakan keduanya bukan besar kecilnya, melainkan dari mana
+    /// nilainya datang. `type=dome`, `type=smoke`, `type=receptacle` adalah
+    /// terkaan sistem ini tentang apa yang dinamai sebuah kantor untuk
+    /// family-nya — daftar tertutup yang menyatakan MAKSUD, dan add-in yang
+    /// menerjemahkannya. Jatuh ke family pertama di kategori itu memang jawaban
+    /// yang benar di situ.
+    ///
+    /// `family` — dan, untuk armatur, `fixture_type` — adalah nama yang dibaca
+    /// seseorang dari project browser atau dipilih dari daftar yang dilaporkan
+    /// add-in ini sendiri lewat /model_info. Untuk itu tidak ada yang namanya
+    /// hampir cocok, dan memasang family lain sebagai gantinya adalah kegagalan
+    /// yang hanya muncul di gambar yang sudah jadi.
+    ///
+    /// Virtual, bukan satu daftar kunci di sini: kunci mana yang berarti "nama"
+    /// adalah milik perintahnya masing-masing, dan sebuah daftar terpusat akan
+    /// diam-diam berbeda dari katalog pada perubahan pertama.
+    /// </remarks>
+    protected virtual string NamedFamily(CommandModel command) =>
+        command.GetString("family").Trim();
 
     /// <summary>
     /// Titik-titik grid plafon untuk ruangan ini, dengan yang di luar batas
@@ -127,7 +151,7 @@ public abstract class DevicePlacementHandler : ICommandHandler
         // in the drawing. The per-category hints below (type, camera_type,
         // fixture_type) stay lenient, because those ARE guesses at what an
         // office calls its families.
-        var namedFamily = command.GetString("family").Trim();
+        var namedFamily = NamedFamily(command);
 
         var symbol = namedFamily.Length > 0
             ? RevitUtils.FindNamedSymbol(context.Doc, Category, namedFamily)

@@ -129,6 +129,21 @@ Lux is not reported back. The lumen-method figure is an estimate over the floor
 area with an assumed efficacy — fine for sizing a count nobody stated, not
 something to grade a count somebody did.
 
+**`fixture_type` is a family name, not a hint.** It is obeyed or refused, never
+quietly swapped. Every other device command's `type` (`dome`, `smoke`,
+`receptacle`) is this system's guess at what an office calls its families, so
+falling back to whatever is loaded is right there. `fixture_type` comes from the
+list this add-in itself reports through `/model_info`, from the project browser,
+or from somebody typing it — and there is no such thing as a near miss for that.
+A name that matches nothing is refused, with the families the model does have
+listed in the reply.
+
+Until this was fixed it fell back like a hint: "modifikasi lampu downlight" whose
+name missed by a space placed ACT_E_LIGHTING RECESSED instead, reported success,
+and the only symptom was a lamp that never changed — however many times it was
+asked for. Leave `fixture_type` empty to get the add-in's own default, which is
+what `/equip_room` does.
+
 **Load.** The reported wattage is read off each placed fixture's own electrical
 data in Revit — `Apparent Load`, `Wattage` or `Load`, on the instance or its
 type. The number in a family name like `LED_15W` is only a fallback for a family
