@@ -198,6 +198,38 @@ public sealed class RoomPerimeter
     }
 
     /// <summary>
+    /// Jarak sepanjang batas ruangan dari <paramref name="at"/> ke tepi daun
+    /// pintu terdekat, atau null kalau ruangan ini tidak punya pintu.
+    /// </summary>
+    /// <remarks>
+    /// Ada untuk satu pertanyaan yang selama ini tidak bisa dijawab siapa pun:
+    /// "saklar ini berapa dari pintu?" Yang tersedia sebelumnya cuma parameter
+    /// Revit bawaan seperti `Offset Horizontal`, yang mengukur sesuatu yang lain
+    /// dan berbunyi 0 mm — jadi sebuah saklar yang berdiri 3.570 mm dari pintu
+    /// tidak bisa dibedakan dari yang berdiri 300 mm, kecuali dengan menarik
+    /// dimensi sendiri di layar.
+    ///
+    /// Diukur ke TEPI bukaan (Start/End), bukan ke tengahnya, karena "300 dari
+    /// pintu" yang dimaksud insinyur — dan yang akan dipasang tukang — adalah
+    /// jarak dari tepi daun.
+    /// </remarks>
+    public double? DistanceToNearestDoor(double at)
+    {
+        double? best = null;
+
+        foreach (var door in Doors)
+        {
+            foreach (var edge in new[] { door.Start, door.End })
+            {
+                var gap = Separation(at, edge);
+                if (best is null || gap < best) best = gap;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// Where a switch belongs beside <paramref name="opening"/>: clear of the
     /// jamb by <paramref name="offsetFeet"/>, on whichever side has wall under it.
     /// </summary>

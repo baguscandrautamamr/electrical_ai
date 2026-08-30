@@ -173,6 +173,12 @@ public abstract class DevicePlacementHandler : ICommandHandler
         }
 
         var placements = ResolvePlacements(context, command, room, count);
+
+        // Pertanyaan "berapa dari pintu" hanya berlaku untuk perintah yang
+        // memang menempatkan relatif terhadap pintu. Untuk yang lain medannya
+        // tidak dikirim sama sekali — nol di situ akan terbaca sebagai "tepat di
+        // pintu", bukan sebagai "tidak ditanyakan".
+        var doorAware = placements.Any(p => p.DoorDistanceFeet is not null || p.BesideDoor);
         if (placements.Count == 0)
         {
             return CommandResult.Fail(
@@ -275,6 +281,17 @@ public abstract class DevicePlacementHandler : ICommandHandler
             // instance handler melayani setiap perintah yang masuk, jadi field
             // di sini akan membawa angka perintah sebelumnya.
             Requested = placed.Count == count ? null : (int?)count,
+            // Diambil dari `placements`, bukan dari `placed`: yang tahu sebuah
+            // titik ditentukan relatif terhadap pintu adalah yang MENENTUKAN
+            // titiknya, dan itu sudah lewat pada saat instance-nya dibuat.
+            BesideDoor = doorAware ? placements.Count(p => p.BesideDoor) : null,
+            AwayFromDoor = doorAware ? placements.Count(p => !p.BesideDoor) : null,
+            DoorDistanceMm = doorAware
+                ? placements
+                    .Take(placed.Count)
+                    .Select(p => Math.Round(RevitUnits.FeetToMm(p.DoorDistanceFeet ?? 0), 0))
+                    .ToList()
+                : null,
             OutsideBoundary = context.OutsideBoundary > 0 ? context.OutsideBoundary : (int?)null,
             BoundaryChecked = context.BoundaryChecked,
         };
@@ -289,6 +306,27 @@ public abstract class DevicePlacementHandler : ICommandHandler
         // Yang hilang cuma hiasannya. Jumlah yang muat — satu-satunya hal yang
         // ditanyakan sebuah uji coba — sudah dihitung sebelum pembatalan.
         if (!dryRun) Decorate(result, context, command, room, placed);
+
+        // Penempatan berbasis pintu yang GAGAL dikatakan, bukan dibiarkan
+        // terlihat seperti berhasil.
+        //
+        // Ini yang dilaporkan: saklar berdiri 3.570 mm dari pintu, perintahnya
+        // melaporkan sukses, dan satu-satunya jejak kegagalannya adalah sebaris
+        // Logger.Debug di berkas log pada PC yang menjalankan Revit. Jumlahnya
+        // cocok — satu diminta, satu terpasang — jadi catatan "kurang dari yang
+        // diminta" di bawah pun tidak menyala.
+        if (result.AwayFromDoor is > 0)
+        {
+            var far = result.DoorDistanceMm?.LastOrDefault();
+            var howFar = far is > 0 ? $", yang terjauh {far:F0} mm dari pintu" : "";
+
+            result.Compliance ??= new List<ComplianceCheckDto>();
+            result.Compliance.Insert(0, ComplianceCheckDto.Of(
+                "compliance.beside_door",
+                false,
+                $"{result.AwayFromDoor} dari {placed.Count} tidak bisa ditempatkan di samping pintu "
+                + $"dan disebar di keliling '{room.Name}'{howFar}"));
+        }
 
         // Ruangan yang batasnya tidak bisa diuji dikatakan lewat daftar
         // kepatuhan, bukan lewat catatan: PlacementResultDto tidak punya

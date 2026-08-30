@@ -141,6 +141,42 @@ public sealed class PlacementResultDto
     public bool? BoundaryChecked { get; set; }
 
     /// <summary>
+    /// Berapa perangkat yang benar-benar ditempatkan RELATIF terhadap pintu.
+    ///
+    /// Hanya ikut untuk perintah yang memang menempatkan begitu — saklar dengan
+    /// `placement=door`. Untuk yang lain medannya tidak ada sama sekali, dan
+    /// tidak-ada di sini berarti "pertanyaannya tidak berlaku", bukan nol.
+    /// </summary>
+    [JsonProperty("beside_door", NullValueHandling = NullValueHandling.Ignore)]
+    public int? BesideDoor { get; set; }
+
+    /// <summary>
+    /// Berapa yang JATUH KE PENYEBARAN KELILING karena penempatan berbasis
+    /// pintu tidak bisa dilakukan.
+    ///
+    /// Ini jawaban atas "kenapa saklarnya tidak 300 mm dari pintu". Cabang itu
+    /// berjalan saat ruangan tidak punya pintu di peta batasnya, atau kedua sisi
+    /// pintunya terhalang bukaan lain, atau tidak ada dinding di bawah titik
+    /// yang seharusnya. Saklarnya tetap terpasang dan perintahnya tetap sukses —
+    /// dan sebelum medan ini ada, satu-satunya cara mengetahuinya adalah menarik
+    /// dimensi sendiri di layar.
+    /// </summary>
+    [JsonProperty("away_from_door", NullValueHandling = NullValueHandling.Ignore)]
+    public int? AwayFromDoor { get; set; }
+
+    /// <summary>
+    /// Jarak setiap perangkat ke tepi daun pintu terdekat, dalam milimeter,
+    /// urut sama dengan `device_ids`.
+    ///
+    /// Angka inilah yang dicari orang yang menarik dimensi di layar dan mendapat
+    /// 3.570. Parameter Revit bawaan tidak menjawabnya — `Offset Horizontal`
+    /// mengukur hal lain dan berbunyi 0 mm — jadi tanpa medan ini "300 mm dari
+    /// pintu" adalah janji yang tidak bisa diperiksa siapa pun.
+    /// </summary>
+    [JsonProperty("door_distance_mm", NullValueHandling = NullValueHandling.Ignore)]
+    public List<double>? DoorDistanceMm { get; set; }
+
+    /// <summary>
     /// Perubahannya dibatalkan setelah dijalankan — modelnya tidak tersentuh.
     ///
     /// Ikut di hasil, bukan hanya diketahui pengirimnya: hasil yang sama
@@ -431,7 +467,7 @@ public sealed class QueryResultDto
 /// would pick from the ribbon, and the one that leaves the device hosted rather
 /// than floating in space at the right coordinates.
 /// </summary>
-public sealed class DevicePlacement
+public sealed record DevicePlacement
 {
     public required Autodesk.Revit.DB.XYZ Point { get; init; }
 
@@ -446,6 +482,35 @@ public sealed class DevicePlacement
 
     /// <summary>The wall itself, for the hosted fallback when the family is not face-based.</summary>
     public Autodesk.Revit.DB.Element? Host { get; init; }
+
+    /// <summary>
+    /// Jarak titik ini ke tepi daun pintu terdekat, dalam kaki — null kalau
+    /// tidak diukur (ruangan tanpa pintu, atau perangkat yang memang bukan
+    /// urusan pintu).
+    /// </summary>
+    /// <remarks>
+    /// Dibawa dari tempat titiknya DITENTUKAN, bukan dihitung ulang belakangan.
+    /// Yang menentukan sudah memegang peta batas ruangan beserta bukaannya; yang
+    /// menerima cuma memegang sebuah XYZ, dan mengukur jarak ke pintu dari
+    /// sebuah XYZ berarti membangun ulang peta itu — pekerjaan yang sama, hasil
+    /// yang bisa berbeda.
+    /// </remarks>
+    public double? DoorDistanceFeet { get; init; }
+
+    /// <summary>
+    /// Titik ini ditentukan RELATIF terhadap sebuah pintu, bukan sekadar
+    /// kebetulan dekat dengannya.
+    /// </summary>
+    /// <remarks>
+    /// Bedanya dari <see cref="DoorDistanceFeet"/> yang kecil menentukan
+    /// jawaban atas "kenapa saklarnya tidak 300 mm dari pintu". Penempatan
+    /// berbasis pintu gagal diam-diam kalau pintunya tidak ketemu di peta batas
+    /// atau kedua sisinya terhalang — dan sisanya jatuh ke penyebaran keliling,
+    /// yang tidak tahu apa-apa soal pintu. Saklar tetap terpasang, perintahnya
+    /// tetap sukses, dan yang terlihat di gambar adalah saklar 3.570 mm dari
+    /// pintu tanpa satu pun keterangan.
+    /// </remarks>
+    public bool BesideDoor { get; init; }
 
     public static DevicePlacement At(Autodesk.Revit.DB.XYZ point) => new() { Point = point };
 }

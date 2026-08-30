@@ -258,6 +258,7 @@
     "breaker_load": "Beban breaker dalam batas",
     "requested_count": "Jumlah yang dipasang sesuai permintaan",
     "room_boundary": "Batas ruangan bisa diperiksa",
+    "beside_door": "Saklar terpasang di samping pintu",
     "switch_type_available": "Type saklar yang diminta tersedia di proyek",
     "nfpa72_detector_count": "Jumlah detektor mencukupi ruangan"
   },

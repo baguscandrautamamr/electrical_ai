@@ -576,8 +576,14 @@ public static class RevitUtils
             if (point is null) continue;
 
             var location = new XYZ(point.X, point.Y, baseZ);
-            placements.Add(
-                OnWallFace(doc, perimeter.WallAt(at), location, room) ?? DevicePlacement.At(location));
+            var placed = OnWallFace(doc, perimeter.WallAt(at), location, room)
+                         ?? DevicePlacement.At(location);
+
+            // Jaraknya diukur di sini, di tempat parameter batasnya masih ada.
+            // `BesideDoor` sengaja dibiarkan false: penyebaran keliling membagi
+            // rata keliling ruangan dan tidak tahu apa-apa soal pintu — kalau
+            // hasilnya kebetulan dekat pintu, itu kebetulan, bukan keputusan.
+            placements.Add(placed with { DoorDistanceFeet = perimeter.DistanceToNearestDoor(at) });
         }
 
         return placements;
@@ -662,20 +668,36 @@ public static class RevitUtils
                 if (point is null) continue;
 
                 var location = new XYZ(point.X, point.Y, baseZ);
-                placements.Add(
-                    OnWallFace(doc, perimeter.WallAt(at.Value), location, room)
-                    ?? DevicePlacement.At(location));
+                var placed = OnWallFace(doc, perimeter.WallAt(at.Value), location, room)
+                             ?? DevicePlacement.At(location);
+
+                placements.Add(placed with
+                {
+                    BesideDoor = true,
+                    DoorDistanceFeet = perimeter.DistanceToNearestDoor(at.Value),
+                });
             }
         }
 
         if (placements.Count >= count) return placements;
 
-        // No door, or not enough of them: the rest go on the walls, still clear
-        // of the openings.
-        foreach (var fallback in GeneratePerimeterPlacements(room, count - placements.Count, heightFeet))
-        {
-            placements.Add(fallback);
-        }
+        /**
+         * Sisanya jatuh ke penyebaran keliling — dan sejak sekarang itu DITANDAI.
+         *
+         * Cabang ini yang menjawab "kenapa saklarnya tidak 300 mm dari pintu".
+         * Ia berjalan saat ruangan tidak punya pintu di peta batasnya, atau saat
+         * kedua sisi pintunya terhalang bukaan lain, atau saat tidak ada dinding
+         * di bawah titik yang seharusnya. Sebelumnya ia cuma menulis satu baris
+         * Logger.Debug ke berkas log di PC yang menjalankan Revit, lalu memasang
+         * saklar di titik yang dipilih dengan membagi rata keliling ruangan —
+         * yang bisa berakhir beberapa meter dari pintu mana pun, dengan
+         * perintah yang tetap melaporkan sukses.
+         *
+         * Jaraknya tetap diukur, justru di sini: angka itulah yang dicari orang
+         * yang menarik dimensi di layar dan mendapat 3.570.
+         */
+        placements.AddRange(
+            GeneratePerimeterPlacements(room, count - placements.Count, heightFeet));
 
         return placements;
     }
