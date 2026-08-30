@@ -223,7 +223,10 @@ public sealed class MoveDevicesHandler : ICommandHandler
                 // Hanya mendatar. Ketinggian pasang adalah keputusan tersendiri,
                 // dan sebuah perintah yang membetulkan jarak ke pintu tidak
                 // punya urusan menurunkan saklar dari 1.200 mm.
-                var shift = new XYZ(target.Value.X - before.X, target.Value.Y - before.Y, 0);
+                // `target` sudah dipastikan bukan null di atas. Tidak pakai
+                // `.Value`: XYZ adalah kelas, jadi `XYZ?` di sini nullable
+                // REFERENCE type — bukan Nullable<T>, dan tidak punya `.Value`.
+                var shift = new XYZ(target.X - before.X, target.Y - before.Y, 0);
 
                 if (shift.GetLength() <= ToleranceFeet)
                 {
@@ -287,7 +290,7 @@ public sealed class MoveDevicesHandler : ICommandHandler
             DeviceIds = moved,
             DoorDistanceMm = after.Where(mm => mm >= 0).ToList(),
             Failures = failures.Count > 0 ? failures : null,
-            DryRun = dryRun ? true : null,
+            DryRun = dryRun ? true : (bool?)null,
         });
     }
 
