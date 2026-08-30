@@ -32,6 +32,7 @@ reads better:
 | `/equip_room` | `/lengkapi_ruangan`, `/pasang_semua` |
 | `/delete_devices` | `/hapus`, `/buang`, `/delete` |
 | `/modify_devices` | `/modifikasi`, `/ubah`, `/ganti` |
+| `/move_devices` | `/geser`, `/pindah`, `/pindahkan` |
 | `/list_sheets` | `/sheets`, `/daftar_sheet` |
 | `/undo` | `/batal`, `/batalkan` |
 | `/print_pdf` | `/pdf`, `/cetak_pdf`, `/cetak`, `/print` |
@@ -51,6 +52,46 @@ A name that matches no room is reported as such. A name that matches more than
 one — `meeting`, where the model has MEETING 1 and MEETING 2 — is reported too,
 with the candidates listed, rather than run against whichever the add-in found
 first.
+
+## `/move_devices` — menggeser yang sudah terpasang
+
+```
+/move_devices OFFICE what=lighting_device offset=300
+/move_devices OFFICE marks=SW-001 offset=300 door_id=384210
+```
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `room` | text | — | Positional. The room whose devices move. |
+| `what` | select | `lighting_device` | Category to move. |
+| `to` | text | `door` | What to measure from. `door` is the only reference for now. |
+| `offset` | number | 300 | Millimetres from the **edge of the door leaf** — what "300 from the door" means to an engineer, and what a builder sets out. |
+| `marks` | text | — | Only these marks, comma separated. Otherwise the whole category in the room. |
+| `door_id` | text | — | For a room with several doors, or a door the room boundary does not see. |
+| `dry_run` | bool | false | Run it, then roll it back. |
+
+**Moves, does not replace.** `/modify_devices` deletes and re-places, which is
+right when the layout itself is wrong. It is too expensive for a switch that is
+only in the wrong spot: what goes with it is the Mark, the circuit already
+connected to it, the tags attached to it, and every adjustment somebody has
+already made on top of it. The device is fine — the coordinates are not.
+
+**The distance in the reply is measured afterwards, not requested.** Revit
+constrains the movement of an instance hosted on a wall face, and that
+constraint does not always throw — it can quietly put the element somewhere
+else. A reply that says "300 mm" because 300 mm was asked for proves nothing,
+and that is exactly the failure this command exists to correct. So the position
+is read back out of the model after the move commits, and that is the number
+reported.
+
+**Safe to run twice.** Devices already within 20 mm of the target are counted
+separately as `already_correct` rather than nudged, so "0 moved" on a second run
+reads as "nothing left to do" instead of a failure.
+
+**When there is no door.** If the room boundary has no door in it, the command
+fails and says so — including the likely reason: the door exists on the drawing
+but is not hosted in a wall that bounds this room, so the boundary map does not
+see it. Name it with `door_id=` to skip the search.
 
 ## Roles
 

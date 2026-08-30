@@ -33,6 +33,7 @@ public sealed class CommandProcessor
             new ExportCadHandler(),
             new PrintPdfHandler(),
             new DeleteDevicesHandler(),
+            new MoveDevicesHandler(),
             new QueryHandler(),
             new InspectHandler(),
             new ModelInfoHandler(),
