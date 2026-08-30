@@ -14,6 +14,7 @@
     "duration": "Durasi",
     "seconds": "detik",
     "units": "unit",
+    "outside_boundary": "Dibuang, di luar batas ruangan",
     "schedules": "Jadwal",
     "load_source": "Sumber beban",
     "unknown_error": "Terjadi kesalahan yang tidak diketahui."
@@ -256,6 +257,7 @@
     "hanger_load": "Beban hanger dalam kapasitas",
     "breaker_load": "Beban breaker dalam batas",
     "requested_count": "Jumlah yang dipasang sesuai permintaan",
+    "room_boundary": "Batas ruangan bisa diperiksa",
     "switch_type_available": "Type saklar yang diminta tersedia di proyek",
     "nfpa72_detector_count": "Jumlah detektor mencukupi ruangan"
   },
@@ -316,5 +318,20 @@
     "admin_help": "seluruh parameter satu perintah, lengkap dengan rentang dan nilai bawaan",
     "admin_standards": "buka mode tanya standar PUIL/SNI/IEC (dua arah, tidak menyentuh Revit)",
     "admin_standards_exit": "tutup mode tanya standar"
+  },
+  "notify": {
+    "done": "Perintah dari website selesai",
+    "failed": "Perintah dari website gagal",
+    "dry_run": "Uji coba — tidak ada yang diubah di model",
+    "fields": {
+      "room": "Ruang",
+      "devices_placed": "Perangkat dipasang",
+      "devices_removed": "Perangkat dihapus",
+      "updated": "Diperbarui",
+      "skipped": "Dilewati",
+      "count": "Jumlah",
+      "rows": "Baris",
+      "files": "Berkas"
+    }
   }
 }

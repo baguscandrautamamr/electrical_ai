@@ -230,6 +230,32 @@ export interface PlacementResult {
     | 'communication';
   room: string | null;
   devices_placed: number;
+
+  /**
+   * Berapa yang diminta, kalau berbeda dari yang terpasang.
+   *
+   * Ada hanya saat keduanya berbeda — sama berarti tidak ada yang perlu
+   * dijelaskan.
+   */
+  requested?: number;
+
+  /**
+   * Titik yang dibuang add-in karena jatuh di luar batas ruangan.
+   *
+   * Grid dibentangkan pada KOTAK ruangan, dan ruangan berbentuk L punya kotak
+   * yang mencakup takik milik ruangan sebelah. 34 dari 40 adalah jawaban yang
+   * benar di ruangan begitu; 34 tanpa angka ini terbaca sebagai perintah yang
+   * gagal separuh jalan.
+   *
+   * Tidak ada = add-in versi lama, yang tidak memeriksa batas ruangan sama
+   * sekali. Berbeda dari nol, dan bedanya penting: nol adalah hasil
+   * pemeriksaan, tidak-ada adalah ketiadaan pemeriksaan.
+   */
+  outside_boundary?: number;
+
+  /** False = ruangannya belum terkurung dinding, jadi batasnya tidak diuji. */
+  boundary_checked?: boolean;
+
   device_ids: string[];
   total_load_w?: number | null;
   circuits_created?: number;

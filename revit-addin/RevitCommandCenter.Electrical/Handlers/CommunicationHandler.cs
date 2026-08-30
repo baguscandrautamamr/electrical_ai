@@ -42,7 +42,7 @@ public sealed class CommunicationHandler : DevicePlacementHandler
     {
         var baseZ = RevitUtils.RoomCenter(room)?.Z ?? 0;
         var mountZ = baseZ + RevitUnits.MToFeet(command.GetDouble("height", 2.8));
-        return RevitUtils.GenerateCeilingGrid(room, count, mountZ)
+        return CeilingGridFor(context, command, room, count, mountZ)
             .Select(DevicePlacement.At)
             .ToList();
     }

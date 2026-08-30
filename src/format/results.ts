@@ -217,6 +217,19 @@ export function formatPlacement(result: PlacementResult, ctx: FormatContext): st
     value: `${result.devices_placed} ${t('common.units')}`,
   });
 
+  // Selisihnya, dengan sebabnya, tepat di bawah angkanya.
+  //
+  // Di ruangan berbentuk L sebagian grid jatuh di ruangan sebelah dan dibuang,
+  // jadi "40 diminta" berakhir sebagai 34 terpasang. Itu benar — dan tanpa
+  // baris ini yang terbaca cuma 34, yang tidak bisa dibedakan dari perintah
+  // yang berhenti di tengah jalan.
+  if (result.outside_boundary) {
+    rows.push({
+      label: t('common.outside_boundary'),
+      value: `${result.outside_boundary} ${t('common.units')}`,
+    });
+  }
+
   if (result.total_load_w !== null && result.total_load_w !== undefined) {
     rows.push({ label: t(`${ns}.load`), value: `${num(result.total_load_w, 0)} W` });
   }

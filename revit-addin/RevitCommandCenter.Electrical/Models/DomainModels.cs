@@ -105,6 +105,42 @@ public sealed class PlacementResultDto
     [JsonProperty("devices_placed")] public int DevicesPlaced { get; set; }
 
     /// <summary>
+    /// Berapa yang diminta, di sebelah berapa yang benar-benar berdiri.
+    ///
+    /// Hanya ikut kalau keduanya berbeda. Sama = tidak ada yang perlu
+    /// dijelaskan, dan medan yang selalu ada berhenti diperhatikan.
+    /// </summary>
+    [JsonProperty("requested", NullValueHandling = NullValueHandling.Ignore)]
+    public int? Requested { get; set; }
+
+    /// <summary>
+    /// Titik yang dibuang karena jatuh di luar batas ruangan.
+    ///
+    /// Ini yang membuat selisihnya punya sebab. Grid dibentangkan pada KOTAK
+    /// ruangan, dan ruangan berbentuk L punya kotak yang mencakup takik yang
+    /// bukan miliknya — jadi 40 yang diminta di ruangan begitu memang berakhir
+    /// sebagai 34 yang terpasang. Itu jawaban yang benar; 34 tanpa keterangan
+    /// terbaca sebagai add-in yang gagal separuh jalan, dan yang membacanya akan
+    /// mengirim enam lagi ke ruangan yang tidak muat.
+    ///
+    /// Nol tidak dikirim: tidak ada yang perlu dijelaskan.
+    /// </summary>
+    [JsonProperty("outside_boundary", NullValueHandling = NullValueHandling.Ignore)]
+    public int? OutsideBoundary { get; set; }
+
+    /// <summary>
+    /// False = ruangannya tidak tertutup, jadi batasnya tidak bisa diuji dan
+    /// gridnya dipasang utuh.
+    ///
+    /// Dikirim justru saat ia false. Medan yang tidak ada berarti perintah ini
+    /// memang tidak menempatkan apa pun di atas grid — perangkat dinding tidak
+    /// pernah keluar dari ruangannya — dan bukan berarti pemeriksaannya
+    /// dilewati.
+    /// </summary>
+    [JsonProperty("boundary_checked", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? BoundaryChecked { get; set; }
+
+    /// <summary>
     /// Perubahannya dibatalkan setelah dijalankan — modelnya tidak tersentuh.
     ///
     /// Ikut di hasil, bukan hanya diketahui pengirimnya: hasil yang sama
@@ -412,6 +448,28 @@ public sealed class DevicePlacement
     public Autodesk.Revit.DB.Element? Host { get; init; }
 
     public static DevicePlacement At(Autodesk.Revit.DB.XYZ point) => new() { Point = point };
+}
+
+/// <summary>
+/// Titik-titik sebuah grid plafon, beserta apa yang terjadi pada batas ruangan.
+///
+/// Tiga hal, dan yang ketiga yang membedakan dua keadaan yang bunyinya sama.
+/// <c>Outside</c> nol karena tidak ada titik yang jatuh di luar ruangan, dan
+/// <c>Outside</c> nol karena batasnya tidak pernah diuji, adalah dua kalimat
+/// yang sangat berbeda — dan hanya <c>BoundaryChecked</c> yang bisa
+/// membedakannya. Ruangan yang belum terkurung dinding menghasilkan yang kedua,
+/// dan itu masalah pemodelan yang bisa diperbaiki orangnya begitu ia tahu.
+/// </summary>
+public sealed record CeilingGrid(
+    List<Autodesk.Revit.DB.XYZ> Points,
+    int Outside,
+    bool BoundaryChecked)
+{
+    /// <summary>Tidak ada titik sama sekali — grid yang tidak masuk akal.</summary>
+    public static CeilingGrid Empty => new(new List<Autodesk.Revit.DB.XYZ>(), 0, false);
+
+    /// <summary>Titiknya apa adanya, tanpa batas ruangan yang bisa diuji.</summary>
+    public static CeilingGrid Unchecked(List<Autodesk.Revit.DB.XYZ> points) => new(points, 0, false);
 }
 
 /// <summary>Geometry of one straight run of tray, in millimetres.</summary>

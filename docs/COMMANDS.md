@@ -102,6 +102,29 @@ it is recognised as the grid, so `/place_lighting meeting 1 3x2` works — as do
 `grid=3x2`, and `3 x 2` with spaces. The grid runs along the room's longer side,
 so the same `3x2` reads correctly in a room of either proportion.
 
+**The room boundary trims the grid.** A grid is laid out over the room's
+*bounding box*, and an L-shaped room has a bounding box that includes the notch
+belonging to the room next door. Cells that land outside the room are dropped —
+never moved, and never backfilled elsewhere, because the even spacing is the
+whole point of a grid.
+
+So `/place_lighting "LOUNGE 5" count=40 grid=5x8` in an L-shaped room places
+fewer than forty, and the reply says how many and why: `devices_placed` is what
+actually stands in the model, `outside_boundary` is what was dropped, and
+`requested` is what was asked for. Without that second figure, 34 of 40 reads as
+a half-finished command, and the natural next move is to send six more into a
+room that cannot hold them.
+
+Placing them anyway was the old behaviour, on the reasoning that a stated grid
+is the engineer's own decision and lands visibly on the drawing. In practice the
+six fixtures stood inside MEETING 2, counted as LOUNGE load, and were found weeks
+later by whoever opened that plan.
+
+A room that is not closed by walls has no testable boundary at all. There the
+grid is placed whole, `boundary_checked` comes back `false`, and the reply says
+so — that is a modelling problem somebody can fix, and placing zero fixtures
+would hide it rather than report it.
+
 Lux is not reported back. The lumen-method figure is an estimate over the floor
 area with an assumed efficacy — fine for sizing a count nobody stated, not
 something to grade a count somebody did.

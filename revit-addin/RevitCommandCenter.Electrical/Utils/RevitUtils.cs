@@ -264,12 +264,23 @@ public static class RevitUtils
     /// derived from a lux target and approximate anyway, wrong now that someone
     /// can ask for six fixtures and mean it.
     /// </summary>
-    public static List<XYZ> GenerateCeilingGrid(SpatialElement room, int count, double mountHeightFeet)
+    public static CeilingGrid GenerateCeilingGrid(SpatialElement room, int count, double mountHeightFeet)
     {
-        if (count <= 0) return new List<XYZ>();
+        if (count <= 0) return CeilingGrid.Empty;
 
         var bounds = room.get_BoundingBox(null);
-        if (bounds is null) return CenterOnly(room, mountHeightFeet);
+        if (bounds is null) return CeilingGrid.Unchecked(CenterOnly(room, mountHeightFeet));
+
+        // Ruangan yang batasnya tidak bisa diuji dibentangkan apa adanya.
+        // Menyaring dengan uji yang menjawab false untuk setiap titik berarti
+        // satu armatur di tengah ruangan alih-alih empat puluh yang diminta —
+        // dan tidak ada apa pun di hasilnya yang menyebut ketinggian, batas,
+        // atau ruangan yang belum tertutup sebagai sebabnya.
+        if (!CanTestBoundary(room))
+        {
+            return CeilingGrid.Unchecked(
+                Thin(GridPoints(room, count, mountHeightFeet, bounds, filter: false), count));
+        }
 
         // Widen the grid until enough cells land inside the room, then thin the
         // result back to what was asked for — so the fixtures stay spread over
@@ -277,45 +288,73 @@ public static class RevitUtils
         var candidates = new List<XYZ>();
         for (var target = count; target > 0 && target <= count * 8; target *= 2)
         {
-            candidates = GridPoints(room, target, mountHeightFeet, bounds);
+            candidates = GridPoints(room, target, mountHeightFeet, bounds, filter: true);
             if (candidates.Count >= count) break;
         }
 
         // A concave room can reject every grid point; fall back to the centre so
-        // the command still produces something rather than nothing.
-        return candidates.Count == 0 ? CenterOnly(room, mountHeightFeet) : Thin(candidates, count);
+        // the command still produces something rather than nothing. Ditandai
+        // belum diperiksa, bukan "39 di luar batas": satu titik di tengah bukan
+        // hasil penyaringan, ia hasil menyerah.
+        if (candidates.Count == 0)
+        {
+            Logger.Warn(
+                $"Tidak ada satu pun sel grid yang jatuh di dalam '{room.Name}'; "
+                + "dipasang satu di tengah ruangan.");
+            return CeilingGrid.Unchecked(CenterOnly(room, mountHeightFeet));
+        }
+
+        var points = Thin(candidates, count);
+        return new CeilingGrid(points, Math.Max(0, count - points.Count), BoundaryChecked: true);
     }
 
     /// <summary>
-    /// A ceiling grid of exactly <paramref name="cols"/> by <paramref name="rows"/>.
+    /// A ceiling grid of exactly <paramref name="cols"/> by <paramref name="rows"/>,
+    /// minus the cells that fall outside the room.
     ///
-    /// Used when the engineer wrote the layout out — "3x2" is three fixtures
-    /// across by two deep, and it says something the count alone does not.
-    /// Nothing is thinned or re-shaped here: the whole point of stating a grid
-    /// is that the layout is the engineer's decision, not the algorithm's.
+    /// Used when the layout is written out — "3x2" is three fixtures across by
+    /// two deep, and it says something the count alone does not. Nothing is
+    /// thinned or re-shaped: the spacing is the whole point of stating a grid,
+    /// so a cell that cannot be used is dropped, never moved and never
+    /// backfilled somewhere else.
     ///
-    /// The consequence is that a stated grid over an L-shaped room can put a
-    /// fixture in the notch, outside the room boundary. That is the honest
-    /// reading of "3x2" — six fixtures in two rows of three — and it is visible
-    /// on the drawing straight away. The derived grid, which is a guess and not
-    /// an instruction, still rejects cells that fall outside the room.
+    /// Dulu tidak menyaring apa pun, dan alasannya masuk akal saat ditulis:
+    /// sebuah grid yang diketik orangnya adalah keputusannya, dan "3x2" berarti
+    /// enam. Yang membatalkan alasan itu adalah website: sejak `buildPayload`
+    /// menurunkan grid dari jumlah dan mengirimkannya di SETIAP perintah
+    /// (`web/lib/queue.ts`), "grid yang disebut" tidak lagi berarti "grid yang
+    /// disebut seseorang" — jalur inilah yang dilewati semua perintah
+    /// /place_lighting dari website, dan jalur yang menyaring itu praktis tidak
+    /// pernah dipakai lagi.
+    ///
+    /// Akibatnya yang dilaporkan dari pemakaian sungguhan: LOUNGE 5 berbentuk L,
+    /// `count=40 grid=5x8` membentang pada KOTAK ruangan, dan enam armatur
+    /// berdiri di dalam MEETING 2 — ikut terhitung sebagai beban LOUNGE, lalu
+    /// ditumpuki lagi saat MEETING 2 sendiri dipasangi lampu. "Terlihat di
+    /// gambar" ternyata bukan penjagaan: yang melihatnya adalah orang yang
+    /// membuka denah itu berminggu-minggu kemudian.
+    ///
+    /// Berapa yang dibuang IKUT DIKEMBALIKAN, tidak diam-diam. 34 dari 40 adalah
+    /// jawaban yang benar untuk ruangan berbentuk L; 34 tanpa keterangan terbaca
+    /// sebagai add-in yang gagal separuh jalan, dan yang membacanya akan
+    /// mengirim enam lagi.
     ///
     /// The grid runs along the room's longer side, so "3x2" in a room that is
     /// deeper than it is wide comes out three deep rather than three across —
     /// the drawing reads the same either way, and this keeps cells square.
     /// </summary>
-    public static List<XYZ> GenerateCeilingGrid(SpatialElement room, int cols, int rows, double mountHeightFeet)
+    public static CeilingGrid GenerateCeilingGrid(SpatialElement room, int cols, int rows, double mountHeightFeet)
     {
-        if (cols <= 0 || rows <= 0) return new List<XYZ>();
+        if (cols <= 0 || rows <= 0) return CeilingGrid.Empty;
 
         var bounds = room.get_BoundingBox(null);
-        if (bounds is null) return CenterOnly(room, mountHeightFeet);
+        if (bounds is null) return CeilingGrid.Unchecked(CenterOnly(room, mountHeightFeet));
 
         var width = bounds.Max.X - bounds.Min.X;
         var depth = bounds.Max.Y - bounds.Min.Y;
         if (depth > width && cols != rows) (cols, rows) = (rows, cols);
 
-        var points = new List<XYZ>();
+        var all = new List<XYZ>();
         var cellW = width / cols;
         var cellD = depth / rows;
 
@@ -323,18 +362,79 @@ public static class RevitUtils
         {
             for (var col = 0; col < cols; col++)
             {
-                points.Add(new XYZ(
+                all.Add(new XYZ(
                     bounds.Min.X + cellW * (col + 0.5),
                     bounds.Min.Y + cellD * (row + 0.5),
                     mountHeightFeet));
             }
         }
 
-        return points;
+        // Ruangan yang belum terkurung dinding tidak bisa diuji sama sekali, dan
+        // di situ menyaring berarti membuang SEMUANYA — perintah yang memasang
+        // nol armatur tanpa menyebut alasan yang bisa diperbaiki. Yang benar:
+        // pasang seperti sebelumnya, dan katakan bahwa batasnya tidak diperiksa.
+        if (!CanTestBoundary(room)) return CeilingGrid.Unchecked(all);
+
+        var inside = all.Where(point => Contains(room, point)).ToList();
+
+        // Tidak ada satu pun sel yang lolos hampir selalu berarti ujinya yang
+        // tidak bekerja, bukan ruangan yang tidak memuat gridnya sendiri —
+        // geometri yang aneh, batas yang tidak menutup rapat, ruangan yang jauh
+        // lebih kecil dari selnya. Memasang nol adalah jawaban yang tidak bisa
+        // ditindaklanjuti siapa pun, jadi yang dikembalikan gridnya utuh,
+        // ditandai belum diperiksa.
+        if (inside.Count == 0)
+        {
+            Logger.Warn(
+                $"Batas ruangan '{room.Name}' membuang seluruh {all.Count} titik grid; "
+                + "penyaringannya dilewati dan gridnya dipasang utuh.");
+            return CeilingGrid.Unchecked(all);
+        }
+
+        return new CeilingGrid(inside, all.Count - inside.Count, BoundaryChecked: true);
     }
 
-    /// <summary>Every cell centre of a <paramref name="target"/>-cell grid that falls inside the room.</summary>
-    private static List<XYZ> GridPoints(SpatialElement room, int target, double mountHeightFeet, BoundingBoxXYZ bounds)
+    /// <summary>
+    /// Apakah batas ruangan ini bisa diuji sama sekali.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Contains"/> menjawab false untuk titik yang di luar ruangan
+    /// DAN untuk ruangan yang batasnya tidak bisa dibaca — ia menangkap
+    /// lemparannya lalu mengembalikan false, karena untuk pertanyaan "perangkat
+    /// ini milik ruangan mana" itu jawaban yang aman. Untuk pertanyaan
+    /// "buang titik yang di luar" jawaban yang sama itu berbahaya: setiap titik
+    /// dibuang, dan perintahnya memasang nol armatur tanpa satu pun galat.
+    ///
+    /// Ruangan yang belum terkurung dinding punya luas nol dan tidak punya
+    /// volume. Itu masalah pemodelan yang bisa diperbaiki orangnya — dan hanya
+    /// bisa diperbaiki kalau disebutkan.
+    /// </remarks>
+    public static bool CanTestBoundary(SpatialElement enclosure)
+    {
+        try
+        {
+            return enclosure.Area > 0 && enclosure.get_BoundingBox(null) is not null;
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Every cell centre of a <paramref name="target"/>-cell grid, by default
+    /// only those that fall inside the room.
+    /// </summary>
+    /// <param name="filter">
+    /// False untuk ruangan yang batasnya tidak bisa diuji. Uji yang menjawab
+    /// false untuk segalanya bukan penyaring — ia penghapus.
+    /// </param>
+    private static List<XYZ> GridPoints(
+        SpatialElement room,
+        int target,
+        double mountHeightFeet,
+        BoundingBoxXYZ bounds,
+        bool filter)
     {
         var points = new List<XYZ>();
 
@@ -357,7 +457,7 @@ public static class RevitUtils
                 var y = bounds.Min.Y + cellD * (row + 0.5);
 
                 // Skip points outside a non-rectangular room's actual boundary.
-                if (Contains(room, new XYZ(x, y, bounds.Min.Z + 0.1)))
+                if (!filter || Contains(room, new XYZ(x, y, bounds.Min.Z + 0.1)))
                 {
                     points.Add(new XYZ(x, y, mountHeightFeet));
                 }

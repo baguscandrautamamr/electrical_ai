@@ -20,6 +20,61 @@ public sealed class HandlerContext
     /// <summary>Rows to persist after the Revit transaction commits.</summary>
     public List<(string Table, object Row)> PendingRows { get; } = new();
 
+    /// <summary>
+    /// Berapa titik penempatan yang dibuang karena jatuh di luar batas ruangan,
+    /// dan apakah batas itu benar-benar bisa diuji.
+    /// </summary>
+    /// <remarks>
+    /// Di sini, bukan sebagai nilai balik <c>ResolvePlacements</c>, karena
+    /// handler-nya berumur selamanya: <see cref="Queue.CommandProcessor"/>
+    /// membangun satu instance per jenis perintah dan memakainya kembali untuk
+    /// setiap perintah yang masuk. Sebuah field di handler akan membawa angka
+    /// dari perintah sebelumnya ke perintah berikutnya. Context inilah yang
+    /// berumur satu eksekusi — sama seperti <see cref="PendingRows"/> dan
+    /// <see cref="Warnings"/> yang sudah ada di sini dengan alasan yang sama.
+    /// </remarks>
+    public int OutsideBoundary { get; private set; }
+
+    /// <summary>
+    /// Null = tidak ada penempatan berbasis grid di perintah ini, jadi tidak ada
+    /// yang bisa dikatakan. False = ada, tapi ruangannya tidak bisa diuji.
+    ///
+    /// Bedanya sampai ke hasil: medan yang TIDAK ADA berarti add-in ini tidak
+    /// memeriksa batas ruangan, dan itu yang dibaca website sebagai "jangan
+    /// katakan apa-apa". Nol yang dikirim oleh perintah yang tidak pernah
+    /// melihat batasnya adalah pernyataan yang tidak ada yang memeriksanya.
+    /// </summary>
+    public bool? BoundaryChecked { get; private set; }
+
+    /// <summary>Catat hasil penyaringan batas ruangan sebuah grid.</summary>
+    public void ReportBoundary(int outside, bool checkedBoundary)
+    {
+        // Dijumlahkan, bukan ditimpa: satu perintah yang membangun dua grid
+        // membuang titik di keduanya, dan yang berarti adalah jumlahnya.
+        OutsideBoundary += Math.Max(0, outside);
+
+        // Satu saja yang tidak bisa diperiksa membuat angkanya tidak lengkap,
+        // dan itu yang harus dikatakan.
+        BoundaryChecked = BoundaryChecked is false ? false : checkedBoundary;
+    }
+
+    /// <summary>
+    /// Lupakan angka batas ruangan dari perintah sebelumnya.
+    /// </summary>
+    /// <remarks>
+    /// Untuk <c>/equip_room</c>, yang menjalankan delapan perintah perangkat
+    /// lewat SATU context ini (lihat <c>EquipRoomHandler</c>). Tanpa
+    /// pengosongan di awal tiap perintah, enam titik yang dibuang oleh armatur
+    /// akan ikut dilaporkan oleh detektor asap, speaker, dan stop kontak
+    /// sesudahnya — angka yang benar, ditempelkan ke perintah yang tidak
+    /// membuangnya, sehingga tiap kategori tampak kehilangan enam titik.
+    /// </remarks>
+    public void ResetBoundary()
+    {
+        OutsideBoundary = 0;
+        BoundaryChecked = null;
+    }
+
     public void Persist(string table, object row) => PendingRows.Add((table, row));
 
     /// <summary>A file to send to the chat once the handler is off Revit's thread.</summary>
