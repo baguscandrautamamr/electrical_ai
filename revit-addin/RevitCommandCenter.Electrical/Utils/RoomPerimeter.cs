@@ -190,6 +190,51 @@ public sealed class RoomPerimeter
         return candidates.Count > 0 ? candidates[0] : null;
     }
 
+    /// <summary>
+    /// Parameter batas yang paling dekat dengan sebuah titik di ruang, atau
+    /// null kalau tidak ada satu pun segmen yang bisa memproyeksikannya.
+    /// </summary>
+    /// <remarks>
+    /// Arah kebalikan dari <see cref="PointAt"/>: dari koordinat kembali ke
+    /// jarak sepanjang keliling. Dipakai untuk MENGUKUR ULANG jarak sebuah
+    /// perangkat ke pintu sesudah ia digeser — angka yang hanya bisa dipercaya
+    /// kalau ia dibaca dari model, bukan dari yang diminta.
+    ///
+    /// Z-nya diabaikan. Perangkat berdiri 1.200 mm di atas lantai sementara
+    /// kurva batasnya di lantai; tanpa meratakannya, setiap proyeksi meleset
+    /// sejauh ketinggian pasang itu.
+    /// </remarks>
+    public double? NearestOn(XYZ point)
+    {
+        double? best = null;
+        var bestGap = double.MaxValue;
+
+        foreach (var span in _spans)
+        {
+            var flat = new XYZ(point.X, point.Y, span.Curve.GetEndPoint(0).Z);
+
+            IntersectionResult? projected;
+            try
+            {
+                projected = span.Curve.Project(flat);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException)
+            {
+                continue;
+            }
+
+            if (projected is null || projected.Distance >= bestGap) continue;
+
+            bestGap = projected.Distance;
+            // `Parameter` sebuah kurva yang dinormalkan belum tentu panjang
+            // sebenarnya, jadi yang dipakai jarak dari titik awal segmennya.
+            var along = span.Curve.GetEndPoint(0).DistanceTo(projected.XYZPoint);
+            best = Wrap(span.Start + Math.Min(along, span.Length));
+        }
+
+        return best;
+    }
+
     /// <summary>Distance between two points on the loop, the short way round.</summary>
     public double Separation(double a, double b)
     {

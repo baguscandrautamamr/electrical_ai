@@ -537,6 +537,58 @@ public sealed record CeilingGrid(
     public static CeilingGrid Unchecked(List<Autodesk.Revit.DB.XYZ> points) => new(points, 0, false);
 }
 
+/// <summary>
+/// Hasil <c>/move_devices</c>: perangkat yang digeser ke tempat seharusnya.
+/// </summary>
+public sealed class MoveResultDto
+{
+    [JsonProperty("kind")] public string Kind => "move_devices";
+    [JsonProperty("room")] public string? Room { get; set; }
+    [JsonProperty("what")] public string What { get; set; } = string.Empty;
+
+    /// <summary>Acuan yang dipakai. Sekarang selalu <c>door</c>.</summary>
+    [JsonProperty("to")] public string To { get; set; } = "door";
+
+    /// <summary>Jarak yang diminta dari tepi daun pintu, dalam milimeter.</summary>
+    [JsonProperty("offset_mm")] public double OffsetMm { get; set; }
+
+    [JsonProperty("devices_moved")] public int DevicesMoved { get; set; }
+
+    /// <summary>
+    /// Yang sudah berada di tempatnya, jadi tidak disentuh.
+    ///
+    /// Selalu disebut, walau nol. Ini yang membuat perintah ini aman diulang:
+    /// menjalankannya dua kali tidak menggeser apa pun untuk kedua kalinya, dan
+    /// angka ini yang mengatakannya alih-alih membiarkan "0 digeser" terbaca
+    /// sebagai kegagalan.
+    /// </summary>
+    [JsonProperty("already_correct")] public int AlreadyCorrect { get; set; }
+
+    [JsonProperty("device_ids", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? DeviceIds { get; set; }
+
+    /// <summary>
+    /// Jarak SESUDAHNYA, dibaca ulang dari model.
+    ///
+    /// Bukan jarak yang diminta. Revit mengekang perpindahan instance yang
+    /// menempel pada muka dinding, dan kekangan itu tidak selalu melempar — ia
+    /// diam-diam menaruh elemennya di tempat lain. Melaporkan angka yang diminta
+    /// berarti mengulangi kesalahan yang perintah ini dibuat untuk memperbaiki,
+    /// dengan kalimat yang lebih meyakinkan.
+    /// </summary>
+    [JsonProperty("door_distance_mm", NullValueHandling = NullValueHandling.Ignore)]
+    public List<double>? DoorDistanceMm { get; set; }
+
+    [JsonProperty("failures", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Failures { get; set; }
+
+    [JsonProperty("notes", NullValueHandling = NullValueHandling.Ignore)]
+    public List<string>? Notes { get; set; }
+
+    [JsonProperty("dry_run", NullValueHandling = NullValueHandling.Ignore)]
+    public bool? DryRun { get; set; }
+}
+
 /// <summary>Geometry of one straight run of tray, in millimetres.</summary>
 public sealed class TraySegment
 {
