@@ -70,13 +70,11 @@ public sealed class LightingHandler : DevicePlacementHandler
         var mountZ = baseZ + RevitUnits.MToFeet(mountHeightM);
 
         // A stated grid is laid out as written; otherwise the room is filled
-        // with the squarest grid that holds the count.
-        var grid = RevitUtils.ParseGrid(command.GetString("grid"));
-        var points = grid is not null
-            ? RevitUtils.GenerateCeilingGrid(room, grid.Value.Cols, grid.Value.Rows, mountZ)
-            : RevitUtils.GenerateCeilingGrid(room, count, mountZ);
-
-        return points.Select(DevicePlacement.At).ToList();
+        // with the squarest grid that holds the count. Sel yang jatuh di luar
+        // batas ruangan dibuang di kedua jalur — lihat CeilingGridFor.
+        return CeilingGridFor(context, command, room, count, mountZ)
+            .Select(DevicePlacement.At)
+            .ToList();
     }
 
     protected override FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command) =>

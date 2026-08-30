@@ -81,8 +81,7 @@ public sealed class FireAlarmHandler : DevicePlacementHandler
     {
         var mountHeightM = command.GetDouble("height", 2.8);
         var baseZ = RevitUtils.RoomCenter(room)?.Z ?? 0;
-        return RevitUtils
-            .GenerateCeilingGrid(room, count, baseZ + RevitUnits.MToFeet(mountHeightM))
+        return CeilingGridFor(context, command, room, count, baseZ + RevitUnits.MToFeet(mountHeightM))
             .Select(DevicePlacement.At)
             .ToList();
     }

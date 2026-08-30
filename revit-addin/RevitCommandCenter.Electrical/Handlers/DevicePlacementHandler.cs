@@ -48,6 +48,35 @@ public abstract class DevicePlacementHandler : ICommandHandler
     /// <summary>Family type to place.</summary>
     protected abstract FamilySymbol? ResolveSymbol(HandlerContext context, CommandModel command);
 
+    /// <summary>
+    /// Titik-titik grid plafon untuk ruangan ini, dengan yang di luar batas
+    /// ruangan sudah dibuang dan dilaporkan.
+    ///
+    /// Satu jalan untuk ketiga perangkat plafon — armatur, detektor, speaker —
+    /// supaya penyaringan batasnya tidak hanya ada di salah satunya. Sebuah
+    /// ruangan berbentuk L tidak berhenti berbentuk L untuk detektor asap.
+    ///
+    /// Grid yang disebut dipakai apa adanya; yang tidak disebut diturunkan dari
+    /// jumlahnya. Perintah yang katalognya tidak punya kolom grid tidak pernah
+    /// membawanya, jadi keduanya bisa lewat sini tanpa syarat tambahan.
+    /// </summary>
+    protected static List<XYZ> CeilingGridFor(
+        HandlerContext context,
+        CommandModel command,
+        SpatialElement room,
+        int count,
+        double mountHeightFeet)
+    {
+        var stated = RevitUtils.ParseGrid(command.GetString("grid"));
+
+        var grid = stated is not null
+            ? RevitUtils.GenerateCeilingGrid(room, stated.Value.Cols, stated.Value.Rows, mountHeightFeet)
+            : RevitUtils.GenerateCeilingGrid(room, count, mountHeightFeet);
+
+        context.ReportBoundary(grid.Outside, grid.BoundaryChecked);
+        return grid.Points;
+    }
+
     /// <summary>Per-instance parameters. Base implementation sets none.</summary>
     protected virtual Dictionary<string, object> InstanceParameters(
         CommandModel command,
@@ -74,6 +103,9 @@ public abstract class DevicePlacementHandler : ICommandHandler
 
     public virtual CommandResult Execute(HandlerContext context, CommandModel command)
     {
+        // /equip_room menjalankan delapan perintah ini lewat satu context.
+        context.ResetBoundary();
+
         var roomName = command.GetString("room");
         var lookup = RevitUtils.ResolveRoom(context.Doc, roomName);
         if (lookup.Room is null)
@@ -214,6 +246,13 @@ public abstract class DevicePlacementHandler : ICommandHandler
             // persis pada saat perbedaannya paling mahal — ketika nama yang
             // diminta tidak ada di model dan pencariannya jatuh ke tipe pertama.
             FamilyUsed = RevitUtils.DescribeSymbol(symbol),
+            // Selisih antara yang diminta dan yang berdiri, dengan sebabnya.
+            // Keduanya dari context, bukan dari field di handler ini: satu
+            // instance handler melayani setiap perintah yang masuk, jadi field
+            // di sini akan membawa angka perintah sebelumnya.
+            Requested = placed.Count == count ? null : (int?)count,
+            OutsideBoundary = context.OutsideBoundary > 0 ? context.OutsideBoundary : (int?)null,
+            BoundaryChecked = context.BoundaryChecked,
         };
 
         // Dilewati pada uji coba: elemennya sudah tidak ada.
@@ -227,17 +266,45 @@ public abstract class DevicePlacementHandler : ICommandHandler
         // ditanyakan sebuah uji coba — sudah dihitung sebelum pembatalan.
         if (!dryRun) Decorate(result, context, command, room, placed);
 
+        // Ruangan yang batasnya tidak bisa diuji dikatakan lewat daftar
+        // kepatuhan, bukan lewat catatan: PlacementResultDto tidak punya
+        // `notes`, dan daftar kepatuhan justru dibaca kedua sisi — panel
+        // website maupun balasan Telegram.
+        //
+        // Bukan sekadar keterangan. Batas yang tidak menutup berarti setiap
+        // armatur di perintah ini dipasang tanpa ada yang memastikan ia berada
+        // di ruangan yang diminta, dan itu masalah pemodelan yang hanya bisa
+        // diperbaiki orangnya — sesudah ada yang menyebutkannya.
+        if (context.BoundaryChecked is false)
+        {
+            result.Compliance ??= new List<ComplianceCheckDto>();
+            result.Compliance.Insert(0, ComplianceCheckDto.Of(
+                "compliance.room_boundary",
+                false,
+                $"'{room.Name}' belum terkurung dinding, jadi tidak ada titik yang bisa diuji "
+                + "terhadap batasnya — gridnya dipasang utuh"));
+        }
+
         // Placing fewer than were asked for is a fact about the room, and it
         // has to be said. Reporting five where six were asked for, with nothing
         // to mark it, is how an engineer finds out from the drawing instead.
+        //
+        // Sebabnya disebut, bukan diterka satu untuk semua. Dulu kalimatnya
+        // selalu menyalahkan dinding yang penuh pintu dan jendela — benar untuk
+        // stop kontak, dan menyesatkan untuk armatur plafon, yang justru
+        // berkurang karena sebagian gridnya jatuh di ruangan sebelah. Yang
+        // membaca kalimat yang salah sebabnya akan memperbaiki hal yang salah.
         if (placed.Count < count)
         {
+            var reason = context.OutsideBoundary > 0
+                ? $"{context.OutsideBoundary} titik jatuh di luar batas '{room.Name}' dan dibuang"
+                : $"no wall clear of the doors and windows in '{room.Name}' for the rest";
+
             result.Compliance ??= new List<ComplianceCheckDto>();
             result.Compliance.Insert(0, ComplianceCheckDto.Of(
                 "compliance.requested_count",
                 false,
-                $"asked for {count}, placed {placed.Count} — "
-                + $"no wall clear of the doors and windows in '{room.Name}' for the rest"));
+                $"asked for {count}, placed {placed.Count} — {reason}"));
         }
 
         Logger.Info($"{CommandType}: placed {placed.Count} device(s) in {room.Name}");

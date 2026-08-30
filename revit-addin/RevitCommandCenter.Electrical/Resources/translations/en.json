@@ -14,6 +14,7 @@
     "duration": "Duration",
     "seconds": "seconds",
     "units": "units",
+    "outside_boundary": "Dropped, outside the room boundary",
     "schedules": "Schedules",
     "load_source": "Load source",
     "unknown_error": "An unknown error occurred."
@@ -256,6 +257,7 @@
     "hanger_load": "Hanger load within capacity",
     "breaker_load": "Breaker load within limit",
     "requested_count": "Placed as many as were asked for",
+    "room_boundary": "Room boundary could be checked",
     "switch_type_available": "The requested switch type is loaded in the project",
     "nfpa72_detector_count": "Detector count covers the room"
   },
